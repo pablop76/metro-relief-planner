@@ -1,0 +1,87 @@
+import { useState } from "react";
+import { HHMMSS } from "../lib/types";
+import type { Obieg, StationEvent, BreakAssignment, Reserve } from "../lib/types";
+import { BreakEditor } from "./BreakEditor";
+
+const NOON = 12 * 3600;
+
+/** Wjazd na linię (popołudniu): pierwsze zdarzenie po przerwie >60 min, inaczej pierwsze w ogóle. */
+function afternoonEntry(events: StationEvent[]): StationEvent {
+  for (let i = 1; i < events.length; i++) {
+    const gap = events[i].t - events[i - 1].t;
+    if (gap > 60 * 60 && events[i].t >= NOON) return events[i];
+  }
+  return events[0];
+}
+
+const KIND_SHORT: Record<string, string> = { "cała": "CAŁA", "połówka": "POŁ", "szczeniak": "SZCZ" };
+const DIR_ARROW: Record<string, string> = { Kabaty: "↓ Kabaty", Młociny: "↑ Młociny" };
+
+interface Props {
+  obieg: Obieg;
+  assignment?: BreakAssignment;
+  reserves: Reserve[];
+  onAssignmentChange: (a: BreakAssignment) => void;
+}
+
+export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange }: Props) {
+  const [open, setOpen] = useState(false);
+  const entry = afternoonEntry(obieg.events);
+  const exit = obieg.events[obieg.events.length - 1];
+  const isFull = obieg.type === "full";
+  const reserve = assignment?.reserveId ? reserves.find((r) => r.id === assignment.reserveId) : null;
+  const brak = assignment && !assignment.reserveId;
+
+  return (
+    <div className={`obieg-card type-${obieg.type}`}>
+      <div className="oc-head">
+        <span className="oc-id">{obieg.id}</span>
+        <span className="oc-entry">
+          {isFull ? (
+            <em>całodobowy</em>
+          ) : (
+            <>
+              {HHMMSS(entry.t)} <em>{entry.station}</em>
+            </>
+          )}
+        </span>
+      </div>
+
+      <div
+        className={`oc-body${assignment ? ` kind-${assignment.kind}` : ""}${brak ? " is-brak" : ""}`}
+        onClick={() => setOpen((o) => !o)}
+        title="kliknij, aby edytować"
+      >
+        {assignment ? (
+          <>
+            <span className="oc-kind">{KIND_SHORT[assignment.kind]}</span>
+            <span className="oc-time">{HHMMSS(assignment.startT)}</span>
+            <span className="oc-stat">
+              {assignment.station} · {DIR_ARROW[assignment.dir]}
+            </span>
+            <span className="oc-res">
+              {reserve ? reserve.name : "⚠ BRAK"}
+              {assignment.manual && <i className="oc-manual" title="ręcznie">✎</i>}
+            </span>
+          </>
+        ) : (
+          <span className="oc-placeholder">— przerwa —</span>
+        )}
+      </div>
+
+      {open && (
+        <BreakEditor
+          obieg={obieg}
+          assignment={assignment}
+          reserves={reserves}
+          onChange={onAssignmentChange}
+          onClose={() => setOpen(false)}
+        />
+      )}
+
+      <div className="oc-foot">
+        <span className="oc-exit">ost. kurs {HHMMSS(exit.t)}</span>
+      </div>
+    </div>
+  );
+}
