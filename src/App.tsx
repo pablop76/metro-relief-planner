@@ -15,6 +15,8 @@ const LS = {
   drivers: "pm_drivers",
   delay: "pm_global_delay",
   order: "pm_order3", // v3: kolejność wg seqOrder (sekwencja odjazdów po 13:45)
+  sbW: "pm_sb_w",
+  sbCol: "pm_sb_col",
 };
 
 function loadLS<T>(key: string, fallback: T): T {
@@ -66,7 +68,25 @@ export default function App() {
   const [globalDelay, setGlobalDelay] = useState<number>(() => loadLS<number>(LS.delay, 0));
   const [order, setOrder] = useState<string[]>(() => loadLS<string[]>(LS.order, []));
   const [dragId, setDragId] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => loadLS<number>(LS.sbW, 360));
+  const [sbCollapsed, setSbCollapsed] = useState<boolean>(() => loadLS<boolean>(LS.sbCol, false));
   const [error, setError] = useState<string>("");
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.min(640, Math.max(240, window.innerWidth - ev.clientX));
+      setSidebarWidth(w);
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
 
   useEffect(() => {
     fetch(DEFAULT_FILE)
@@ -147,6 +167,8 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.drivers, JSON.stringify(drivers)), [drivers]);
   useEffect(() => localStorage.setItem(LS.delay, JSON.stringify(globalDelay)), [globalDelay]);
   useEffect(() => localStorage.setItem(LS.order, JSON.stringify(order)), [order]);
+  useEffect(() => localStorage.setItem(LS.sbW, JSON.stringify(sidebarWidth)), [sidebarWidth]);
+  useEffect(() => localStorage.setItem(LS.sbCol, JSON.stringify(sbCollapsed)), [sbCollapsed]);
 
   const onAssignmentChange = (a: BreakAssignment) => {
     setManual((m) => ({ ...m, [a.obiegId]: a }));
@@ -293,16 +315,28 @@ export default function App() {
           </div>
         </main>
 
-        <aside className="sidebar">
-          <ReservePanel
-            reserves={reserves}
-            onChange={setReserves}
-            drivers={drivers}
-            load={load}
-            count={count}
-            byReserve={byReserve}
-          />
-        </aside>
+        {sbCollapsed ? (
+          <button className="sidebar-expand" onClick={() => setSbCollapsed(false)} title="rozwiń panel">
+            ‹ Rezerwowi
+          </button>
+        ) : (
+          <>
+            <div className="resizer" onMouseDown={startResize} title="przeciągnij, aby zmienić szerokość" />
+            <aside className="sidebar" style={{ width: sidebarWidth }}>
+              <button className="sidebar-collapse" onClick={() => setSbCollapsed(true)} title="zwiń panel">
+                ›
+              </button>
+              <ReservePanel
+                reserves={reserves}
+                onChange={setReserves}
+                drivers={drivers}
+                load={load}
+                count={count}
+                byReserve={byReserve}
+              />
+            </aside>
+          </>
+        )}
       </div>
     </div>
   );
