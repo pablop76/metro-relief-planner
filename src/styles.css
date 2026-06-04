@@ -153,3 +153,39 @@ body {
 .rp-add input { flex: 1; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 4px 6px; font-size: 12px; }
 .rp-add button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
 .rp-add button:hover { border-color: var(--accent); }
+
+/* --- układ dwurzędowy + przewijanie poziome --- */
+.obiegi-grid.two-rows { grid-auto-flow: row; overflow-x: auto; padding-bottom: 10px; }
+.obiegi-grid.two-rows .drag-wrap { min-width: 0; }
+
+/* --- drag & drop --- */
+.drag-wrap { cursor: grab; }
+.drag-wrap:active { cursor: grabbing; }
+.drag-wrap.dragging { opacity: .4; }
+.drag-wrap.dragging .obieg-card { outline: 2px dashed var(--accent); }
+.hint-drag { color: #5b616d; }
+
+/* --- opóźnienie linii --- */
+.delay-ctl {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted);
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px;
+}
+.delay-ctl input {
+  width: 48px; background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 5px; padding: 4px; text-align: center;
+}
+
+/* --- lista maszynistów (roster) --- */
+.rp-roster { margin-bottom: 12px; }
+.rp-roster-toggle {
+  background: none; border: none; color: var(--text); cursor: pointer; font-size: 13px;
+  font-weight: 600; padding: 0; width: 100%; text-align: left;
+}
+.rp-roster-body { margin-top: 8px; }
+.rp-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.rp-chip {
+  display: inline-flex; align-items: center; gap: 4px; background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 12px; padding: 2px 8px; font-size: 11px;
+}
+.rp-chip button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
+.rp-chip button:hover { color: var(--red); }

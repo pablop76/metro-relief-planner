@@ -7,8 +7,13 @@ import { ReservePanel } from "./components/ReservePanel";
 import { ObiegCard } from "./components/ObiegCard";
 
 const DEFAULT_FILE = "/RJ_M1_A1_od_13_05_2026.xlsx";
-const LS_RES = "pm_reserves";
-const LS_MANUAL = "pm_manual";
+const LS = {
+  res: "pm_reserves",
+  manual: "pm_manual",
+  roster: "pm_roster",
+  delay: "pm_global_delay",
+  order: "pm_order",
+};
 
 function loadLS<T>(key: string, fallback: T): T {
   try {
@@ -19,7 +24,23 @@ function loadLS<T>(key: string, fallback: T): T {
   }
 }
 
-/** Sumuje obciążenie rezerwowych z aktualnego planu (uwzględnia ręczne korekty). */
+/** Przesuwa całą oś czasu obiegu o `sec` sekund (opóźnienie). */
+function shift(o: Obieg, sec: number): Obieg {
+  if (!sec) return o;
+  return {
+    ...o,
+    events: o.events.map((e) => ({ ...e, t: e.t + sec })),
+    firstT: o.firstT + sec,
+    lastT: o.lastT + sec,
+  };
+}
+
+/** Domyślna kolejność: obieg „1" pierwszy, dalej wg rozkładu (kolejność z xlsx). */
+function defaultOrder(obiegi: Obieg[]): string[] {
+  const ids = obiegi.map((o) => o.id);
+  return ["1", ...ids.filter((id) => id !== "1")].filter((id) => ids.includes(id));
+}
+
 function computeLoads(assignments: Record<string, BreakAssignment>) {
   const load: Record<string, number> = {};
   const count: Record<string, number> = {};
@@ -34,11 +55,15 @@ function computeLoads(assignments: Record<string, BreakAssignment>) {
 export default function App() {
   const [wb, setWb] = useState<XLSX.WorkBook | null>(null);
   const [sheet, setSheet] = useState<string>("");
-  const [reserves, setReserves] = useState<Reserve[]>(() => loadLS<Reserve[]>(LS_RES, []));
+  const [reserves, setReserves] = useState<Reserve[]>(() => loadLS<Reserve[]>(LS.res, []));
+  const [roster, setRoster] = useState<string[]>(() => loadLS<string[]>(LS.roster, []));
   const [manual, setManual] = useState<Record<string, BreakAssignment>>(() =>
-    loadLS<Record<string, BreakAssignment>>(LS_MANUAL, {})
+    loadLS<Record<string, BreakAssignment>>(LS.manual, {})
   );
   const [assignments, setAssignments] = useState<Record<string, BreakAssignment>>({});
+  const [globalDelay, setGlobalDelay] = useState<number>(() => loadLS<number>(LS.delay, 0));
+  const [order, setOrder] = useState<string[]>(() => loadLS<string[]>(LS.order, []));
+  const [dragId, setDragId] = useState<string | null>(null);
   const [error, setError] = useState<string>("");
 
   useEffect(() => {
@@ -65,31 +90,70 @@ export default function App() {
     }
   }, [wb, sheet]);
 
-  // generowanie planu: auto przy zmianie obiegów/rezerwowych, z zachowaniem ręcznych korekt
-  const generate = (currentManual = manual) => {
+  // opóźnienie linii (globalne) → przesunięta oś czasu wszystkich obiegów
+  const delayed = useMemo(
+    () => (globalDelay ? obiegi.map((o) => shift(o, globalDelay * 60)) : obiegi),
+    [obiegi, globalDelay]
+  );
+
+  // kolejność wyświetlania (ręczna, drag & drop) — nie wpływa na sam plan
+  const ordered = useMemo(() => {
+    if (!order.length) return delayed;
+    const idx = new Map(order.map((id, i) => [id, i]));
+    return [...delayed].sort((a, b) => (idx.get(a.id) ?? 1e9) - (idx.get(b.id) ?? 1e9));
+  }, [delayed, order]);
+
+  // domyślna kolejność = obieg 1, dalej wg rozkładu — gdy brak zapisanej / niespójna
+  useEffect(() => {
     if (!obiegi.length) return;
-    const res = planBreaks(obiegi, reserves);
+    const ids = obiegi.map((o) => o.id);
+    setOrder((prev) =>
+      prev.length === ids.length && prev.every((id) => ids.includes(id)) ? prev : defaultOrder(obiegi)
+    );
+  }, [obiegi]);
+
+  const generate = (currentManual = manual) => {
+    if (!delayed.length) return;
+    const res = planBreaks(delayed, reserves);
     const merged: Record<string, BreakAssignment> = { ...res.assignments };
     for (const [id, a] of Object.entries(currentManual)) merged[id] = a;
     setAssignments(merged);
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => generate(), [obiegi, reserves]);
+  useEffect(() => generate(), [delayed, reserves]);
 
-  useEffect(() => localStorage.setItem(LS_RES, JSON.stringify(reserves)), [reserves]);
-  useEffect(() => localStorage.setItem(LS_MANUAL, JSON.stringify(manual)), [manual]);
+  useEffect(() => localStorage.setItem(LS.res, JSON.stringify(reserves)), [reserves]);
+  useEffect(() => localStorage.setItem(LS.manual, JSON.stringify(manual)), [manual]);
+  useEffect(() => localStorage.setItem(LS.roster, JSON.stringify(roster)), [roster]);
+  useEffect(() => localStorage.setItem(LS.delay, JSON.stringify(globalDelay)), [globalDelay]);
+  useEffect(() => localStorage.setItem(LS.order, JSON.stringify(order)), [order]);
 
   const onAssignmentChange = (a: BreakAssignment) => {
-    const nextManual = { ...manual, [a.obiegId]: a };
-    setManual(nextManual);
+    setManual((m) => ({ ...m, [a.obiegId]: a }));
     setAssignments((prev) => ({ ...prev, [a.obiegId]: a }));
   };
 
   const resetManual = () => {
     setManual({});
-    const res = planBreaks(obiegi, reserves);
+    const res = planBreaks(delayed, reserves);
     setAssignments(res.assignments);
+  };
+
+  const resetOrder = () => setOrder(defaultOrder(obiegi));
+
+  const handleDrop = (targetId: string) => {
+    if (!dragId || dragId === targetId) return;
+    setOrder((prev) => {
+      const ids = (prev.length ? prev : ordered.map((o) => o.id)).slice();
+      const from = ids.indexOf(dragId);
+      const to = ids.indexOf(targetId);
+      if (from < 0 || to < 0) return prev;
+      ids.splice(from, 1);
+      ids.splice(to, 0, dragId);
+      return ids;
+    });
+    setDragId(null);
   };
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -105,6 +169,10 @@ export default function App() {
   const { load, count } = useMemo(() => computeLoads(assignments), [assignments]);
   const unassigned = Object.values(assignments).filter((a) => !a.reserveId).length;
   const planned = Object.values(assignments).filter((a) => a.reserveId).length;
+  const def = defaultOrder(obiegi);
+  const orderChanged = order.length > 0 && order.some((id, i) => def[i] !== id);
+  // dwa równe rzędy (jak w arkuszu): liczba kolumn = połowa obiegów
+  const cols = Math.max(1, Math.ceil(ordered.length / 2));
 
   return (
     <div className="app">
@@ -123,12 +191,26 @@ export default function App() {
               ))}
             </select>
           )}
+          <label className="delay-ctl" title="opóźnienie całej linii w minutach">
+            ⏱ opóźnienie
+            <input
+              type="number"
+              value={globalDelay}
+              onChange={(e) => setGlobalDelay(parseInt(e.target.value, 10) || 0)}
+            />
+            min
+          </label>
           <button className="btn-gen" onClick={() => generate()}>
             ⟳ Generuj plan
           </button>
           {Object.keys(manual).length > 0 && (
             <button className="btn-reset" onClick={resetManual} title="usuń ręczne korekty">
               Reset korekt
+            </button>
+          )}
+          {orderChanged && (
+            <button className="btn-reset" onClick={resetOrder} title="przywróć kolejność wg rozkładu">
+              Reset kolejności
             </button>
           )}
           <label className="file-btn">
@@ -146,22 +228,43 @@ export default function App() {
             <strong>{obiegi.length}</strong> obiegów&nbsp;·&nbsp;
             <span className="ok">{planned} obsadzonych</span>
             {unassigned > 0 && <span className="bad">&nbsp;·&nbsp;{unassigned} BRAK</span>}
+            {globalDelay !== 0 && <span className="bad">&nbsp;·&nbsp;linia +{globalDelay} min</span>}
+            <span className="hint-drag">&nbsp;·&nbsp;przeciągaj karty, by zmienić kolejność</span>
           </div>
-          <div className="obiegi-grid">
-            {obiegi.map((o) => (
-              <ObiegCard
+          <div
+            className="obiegi-grid two-rows"
+            style={{ gridTemplateColumns: `repeat(${cols}, minmax(82px, 1fr))` }}
+          >
+            {ordered.map((o) => (
+              <div
                 key={o.id}
-                obieg={o}
-                assignment={assignments[o.id]}
-                reserves={reserves}
-                onAssignmentChange={onAssignmentChange}
-              />
+                className={`drag-wrap${dragId === o.id ? " dragging" : ""}`}
+                draggable
+                onDragStart={() => setDragId(o.id)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => handleDrop(o.id)}
+                onDragEnd={() => setDragId(null)}
+              >
+                <ObiegCard
+                  obieg={o}
+                  assignment={assignments[o.id]}
+                  reserves={reserves}
+                  onAssignmentChange={onAssignmentChange}
+                />
+              </div>
             ))}
           </div>
         </main>
 
         <aside className="sidebar">
-          <ReservePanel reserves={reserves} onChange={setReserves} load={load} count={count} />
+          <ReservePanel
+            reserves={reserves}
+            onChange={setReserves}
+            roster={roster}
+            onRosterChange={setRoster}
+            load={load}
+            count={count}
+          />
         </aside>
       </div>
     </div>
