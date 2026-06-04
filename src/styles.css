@@ -44,7 +44,10 @@ body {
 
 .layout { display: flex; flex: 1; gap: 16px; padding: 16px; align-items: flex-start; }
 .grid-area { flex: 1; min-width: 0; }
-.sidebar { width: 260px; flex-shrink: 0; position: sticky; top: 70px; }
+.sidebar {
+  width: 360px; flex-shrink: 0; position: sticky; top: 70px;
+  max-height: calc(100vh - 86px); overflow-y: auto;
+}
 
 .summary { color: var(--muted); margin-bottom: 12px; font-size: 13px; }
 .summary strong { color: var(--text); font-size: 16px; }
