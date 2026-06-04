@@ -9,6 +9,7 @@ import { DriversManager } from "./components/DriversManager";
 
 const DEFAULT_FILE = "/RJ_M1_A1_od_13_05_2026.xlsx";
 const DRIVERS_FILE = "/maszynisci.json";
+const BUILD = __BUILD_TIME__;
 const LS = {
   res: "pm_reserves",
   manual: "pm_manual",
@@ -227,6 +228,9 @@ export default function App() {
         <div className="brand">
           <span className="m-badge">M1</span>
           <h1>Przerwy maszynistów</h1>
+          <span className="build-tag" title="czas builda — jeśli stary, odśwież z Disable cache (F12 → Network)">
+            build {BUILD}
+          </span>
         </div>
         <div className="controls">
           {wb && (

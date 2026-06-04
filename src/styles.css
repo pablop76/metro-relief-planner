@@ -28,6 +28,7 @@ body {
 }
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand h1 { font-size: 18px; margin: 0; font-weight: 600; }
+.build-tag { font-size: 10px; color: #5b616d; align-self: flex-end; padding-bottom: 3px; }
 .m-badge {
   background: var(--accent); color: #fff; font-weight: 700;
   width: 34px; height: 34px; border-radius: 8px;
