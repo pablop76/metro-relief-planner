@@ -37,8 +37,6 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
 
   const byId = new Map<string, StationEvent[]>();
   const firstRow = new Map<string, number>();
-  // sekwencja odjazdów z A1 (północ) wg wierszy — do kolejności „wszystkie na linii"
-  const seq: { ob: string; t: number | null }[] = [];
 
   // pary [kolumna, stacja, kierunek]
   const northCols: [number, BreakStation][] = [
@@ -54,7 +52,6 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
     const id = (r[COL.obieg] ?? "").toString().trim();
     if (!VALID_OBIEG.test(id)) continue;
     if (!firstRow.has(id)) firstRow.set(id, i);
-    seq.push({ ob: id, t: parseTime(r[COL.n_A1]) });
 
     const ev = byId.get(id) ?? [];
     const pushDir = (cols: [number, BreakStation][], dir: Dir) => {
@@ -71,17 +68,6 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
     byId.set(id, ev);
   }
 
-  // kolejność „wszystkie na linii": od odjazdu obiegu „1" z A1 po 13:45 zbieramy kolejne unikalne obiegi
-  const total = byId.size;
-  const T_1345 = 13 * 3600 + 45 * 60;
-  const anchor = seq.findIndex((s) => s.ob === "1" && s.t != null && s.t >= T_1345);
-  const orderMap = new Map<string, number>();
-  if (anchor >= 0) {
-    for (let i = anchor; i < seq.length && orderMap.size < total; i++) {
-      if (!orderMap.has(seq[i].ob)) orderMap.set(seq[i].ob, orderMap.size);
-    }
-  }
-
   const obiegi: Obieg[] = [];
   for (const [id, ev] of byId) {
     ev.sort((a, b) => a.t - b.t);
@@ -93,11 +79,34 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
       firstT: ev[0].t,
       lastT: ev[ev.length - 1].t,
       firstRow: firstRow.get(id) ?? 0,
-      // brak w sekwencji → na koniec, wg wiersza
-      seqOrder: orderMap.get(id) ?? total + (firstRow.get(id) ?? 0),
+      a1North: 0,
+      seqOrder: 0,
     });
   }
-  obiegi.sort((a, b) => a.seqOrder - b.seqOrder);
+
+  // Kolejność „wszystkie na linii": sort wg odjazdu z A1 (północ) w pierwszej pętli,
+  // w której KAŻDY obieg ma odjazd z A1 (u nas ~15:14). Robust: testujemy kolejne odjazdy obiegu „1".
+  const a1NorthAfter = (o: Obieg, after: number): number | null =>
+    o.events.find((e) => e.station === "A1" && e.dir === "Młociny" && e.t >= after)?.t ?? null;
+  const LAP = 95 * 60;
+  const one = obiegi.find((o) => o.id === "1");
+  let T0 = 0;
+  if (one) {
+    const cand = one.events
+      .filter((e) => e.station === "A1" && e.dir === "Młociny")
+      .map((e) => e.t)
+      .sort((a, b) => a - b);
+    for (const T of cand) {
+      if (obiegi.every((o) => { const t = a1NorthAfter(o, T); return t != null && t <= T + LAP; })) {
+        T0 = T;
+        break;
+      }
+    }
+    if (!T0 && cand.length) T0 = cand[Math.min(1, cand.length - 1)];
+  }
+  for (const o of obiegi) o.a1North = a1NorthAfter(o, T0) ?? Number.MAX_SAFE_INTEGER;
+  obiegi.sort((a, b) => a.a1North - b.a1North || a.firstRow - b.firstRow);
+  obiegi.forEach((o, i) => (o.seqOrder = i));
   return obiegi;
 }
 

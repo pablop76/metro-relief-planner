@@ -32,8 +32,10 @@ export interface Obieg {
   lastT: number;
   /** indeks pierwszego wiersza w xlsx — do kolejności wg rozkładu */
   firstRow: number;
-  /** pozycja w sekwencji odjazdów z A1 po 13:45 (kolejność „wszystkie na linii", 1 pierwszy) */
+  /** pozycja w kolejności (sort wg odjazdu z A1 w pętli „wszystkie na linii") */
   seqOrder: number;
+  /** godzina odjazdu z A1 na północ w pętli odniesienia (podstawa kolejności); MAX gdy brak */
+  a1North: number;
 }
 
 /** Maszynista (stała lista wszystkich) — z pliku maszynisci.json, edytowalny. */
