@@ -24,29 +24,41 @@ const newId = () =>
 
 export function ReservePanel({ reserves, onChange, drivers, load, count }: Props) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [warn, setWarn] = useState("");
+
+  // maszyniści już przypisani jako rezerwowi (nie można drugi raz)
+  const usedIds = new Set(reserves.map((r) => r.driverId).filter(Boolean) as string[]);
+  const usedNames = new Set(reserves.map((r) => r.name.toLowerCase()));
+  const available = drivers.filter(
+    (d) => !usedIds.has(d.id) && !usedNames.has(driverFullName(d).toLowerCase())
+  );
 
   const add = (station: BreakStation) => {
     const typed = (drafts[station] ?? "").trim();
     if (!typed) return;
-    // dopasuj do maszynisty z listy (po pełnej nazwie)
     const driver = drivers.find((d) => driverFullName(d).toLowerCase() === typed.toLowerCase());
-    onChange([
-      ...reserves,
-      { id: newId(), name: driver ? driverFullName(driver) : typed, station, driverId: driver?.id },
-    ]);
+    const name = driver ? driverFullName(driver) : typed;
+    const dup = driver ? usedIds.has(driver.id) || usedNames.has(name.toLowerCase()) : usedNames.has(name.toLowerCase());
+    if (dup) {
+      setWarn(`${name} jest już rezerwowy — nie można dodać drugi raz`);
+      return;
+    }
+    onChange([...reserves, { id: newId(), name, station, driverId: driver?.id }]);
     setDrafts((d) => ({ ...d, [station]: "" }));
+    setWarn("");
   };
   const remove = (id: string) => onChange(reserves.filter((r) => r.id !== id));
 
   return (
     <div className="reserve-panel">
       <datalist id="pm-roster">
-        {drivers.map((d) => (
+        {available.map((d) => (
           <option key={d.id} value={driverFullName(d)} />
         ))}
       </datalist>
 
       <h2>Rezerwowi na stacjach</h2>
+      {warn && <div className="rp-warn">⚠ {warn}</div>}
       {BREAK_STATIONS.map((st) => {
         const here = reserves.filter((r) => r.station === st);
         return (

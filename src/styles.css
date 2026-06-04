@@ -95,6 +95,7 @@ body {
   background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
   border-radius: 6px; padding: 5px; text-align: center; width: 100%;
 }
+.rp-warn { background: #3a1d1d; color: #ffb3b3; border-radius: 6px; padding: 6px 8px; font-size: 11px; margin-bottom: 10px; }
 .reserve-total { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
 .reserve-total strong { color: var(--text); font-size: 16px; }
 .hint { color: var(--green); }
