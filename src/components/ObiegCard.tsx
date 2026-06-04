@@ -17,6 +17,12 @@ function afternoonEntry(events: StationEvent[]): StationEvent {
 const KIND_SHORT: Record<string, string> = { "cała": "CAŁA", "połówka": "POŁ", "szczeniak": "SZCZ" };
 const DIR_ARROW: Record<string, string> = { Kabaty: "↓ Kabaty", Młociny: "↑ Młociny" };
 
+// okno wizualizacji pozycji przerwy: 14:00–20:00
+const WIN_FROM = 14 * 3600;
+const WIN_TO = 20 * 3600;
+const whenPct = (t: number) => Math.max(0, Math.min(100, ((t - WIN_FROM) / (WIN_TO - WIN_FROM)) * 100));
+const whenLabel = (p: number) => (p < 33 ? "wcześnie" : p < 66 ? "w połowie" : "późno");
+
 interface Props {
   obieg: Obieg;
   assignment?: BreakAssignment;
@@ -63,6 +69,12 @@ export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange }: P
               {reserve ? reserve.name : "⚠ BRAK"}
               {assignment.manual && <i className="oc-manual" title="ręcznie">✎</i>}
             </span>
+            <div
+              className="oc-when"
+              title={`${whenLabel(whenPct(assignment.startT))} (${HHMMSS(assignment.startT)})`}
+            >
+              <span className="when-dot" style={{ left: `${whenPct(assignment.startT)}%` }} />
+            </div>
           </>
         ) : (
           <span className="oc-placeholder">— przerwa —</span>

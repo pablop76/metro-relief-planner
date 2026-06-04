@@ -1,6 +1,9 @@
 import { useState } from "react";
-import { BREAK_STATIONS, MAX_RESERVE_LOAD_MIN, driverFullName } from "../lib/types";
-import type { Reserve, BreakStation, Driver } from "../lib/types";
+import { BREAK_STATIONS, MAX_RESERVE_LOAD_MIN, driverFullName, HHMMSS } from "../lib/types";
+import type { Reserve, BreakStation, Driver, BreakAssignment } from "../lib/types";
+
+// piktogram długości przerwy
+const KIND_GLYPH: Record<string, string> = { "cała": "●", "połówka": "◐", "szczeniak": "○" };
 
 const STATION_NAMES: Record<BreakStation, string> = {
   A1: "Kabaty",
@@ -16,13 +19,14 @@ interface Props {
   drivers: Driver[];
   load?: Record<string, number>;
   count?: Record<string, number>;
+  byReserve?: Record<string, BreakAssignment[]>;
 }
 
 const newId = () =>
   (crypto as Crypto & { randomUUID?: () => string }).randomUUID?.() ??
   `r${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
-export function ReservePanel({ reserves, onChange, drivers, load, count }: Props) {
+export function ReservePanel({ reserves, onChange, drivers, load, count, byReserve }: Props) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [warn, setWarn] = useState("");
 
@@ -73,15 +77,32 @@ export function ReservePanel({ reserves, onChange, drivers, load, count }: Props
                 const min = load?.[r.id] ?? 0;
                 const c = count?.[r.id] ?? 0;
                 const full = min >= MAX_RESERVE_LOAD_MIN;
+                const jobs = byReserve?.[r.id] ?? [];
                 return (
                   <li key={r.id} className={full ? "rp-full" : ""}>
-                    <span className="rp-nm">{r.name}</span>
-                    <span className="rp-load" title="podmiany · minuty">
-                      {c}× · {min}′
-                    </span>
-                    <button className="rp-x" onClick={() => remove(r.id)} title="usuń">
-                      ×
-                    </button>
+                    <div className="rp-row1">
+                      <span className="rp-nm">{r.name}</span>
+                      <span className="rp-load" title="podmiany · minuty">
+                        {c}× · {min}′
+                      </span>
+                      <button className="rp-x" onClick={() => remove(r.id)} title="usuń">
+                        ×
+                      </button>
+                    </div>
+                    {jobs.length > 0 && (
+                      <div className="rp-jobs">
+                        {jobs.map((a) => (
+                          <span
+                            key={a.obiegId}
+                            className={`rp-job kind-${a.kind}`}
+                            title={`${a.kind} ${a.durationMin}′ o ${HHMMSS(a.startT)} (${a.station})`}
+                          >
+                            <i className="rp-job-g">{KIND_GLYPH[a.kind]}</i>
+                            {a.obiegId}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </li>
                 );
               })}

@@ -228,3 +228,26 @@ body {
 .dm-table input:focus { outline: none; border-color: var(--accent); }
 .dm-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; }
 .dm-del:hover { color: var(--red); }
+
+/* --- pasek pozycji przerwy (wcześnie ↔ późno) --- */
+.oc-when {
+  position: relative; height: 4px; width: 86%; margin: 5px auto 0; border-radius: 2px;
+  background: linear-gradient(90deg, var(--green), var(--olive) 55%, var(--red));
+}
+.when-dot {
+  position: absolute; top: 50%; width: 8px; height: 8px; border-radius: 50%;
+  background: #fff; border: 1px solid #000; transform: translate(-50%, -50%);
+}
+
+/* --- chipy podmian przy nazwisku rezerwowego --- */
+.rp-names li { flex-direction: column; align-items: stretch; gap: 4px; }
+.rp-row1 { display: flex; align-items: center; gap: 6px; }
+.rp-jobs { display: flex; flex-wrap: wrap; gap: 3px; }
+.rp-job {
+  display: inline-flex; align-items: center; gap: 2px; font-size: 10px;
+  padding: 1px 5px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border);
+}
+.rp-job-g { font-style: normal; font-size: 9px; }
+.rp-job.kind-cała .rp-job-g { color: var(--green); }
+.rp-job.kind-połówka .rp-job-g { color: var(--olive); }
+.rp-job.kind-szczeniak .rp-job-g { color: #1f6feb; }

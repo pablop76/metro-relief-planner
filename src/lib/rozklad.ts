@@ -37,6 +37,8 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
 
   const byId = new Map<string, StationEvent[]>();
   const firstRow = new Map<string, number>();
+  // sekwencja odjazdów z A1 (północ) wg wierszy — do kolejności „wszystkie na linii"
+  const seq: { ob: string; t: number | null }[] = [];
 
   // pary [kolumna, stacja, kierunek]
   const northCols: [number, BreakStation][] = [
@@ -52,6 +54,7 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
     const id = (r[COL.obieg] ?? "").toString().trim();
     if (!VALID_OBIEG.test(id)) continue;
     if (!firstRow.has(id)) firstRow.set(id, i);
+    seq.push({ ob: id, t: parseTime(r[COL.n_A1]) });
 
     const ev = byId.get(id) ?? [];
     const pushDir = (cols: [number, BreakStation][], dir: Dir) => {
@@ -68,6 +71,17 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
     byId.set(id, ev);
   }
 
+  // kolejność „wszystkie na linii": od odjazdu obiegu „1" z A1 po 13:45 zbieramy kolejne unikalne obiegi
+  const total = byId.size;
+  const T_1345 = 13 * 3600 + 45 * 60;
+  const anchor = seq.findIndex((s) => s.ob === "1" && s.t != null && s.t >= T_1345);
+  const orderMap = new Map<string, number>();
+  if (anchor >= 0) {
+    for (let i = anchor; i < seq.length && orderMap.size < total; i++) {
+      if (!orderMap.has(seq[i].ob)) orderMap.set(seq[i].ob, orderMap.size);
+    }
+  }
+
   const obiegi: Obieg[] = [];
   for (const [id, ev] of byId) {
     ev.sort((a, b) => a.t - b.t);
@@ -79,10 +93,11 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
       firstT: ev[0].t,
       lastT: ev[ev.length - 1].t,
       firstRow: firstRow.get(id) ?? 0,
+      // brak w sekwencji → na koniec, wg wiersza
+      seqOrder: orderMap.get(id) ?? total + (firstRow.get(id) ?? 0),
     });
   }
-  // kolejność wg rozkładu = pierwsze wystąpienie obiegu w xlsx
-  obiegi.sort((a, b) => a.firstRow - b.firstRow);
+  obiegi.sort((a, b) => a.seqOrder - b.seqOrder);
   return obiegi;
 }
 

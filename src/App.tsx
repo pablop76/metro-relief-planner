@@ -14,7 +14,7 @@ const LS = {
   manual: "pm_manual",
   drivers: "pm_drivers",
   delay: "pm_global_delay",
-  order: "pm_order2", // v2: kolejność wg Kabat po 13:45
+  order: "pm_order3", // v3: kolejność wg seqOrder (sekwencja odjazdów po 13:45)
 };
 
 function loadLS<T>(key: string, fallback: T): T {
@@ -37,18 +37,9 @@ function shift(o: Obieg, sec: number): Obieg {
   };
 }
 
-const KABATY_AFTER = 13 * 3600 + 45 * 60; // 13:45
-
-/** Klucz kolejności: pierwszy przejazd przez Kabaty (A1) na północ po 13:45. */
-function kabatyKey(o: Obieg): number {
-  const e = o.events.find((ev) => ev.station === "A1" && ev.dir === "Młociny" && ev.t >= KABATY_AFTER);
-  return e ? e.t : Number.MAX_SAFE_INTEGER;
-}
-
-/** Domyślna kolejność: obieg „1" pierwszy, dalej wg przejazdu przez Kabaty po 13:45. */
+/** Domyślna kolejność: wg seqOrder z parsera (obieg 1 pierwszy, dalej „wszystkie na linii"). */
 function defaultOrder(obiegi: Obieg[]): string[] {
-  const ids = [...obiegi].sort((a, b) => kabatyKey(a) - kabatyKey(b)).map((o) => o.id);
-  return ["1", ...ids.filter((id) => id !== "1")].filter((id) => ids.includes(id));
+  return [...obiegi].sort((a, b) => a.seqOrder - b.seqOrder).map((o) => o.id);
 }
 
 function computeLoads(assignments: Record<string, BreakAssignment>) {
@@ -195,6 +186,12 @@ export default function App() {
   };
 
   const { load, count } = useMemo(() => computeLoads(assignments), [assignments]);
+  const byReserve = useMemo(() => {
+    const m: Record<string, BreakAssignment[]> = {};
+    for (const a of Object.values(assignments)) if (a.reserveId) (m[a.reserveId] ??= []).push(a);
+    for (const k in m) m[k].sort((x, y) => x.startT - y.startT);
+    return m;
+  }, [assignments]);
   const unassigned = Object.values(assignments).filter((a) => !a.reserveId).length;
   const planned = Object.values(assignments).filter((a) => a.reserveId).length;
   const def = defaultOrder(obiegi);
@@ -303,6 +300,7 @@ export default function App() {
             drivers={drivers}
             load={load}
             count={count}
+            byReserve={byReserve}
           />
         </aside>
       </div>
