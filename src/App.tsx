@@ -14,7 +14,7 @@ const LS = {
   manual: "pm_manual",
   drivers: "pm_drivers",
   delay: "pm_global_delay",
-  order: "pm_order3", // v3: kolejność wg seqOrder (sekwencja odjazdów po 13:45)
+  order: "pm_order4", // v4: kolejność wg seqOrder + reset starej z pamięci
   sbW: "pm_sb_w",
   sbCol: "pm_sb_col",
 };
