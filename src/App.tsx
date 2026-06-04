@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { parseObiegi, readWorkbook } from "./lib/rozklad";
-import { planBreaks, afternoonEntryT } from "./lib/engine";
+import { planBreaks } from "./lib/engine";
 import type { Obieg, Reserve, BreakAssignment, Driver } from "./lib/types";
 import * as XLSX from "xlsx";
 import { ReservePanel } from "./components/ReservePanel";
@@ -14,7 +14,7 @@ const LS = {
   manual: "pm_manual",
   drivers: "pm_drivers",
   delay: "pm_global_delay",
-  order: "pm_order",
+  order: "pm_order2", // v2: kolejność wg Kabat po 13:45
 };
 
 function loadLS<T>(key: string, fallback: T): T {
@@ -37,11 +37,17 @@ function shift(o: Obieg, sec: number): Obieg {
   };
 }
 
-/** Domyślna kolejność: obieg „1" pierwszy, dalej rosnąco wg godziny wjazdu na linię. */
+const KABATY_AFTER = 13 * 3600 + 45 * 60; // 13:45
+
+/** Klucz kolejności: pierwszy przejazd przez Kabaty (A1) na północ po 13:45. */
+function kabatyKey(o: Obieg): number {
+  const e = o.events.find((ev) => ev.station === "A1" && ev.dir === "Młociny" && ev.t >= KABATY_AFTER);
+  return e ? e.t : Number.MAX_SAFE_INTEGER;
+}
+
+/** Domyślna kolejność: obieg „1" pierwszy, dalej wg przejazdu przez Kabaty po 13:45. */
 function defaultOrder(obiegi: Obieg[]): string[] {
-  const ids = [...obiegi]
-    .sort((a, b) => afternoonEntryT(a) - afternoonEntryT(b))
-    .map((o) => o.id);
+  const ids = [...obiegi].sort((a, b) => kabatyKey(a) - kabatyKey(b)).map((o) => o.id);
   return ["1", ...ids.filter((id) => id !== "1")].filter((id) => ids.includes(id));
 }
 
