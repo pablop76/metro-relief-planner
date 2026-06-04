@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { parseObiegi, readWorkbook } from "./lib/rozklad";
-import { planBreaks } from "./lib/engine";
-import type { Obieg, Reserve, BreakAssignment } from "./lib/types";
+import { planBreaks, afternoonEntryT } from "./lib/engine";
+import type { Obieg, Reserve, BreakAssignment, Driver } from "./lib/types";
 import * as XLSX from "xlsx";
 import { ReservePanel } from "./components/ReservePanel";
 import { ObiegCard } from "./components/ObiegCard";
+import { DriversManager } from "./components/DriversManager";
 
 const DEFAULT_FILE = "/RJ_M1_A1_od_13_05_2026.xlsx";
+const DRIVERS_FILE = "/maszynisci.json";
 const LS = {
   res: "pm_reserves",
   manual: "pm_manual",
-  roster: "pm_roster",
+  drivers: "pm_drivers",
   delay: "pm_global_delay",
   order: "pm_order",
 };
@@ -35,9 +37,11 @@ function shift(o: Obieg, sec: number): Obieg {
   };
 }
 
-/** Domyślna kolejność: obieg „1" pierwszy, dalej wg rozkładu (kolejność z xlsx). */
+/** Domyślna kolejność: obieg „1" pierwszy, dalej rosnąco wg godziny wjazdu na linię. */
 function defaultOrder(obiegi: Obieg[]): string[] {
-  const ids = obiegi.map((o) => o.id);
+  const ids = [...obiegi]
+    .sort((a, b) => afternoonEntryT(a) - afternoonEntryT(b))
+    .map((o) => o.id);
   return ["1", ...ids.filter((id) => id !== "1")].filter((id) => ids.includes(id));
 }
 
@@ -56,7 +60,8 @@ export default function App() {
   const [wb, setWb] = useState<XLSX.WorkBook | null>(null);
   const [sheet, setSheet] = useState<string>("");
   const [reserves, setReserves] = useState<Reserve[]>(() => loadLS<Reserve[]>(LS.res, []));
-  const [roster, setRoster] = useState<string[]>(() => loadLS<string[]>(LS.roster, []));
+  const [drivers, setDrivers] = useState<Driver[]>(() => loadLS<Driver[]>(LS.drivers, []));
+  const [showDrivers, setShowDrivers] = useState(false);
   const [manual, setManual] = useState<Record<string, BreakAssignment>>(() =>
     loadLS<Record<string, BreakAssignment>>(LS.manual, {})
   );
@@ -79,6 +84,23 @@ export default function App() {
       })
       .catch((e) => setError(String(e.message ?? e)));
   }, []);
+
+  // lista maszynistów: z localStorage, a gdy pusta — domyślna z pliku
+  useEffect(() => {
+    if (drivers.length) return;
+    fetch(DRIVERS_FILE)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d: Driver[]) => Array.isArray(d) && d.length && setDrivers(d))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const restoreDrivers = () => {
+    fetch(DRIVERS_FILE)
+      .then((r) => r.json())
+      .then((d: Driver[]) => setDrivers(d))
+      .catch(() => {});
+  };
 
   const obiegi: Obieg[] = useMemo(() => {
     if (!wb || !sheet) return [];
@@ -125,7 +147,7 @@ export default function App() {
 
   useEffect(() => localStorage.setItem(LS.res, JSON.stringify(reserves)), [reserves]);
   useEffect(() => localStorage.setItem(LS.manual, JSON.stringify(manual)), [manual]);
-  useEffect(() => localStorage.setItem(LS.roster, JSON.stringify(roster)), [roster]);
+  useEffect(() => localStorage.setItem(LS.drivers, JSON.stringify(drivers)), [drivers]);
   useEffect(() => localStorage.setItem(LS.delay, JSON.stringify(globalDelay)), [globalDelay]);
   useEffect(() => localStorage.setItem(LS.order, JSON.stringify(order)), [order]);
 
@@ -213,12 +235,24 @@ export default function App() {
               Reset kolejności
             </button>
           )}
+          <button className="btn-drivers" onClick={() => setShowDrivers(true)}>
+            👤 Maszyniści ({drivers.length})
+          </button>
           <label className="file-btn">
             Wczytaj rozkład…
             <input type="file" accept=".xlsx" onChange={onFile} hidden />
           </label>
         </div>
       </header>
+
+      {showDrivers && (
+        <DriversManager
+          drivers={drivers}
+          onChange={setDrivers}
+          onRestore={restoreDrivers}
+          onClose={() => setShowDrivers(false)}
+        />
+      )}
 
       {error && <div className="error">⚠ {error}</div>}
 
@@ -260,8 +294,7 @@ export default function App() {
           <ReservePanel
             reserves={reserves}
             onChange={setReserves}
-            roster={roster}
-            onRosterChange={setRoster}
+            drivers={drivers}
             load={load}
             count={count}
           />

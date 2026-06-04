@@ -34,11 +34,25 @@ export interface Obieg {
   firstRow: number;
 }
 
+/** Maszynista (stała lista wszystkich) — z pliku maszynisci.json, edytowalny. */
+export interface Driver {
+  id: string;
+  imie: string;
+  nazwisko: string;
+  /** numer prawa kierowania pojazdem metra */
+  nrPrawa: string;
+  telefon: string;
+}
+
+export const driverFullName = (d: Driver): string => `${d.imie} ${d.nazwisko}`.trim();
+
 /** Maszynista rezerwowy (imienny) z macierzystą stacją. */
 export interface Reserve {
   id: string;
   name: string;
   station: BreakStation;
+  /** powiązanie z maszynistą z listy (telefon/nr prawa do powiadomień) */
+  driverId?: string;
 }
 
 /** Pula rezerwowych — lista imienna. */

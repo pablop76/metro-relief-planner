@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { BREAK_STATIONS, MAX_RESERVE_LOAD_MIN } from "../lib/types";
-import type { Reserve, BreakStation } from "../lib/types";
+import { BREAK_STATIONS, MAX_RESERVE_LOAD_MIN, driverFullName } from "../lib/types";
+import type { Reserve, BreakStation, Driver } from "../lib/types";
 
 const STATION_NAMES: Record<BreakStation, string> = {
   A1: "Kabaty",
@@ -13,8 +13,7 @@ const STATION_NAMES: Record<BreakStation, string> = {
 interface Props {
   reserves: Reserve[];
   onChange: (r: Reserve[]) => void;
-  roster: string[];
-  onRosterChange: (r: string[]) => void;
+  drivers: Driver[];
   load?: Record<string, number>;
   count?: Record<string, number>;
 }
@@ -23,69 +22,29 @@ const newId = () =>
   (crypto as Crypto & { randomUUID?: () => string }).randomUUID?.() ??
   `r${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
-export function ReservePanel({ reserves, onChange, roster, onRosterChange, load, count }: Props) {
+export function ReservePanel({ reserves, onChange, drivers, load, count }: Props) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [rosterDraft, setRosterDraft] = useState("");
-  const [showRoster, setShowRoster] = useState(false);
-
-  const ensureInRoster = (name: string) => {
-    if (name && !roster.includes(name)) onRosterChange([...roster, name]);
-  };
 
   const add = (station: BreakStation) => {
-    const name = (drafts[station] ?? "").trim();
-    if (!name) return;
-    onChange([...reserves, { id: newId(), name, station }]);
-    ensureInRoster(name);
+    const typed = (drafts[station] ?? "").trim();
+    if (!typed) return;
+    // dopasuj do maszynisty z listy (po pełnej nazwie)
+    const driver = drivers.find((d) => driverFullName(d).toLowerCase() === typed.toLowerCase());
+    onChange([
+      ...reserves,
+      { id: newId(), name: driver ? driverFullName(driver) : typed, station, driverId: driver?.id },
+    ]);
     setDrafts((d) => ({ ...d, [station]: "" }));
   };
   const remove = (id: string) => onChange(reserves.filter((r) => r.id !== id));
 
-  const addToRoster = () => {
-    const name = rosterDraft.trim();
-    if (!name || roster.includes(name)) return setRosterDraft("");
-    onRosterChange([...roster, name]);
-    setRosterDraft("");
-  };
-  const removeFromRoster = (name: string) => onRosterChange(roster.filter((n) => n !== name));
-
   return (
     <div className="reserve-panel">
-      {/* lista maszynistów (źródło podpowiedzi) */}
       <datalist id="pm-roster">
-        {roster.map((n) => (
-          <option key={n} value={n} />
+        {drivers.map((d) => (
+          <option key={d.id} value={driverFullName(d)} />
         ))}
       </datalist>
-
-      <div className="rp-roster">
-        <button className="rp-roster-toggle" onClick={() => setShowRoster((s) => !s)}>
-          {showRoster ? "▾" : "▸"} Lista maszynistów ({roster.length})
-        </button>
-        {showRoster && (
-          <div className="rp-roster-body">
-            <div className="rp-add">
-              <input
-                placeholder="+ maszynista do listy"
-                value={rosterDraft}
-                onChange={(e) => setRosterDraft(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addToRoster()}
-              />
-              <button onClick={addToRoster}>Dodaj</button>
-            </div>
-            <div className="rp-chips">
-              {roster.map((n) => (
-                <span key={n} className="rp-chip">
-                  {n}
-                  <button onClick={() => removeFromRoster(n)} title="usuń z listy">
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
 
       <h2>Rezerwowi na stacjach</h2>
       {BREAK_STATIONS.map((st) => {
@@ -118,7 +77,7 @@ export function ReservePanel({ reserves, onChange, roster, onRosterChange, load,
             <div className="rp-add">
               <input
                 list="pm-roster"
-                placeholder="+ wybierz lub wpisz"
+                placeholder="+ wybierz maszynistę"
                 value={drafts[st] ?? ""}
                 onChange={(e) => setDrafts((d) => ({ ...d, [st]: e.target.value }))}
                 onKeyDown={(e) => e.key === "Enter" && add(st)}

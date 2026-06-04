@@ -189,3 +189,41 @@ body {
 }
 .rp-chip button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
 .rp-chip button:hover { color: var(--red); }
+
+/* --- przycisk maszynistów + modal --- */
+.btn-drivers {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 13px;
+}
+.btn-drivers:hover { border-color: var(--accent); }
+
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, .6); z-index: 100;
+  display: grid; place-items: center; padding: 24px;
+}
+.modal {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  width: min(880px, 100%); max-height: 86vh; display: flex; flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+}
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.modal-head h2 { margin: 0; font-size: 16px; }
+.modal-x { background: none; border: none; color: var(--muted); font-size: 24px; cursor: pointer; line-height: 1; }
+.modal-x:hover { color: var(--text); }
+.dm-toolbar { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+.dm-toolbar button {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 7px; padding: 6px 12px; cursor: pointer; font-size: 12px;
+}
+.dm-toolbar button:hover { border-color: var(--accent); }
+.dm-table-wrap { overflow: auto; padding: 8px 18px 18px; }
+.dm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dm-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 8px; position: sticky; top: 0; background: var(--panel); }
+.dm-table td { padding: 3px 8px; }
+.dm-table input {
+  width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 5px; padding: 5px 7px; font-size: 12px;
+}
+.dm-table input:focus { outline: none; border-color: var(--accent); }
+.dm-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; }
+.dm-del:hover { color: var(--red); }
