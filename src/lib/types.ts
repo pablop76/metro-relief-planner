@@ -88,10 +88,13 @@ export interface BreakAssignment {
   manual?: boolean;
 }
 
+/** Maksymalna liczba przerw na jeden obieg (R16). */
+export const MAX_BREAKS_PER_OBIEG = 2;
+
 /** Wynik planowania. */
 export interface PlanResult {
-  /** klucz = id obiegu */
-  assignments: Record<string, BreakAssignment>;
+  /** klucz = id obiegu → LISTA przerw (R16: obieg może mieć kilka) */
+  assignments: Record<string, BreakAssignment[]>;
   /** obiegi bez obsadzonego rezerwowego */
   unassigned: string[];
   /** obciążenie rezerwowych w minutach: klucz = reserveId */

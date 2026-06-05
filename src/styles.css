@@ -77,7 +77,31 @@ body {
 .type-D .oc-id { color: var(--olive); }
 
 .oc-body { flex: 1; display: grid; place-items: center; padding: 6px; }
-.oc-placeholder { color: #555b66; font-size: 11px; }
+.oc-placeholder { color: #555b66; font-size: 11px; text-align: center; }
+
+/* --- wiele przerw na karcie (R16) --- */
+.oc-breaks { flex: 1; display: flex; flex-direction: column; gap: 3px; padding: 4px; }
+.oc-brk {
+  border-radius: 5px; padding: 3px 5px; cursor: pointer; background: var(--panel-2);
+  display: flex; flex-direction: column; gap: 1px; transition: background .12s; text-align: center;
+}
+.oc-brk:hover { background: #262b35; }
+.oc-brk.open { outline: 1px solid var(--accent); }
+.oc-brk.kind-cała { box-shadow: inset 3px 0 0 var(--green); }
+.oc-brk.kind-połówka { box-shadow: inset 3px 0 0 var(--olive); }
+.oc-brk.kind-szczeniak { box-shadow: inset 3px 0 0 #1f6feb; }
+.oc-brk.is-brak { box-shadow: inset 3px 0 0 var(--red); }
+.oc-brk.is-brak .oc-res { color: var(--red); }
+.oc-brk-top { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: wrap; }
+.oc-add {
+  background: none; border: 1px dashed var(--border); color: var(--muted); border-radius: 5px;
+  padding: 2px; cursor: pointer; font-size: 10px;
+}
+.oc-add:hover { border-color: var(--accent); color: var(--text); }
+.be-actions { display: flex; gap: 6px; }
+.be-remove { background: #3a1d1d; color: #ffb3b3; border: 1px solid #5a2a2a; border-radius: 5px; padding: 3px 8px; cursor: pointer; font-size: 11px; flex: 1; }
+.be-remove:hover { background: #4a2525; }
+.be-actions .be-close { flex: 1; }
 
 .oc-foot { padding: 6px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: center; gap: 4px; }
 .oc-exit { font-size: 11px; color: var(--muted); }

@@ -1,7 +1,7 @@
 import type {
   Obieg, Reserve, BreakAssignment, PlanResult, BreakKind, Dir, BreakStation,
 } from "./types";
-import { MAX_RESERVE_LOAD_MIN } from "./types";
+import { MAX_RESERVE_LOAD_MIN, MAX_BREAKS_PER_OBIEG } from "./types";
 import { STATIONS, DURATION, DOWNGRADE, stationSupports } from "./stations";
 
 const hms = (h: number, m: number) => h * 3600 + m * 60;
@@ -112,36 +112,54 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     ref: r, loadMin: 0, count: 0, busyUntil: 0, station: r.station,
   }));
 
-  const assignments: Record<string, BreakAssignment> = {};
+  const assignments: Record<string, BreakAssignment[]> = {};
+  const driverFreeAt: Record<string, number> = {}; // kiedy maszynista obiegu wraca z ostatniej przerwy
   const unassigned: string[] = [];
-  const handled = new Set<string>(); // obiegi obsłużone pinem
 
-  // 0. PINY — wymuś wskazanego rezerwowego na konkretnym obiegu (na jego stacji).
+  const commit = (o: Obieg, slot: Slot, r: RState, manual = false) => {
+    r.busyUntil = slot.startT + slot.durationMin * 60;
+    r.loadMin += slot.durationMin;
+    r.count += 1;
+    (assignments[o.id] ??= []).push({
+      obiegId: o.id, station: slot.station, dir: slot.dir, startT: slot.startT,
+      kind: slot.kind, durationMin: slot.durationMin, reserveId: r.ref.id, manual,
+    });
+    driverFreeAt[o.id] = slot.startT + slot.durationMin * 60;
+  };
+
+  // Próba przydzielenia obiegowi (kolejnej) przerwy PO powrocie maszynisty; byTime → najwcześniejszy slot.
+  const tryAssign = (o: Obieg, byTime: boolean): boolean => {
+    const after = driverFreeAt[o.id] ?? 0;
+    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(desiredKind(o)))) {
+      const slots = candidateSlots(o, kind, earliest, latest)
+        .filter((s) => s.startT >= after)
+        .sort((a, b) => (byTime ? a.startT - b.startT : score(a) - score(b)));
+      for (const slot of slots) {
+        const r = pickReserve(rs, slot);
+        if (r) { commit(o, slot, r); return true; }
+      }
+    }
+    return false;
+  };
+
+  // 0. PINY — wymuś wskazanego rezerwowego na obiegu (na jego stacji, blisko 14:30).
   for (const r of rs) {
     const pinId = r.ref.pin;
     if (!pinId || r.ref.blocked) continue;
     const o = obiegi.find((x) => x.id === pinId);
     if (!o) continue;
-    const kinds = DOWNGRADE.slice(DOWNGRADE.indexOf(desiredKind(o)));
-    let done = false;
-    for (const kind of kinds) {
+    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(desiredKind(o)))) {
       const slots = candidateSlots(o, kind, earliest, latest)
-        .filter((s) => s.station === r.station) // pin tylko gdy obieg jest na stacji rezerwowego
+        .filter((s) => s.station === r.station)
         .sort((a, b) => score(a) - score(b));
+      let done = false;
       for (const slot of slots) {
         if (
           r.busyUntil <= slot.startT &&
           r.loadMin + slot.durationMin <= MAX_RESERVE_LOAD_MIN &&
           (r.ref.maxJobs == null || r.count < r.ref.maxJobs)
         ) {
-          r.busyUntil = slot.startT + slot.durationMin * 60;
-          r.loadMin += slot.durationMin;
-          r.count += 1;
-          assignments[o.id] = {
-            obiegId: o.id, station: slot.station, dir: slot.dir, startT: slot.startT,
-            kind: slot.kind, durationMin: slot.durationMin, reserveId: r.ref.id, manual: true,
-          };
-          handled.add(o.id);
+          commit(o, slot, r, true);
           done = true;
           break;
         }
@@ -150,43 +168,33 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     }
   }
 
+  // 1. POKRYCIE — każdy obieg dostaje ≥1 przerwę (najbliżej 14:30); inaczej BRAK.
   for (const o of order) {
-    if (handled.has(o.id)) continue;
-    const desired = desiredKind(o);
-    const kinds = DOWNGRADE.slice(DOWNGRADE.indexOf(desired)); // od pożądanego w dół
-    let placed = false;
-    let fallback: Slot | null = null;
-
-    for (const kind of kinds) {
-      const slots = candidateSlots(o, kind, earliest, latest).sort((a, b) => score(a) - score(b));
-      if (slots.length && !fallback) fallback = slots[0];
-      for (const slot of slots) {
-        const r = pickReserve(rs, slot);
-        if (!r) continue;
-        // przydziel
-        r.busyUntil = slot.startT + slot.durationMin * 60;
-        r.loadMin += slot.durationMin;
-        r.count += 1;
-        r.station = slot.station; // po pętli wraca na tę stację
-        assignments[o.id] = {
-          obiegId: o.id, station: slot.station, dir: slot.dir, startT: slot.startT,
-          kind: slot.kind, durationMin: slot.durationMin, reserveId: r.ref.id,
-        };
-        placed = true;
-        break;
-      }
-      if (placed) break;
+    if (assignments[o.id]?.length) continue; // już ma (pin)
+    if (tryAssign(o, false)) continue;
+    let fb: Slot | null = null;
+    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(desiredKind(o)))) {
+      const s = candidateSlots(o, kind, earliest, latest).sort((a, b) => score(a) - score(b))[0];
+      if (s) { fb = s; break; }
     }
+    if (fb) {
+      assignments[o.id] = [{
+        obiegId: o.id, station: fb.station, dir: fb.dir, startT: fb.startT,
+        kind: fb.kind, durationMin: fb.durationMin, reserveId: null,
+      }];
+    }
+    unassigned.push(o.id);
+  }
 
-    if (!placed) {
-      // brak wolnego rezerwowego — pokaż zamierzoną przerwę bez obsady
-      if (fallback) {
-        assignments[o.id] = {
-          obiegId: o.id, station: fallback.station, dir: fallback.dir, startT: fallback.startT,
-          kind: fallback.kind, durationMin: fallback.durationMin, reserveId: null,
-        };
-      }
-      unassigned.push(o.id);
+  // 2. R16 — DODATKOWE przerwy (maks. wykorzystanie rezerwowych), do MAX_BREAKS_PER_OBIEG na obieg.
+  let progress = true;
+  while (progress) {
+    progress = false;
+    for (const o of order) {
+      const cur = assignments[o.id];
+      if (!cur || cur.length === 0 || cur.length >= MAX_BREAKS_PER_OBIEG) continue;
+      if (cur.some((a) => !a.reserveId)) continue; // BRAK — nie dokładaj
+      if (tryAssign(o, true)) progress = true;
     }
   }
 

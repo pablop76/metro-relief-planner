@@ -46,14 +46,15 @@ function defaultOrder(obiegi: Obieg[]): string[] {
   return [...obiegi].sort((a, b) => a.seqOrder - b.seqOrder).map((o) => o.id);
 }
 
-function computeLoads(assignments: Record<string, BreakAssignment>) {
+function computeLoads(assignments: Record<string, BreakAssignment[]>) {
   const load: Record<string, number> = {};
   const count: Record<string, number> = {};
-  for (const a of Object.values(assignments)) {
-    if (!a.reserveId) continue;
-    load[a.reserveId] = (load[a.reserveId] ?? 0) + a.durationMin;
-    count[a.reserveId] = (count[a.reserveId] ?? 0) + 1;
-  }
+  for (const list of Object.values(assignments))
+    for (const a of list) {
+      if (!a.reserveId) continue;
+      load[a.reserveId] = (load[a.reserveId] ?? 0) + a.durationMin;
+      count[a.reserveId] = (count[a.reserveId] ?? 0) + 1;
+    }
   return { load, count };
 }
 
@@ -63,10 +64,10 @@ export default function App() {
   const [reserves, setReserves] = useState<Reserve[]>(() => loadLS<Reserve[]>(LS.res, []));
   const [drivers, setDrivers] = useState<Driver[]>(() => loadLS<Driver[]>(LS.drivers, []));
   const [showDrivers, setShowDrivers] = useState(false);
-  const [manual, setManual] = useState<Record<string, BreakAssignment>>(() =>
-    loadLS<Record<string, BreakAssignment>>(LS.manual, {})
+  const [manual, setManual] = useState<Record<string, BreakAssignment[]>>(() =>
+    loadLS<Record<string, BreakAssignment[]>>(LS.manual, {})
   );
-  const [assignments, setAssignments] = useState<Record<string, BreakAssignment>>({});
+  const [assignments, setAssignments] = useState<Record<string, BreakAssignment[]>>({});
   const [trainNumbers, setTrainNumbers] = useState<Record<string, string>>(() =>
     loadLS<Record<string, string>>(LS.trains, {})
   );
@@ -161,7 +162,7 @@ export default function App() {
   const generate = (currentManual = manual) => {
     if (!delayed.length) return;
     const res = planBreaks(delayed, reserves);
-    const merged: Record<string, BreakAssignment> = { ...res.assignments };
+    const merged: Record<string, BreakAssignment[]> = { ...res.assignments };
     for (const [id, a] of Object.entries(currentManual)) merged[id] = a;
     setAssignments(merged);
     setPlanDirty(false);
@@ -190,9 +191,10 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.sbW, JSON.stringify(sidebarWidth)), [sidebarWidth]);
   useEffect(() => localStorage.setItem(LS.sbCol, JSON.stringify(sbCollapsed)), [sbCollapsed]);
 
-  const onAssignmentChange = (a: BreakAssignment) => {
-    setManual((m) => ({ ...m, [a.obiegId]: a }));
-    setAssignments((prev) => ({ ...prev, [a.obiegId]: a }));
+  // ręczna zmiana całej listy przerw obiegu (edycja/dodanie/usunięcie) — utrwala jako override
+  const onBreaksChange = (obiegId: string, breaks: BreakAssignment[]) => {
+    setManual((m) => ({ ...m, [obiegId]: breaks }));
+    setAssignments((prev) => ({ ...prev, [obiegId]: breaks }));
   };
 
   const resetManual = () => {
@@ -230,12 +232,14 @@ export default function App() {
   const { load, count } = useMemo(() => computeLoads(assignments), [assignments]);
   const byReserve = useMemo(() => {
     const m: Record<string, BreakAssignment[]> = {};
-    for (const a of Object.values(assignments)) if (a.reserveId) (m[a.reserveId] ??= []).push(a);
+    for (const list of Object.values(assignments))
+      for (const a of list) if (a.reserveId) (m[a.reserveId] ??= []).push(a);
     for (const k in m) m[k].sort((x, y) => x.startT - y.startT);
     return m;
   }, [assignments]);
-  const unassigned = Object.values(assignments).filter((a) => !a.reserveId).length;
-  const planned = Object.values(assignments).filter((a) => a.reserveId).length;
+  const allBreaks = Object.values(assignments).flat();
+  const unassigned = allBreaks.filter((a) => !a.reserveId).length;
+  const planned = allBreaks.filter((a) => a.reserveId).length;
   const def = defaultOrder(obiegi);
   const orderChanged = order.length > 0 && order.some((id, i) => def[i] !== id);
   // dwa równe rzędy (jak w arkuszu): liczba kolumn = połowa obiegów
@@ -333,9 +337,9 @@ export default function App() {
               >
                 <ObiegCard
                   obieg={o}
-                  assignment={assignments[o.id]}
+                  breaks={assignments[o.id] ?? []}
                   reserves={reserves}
-                  onAssignmentChange={onAssignmentChange}
+                  onBreaksChange={(b) => onBreaksChange(o.id, b)}
                   trainNo={trainNumbers[o.id] ?? ""}
                   onTrainChange={(v) => setTrainNumbers((t) => ({ ...t, [o.id]: v }))}
                 />

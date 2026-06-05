@@ -9,10 +9,13 @@ interface Props {
   reserves: Reserve[];
   onChange: (a: BreakAssignment) => void;
   onClose: () => void;
+  onRemove?: () => void;
 }
 
-export function BreakEditor({ obieg, assignment, reserves, onChange, onClose }: Props) {
+export function BreakEditor({ obieg, assignment, reserves, onChange, onClose, onRemove }: Props) {
   const slots = useMemo(() => feasibleSlots(obieg), [obieg]);
+  // rezerwowy tylko z tej samej stacji co przerwa (rezerwowy podmienia tam, gdzie stoi)
+  const stationReserves = assignment ? reserves.filter((r) => r.station === assignment.station) : [];
 
   const currentSlotKey = assignment
     ? `${assignment.startT}|${assignment.station}|${assignment.kind}`
@@ -56,24 +59,31 @@ export function BreakEditor({ obieg, assignment, reserves, onChange, onClose }: 
       </label>
 
       <label>
-        Rezerwowy
+        Rezerwowy (stacja {assignment?.station})
         <select
           value={assignment?.reserveId ?? ""}
           onChange={(e) => pickReserve(e.target.value)}
           disabled={!assignment}
         >
           <option value="">— BRAK —</option>
-          {reserves.map((r) => (
+          {stationReserves.map((r) => (
             <option key={r.id} value={r.id}>
-              {r.name} ({r.station})
+              {r.name}
             </option>
           ))}
         </select>
       </label>
 
-      <button className="be-close" onClick={onClose}>
-        Zamknij
-      </button>
+      <div className="be-actions">
+        {onRemove && (
+          <button className="be-remove" onClick={onRemove}>
+            Usuń przerwę
+          </button>
+        )}
+        <button className="be-close" onClick={onClose}>
+          Zamknij
+        </button>
+      </div>
     </div>
   );
 }

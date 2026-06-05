@@ -2,6 +2,7 @@ import { useState } from "react";
 import { HHMMSS } from "../lib/types";
 import type { Obieg, StationEvent, BreakAssignment, Reserve } from "../lib/types";
 import { BreakEditor } from "./BreakEditor";
+import { feasibleSlots } from "../lib/engine";
 
 const NOON = 12 * 3600;
 
@@ -25,20 +26,40 @@ const whenLabel = (p: number) => (p < 33 ? "wcześnie" : p < 66 ? "w połowie" :
 
 interface Props {
   obieg: Obieg;
-  assignment?: BreakAssignment;
+  breaks: BreakAssignment[];
   reserves: Reserve[];
-  onAssignmentChange: (a: BreakAssignment) => void;
+  onBreaksChange: (breaks: BreakAssignment[]) => void;
   trainNo?: string;
   onTrainChange?: (v: string) => void;
 }
 
-export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange, trainNo, onTrainChange }: Props) {
-  const [open, setOpen] = useState(false);
+export function ObiegCard({ obieg, breaks, reserves, onBreaksChange, trainNo, onTrainChange }: Props) {
+  const [editIdx, setEditIdx] = useState<number | null>(null);
   const entry = afternoonEntry(obieg.events);
   const exit = obieg.events[obieg.events.length - 1];
   const isFull = obieg.type === "full";
-  const reserve = assignment?.reserveId ? reserves.find((r) => r.id === assignment.reserveId) : null;
-  const brak = assignment && !assignment.reserveId;
+
+  const sorted = [...breaks].sort((a, b) => a.startT - b.startT);
+
+  const updateBreak = (i: number, a: BreakAssignment) => {
+    const next = sorted.slice();
+    next[i] = a;
+    onBreaksChange(next);
+  };
+  const removeBreak = (i: number) => {
+    onBreaksChange(sorted.filter((_, k) => k !== i));
+    setEditIdx(null);
+  };
+  const addBreak = () => {
+    const s = feasibleSlots(obieg)[0];
+    if (!s) return;
+    const nb: BreakAssignment = {
+      obiegId: obieg.id, station: s.station, dir: s.dir, startT: s.startT,
+      kind: s.kind, durationMin: s.durationMin, reserveId: null, manual: true,
+    };
+    onBreaksChange([...sorted, nb]);
+    setEditIdx(sorted.length);
+  };
 
   return (
     <div className={`obieg-card type-${obieg.type}`}>
@@ -50,62 +71,58 @@ export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange, tra
             value={trainNo ?? ""}
             placeholder="poc."
             onChange={(e) => onTrainChange?.(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
             title="numer pociągu / składu"
           />
         </div>
         <span className="oc-entry">
-          {isFull ? (
-            <em>całodobowy</em>
-          ) : (
-            <>
-              {HHMMSS(entry.t)} <em>{entry.station}</em>
-            </>
-          )}
+          {isFull ? <em>całodobowy</em> : <>{HHMMSS(entry.t)} <em>{entry.station}</em></>}
         </span>
       </div>
 
-      <div
-        className={`oc-body${assignment ? ` kind-${assignment.kind}` : ""}${brak ? " is-brak" : ""}`}
-        onClick={() => setOpen((o) => !o)}
-        title="kliknij, aby edytować"
-      >
-        {assignment ? (
-          <>
-            <span className={`oc-kind kind-${assignment.kind}`}>{KIND_SHORT[assignment.kind]}</span>
-            <span className="oc-time">{HHMMSS(assignment.startT)}</span>
-            <span className="oc-stat">
-              {assignment.station} · {DIR_ARROW[assignment.dir]}
-            </span>
-            <span className="oc-res">
-              {reserve ? reserve.name : "⚠ BRAK"}
-              {assignment.manual && <i className="oc-manual" title="ręcznie">✎</i>}
-            </span>
+      <div className="oc-breaks">
+        {sorted.length === 0 && <span className="oc-placeholder">— brak —</span>}
+        {sorted.map((a, i) => {
+          const reserve = a.reserveId ? reserves.find((r) => r.id === a.reserveId) : null;
+          const brak = !a.reserveId;
+          return (
             <div
-              className="oc-when"
-              title={`${whenLabel(whenPct(assignment.startT))} (${HHMMSS(assignment.startT)})`}
+              key={i}
+              className={`oc-brk kind-${a.kind}${brak ? " is-brak" : ""}${editIdx === i ? " open" : ""}`}
+              onClick={() => setEditIdx(editIdx === i ? null : i)}
+              title="kliknij, aby edytować"
             >
-              <span className="when-dot" style={{ left: `${whenPct(assignment.startT)}%` }} />
+              <div className="oc-brk-top">
+                <span className={`oc-kind kind-${a.kind}`}>{KIND_SHORT[a.kind]}</span>
+                <span className="oc-time">{HHMMSS(a.startT)}</span>
+                <span className="oc-stat">{a.station} {DIR_ARROW[a.dir]}</span>
+              </div>
+              <span className="oc-res">
+                {reserve ? reserve.name : "⚠ BRAK"}
+                {a.manual && <i className="oc-manual" title="ręcznie">✎</i>}
+              </span>
+              <div className="oc-when" title={`${whenLabel(whenPct(a.startT))} (${HHMMSS(a.startT)})`}>
+                <span className="when-dot" style={{ left: `${whenPct(a.startT)}%` }} />
+              </div>
             </div>
-          </>
-        ) : (
-          <span className="oc-placeholder">— przerwa —</span>
-        )}
+          );
+        })}
+        <button className="oc-add" onClick={addBreak} title="dodaj kolejną przerwę">+ przerwa</button>
       </div>
 
-      {open && (
+      {editIdx !== null && sorted[editIdx] && (
         <BreakEditor
           obieg={obieg}
-          assignment={assignment}
+          assignment={sorted[editIdx]}
           reserves={reserves}
-          onChange={onAssignmentChange}
-          onClose={() => setOpen(false)}
+          onChange={(a) => updateBreak(editIdx, a)}
+          onClose={() => setEditIdx(null)}
+          onRemove={() => removeBreak(editIdx)}
         />
       )}
 
       <div className="oc-foot">
         {obieg.cleaning ? (
-          <span className="oc-clean">🧹 sprzątanie {exit.station}</span>
+          <span className="oc-clean">🧹 sprzątanie {exit.station} {HHMMSS(exit.t)}</span>
         ) : (
           <span className="oc-exit">zjazd na STP {HHMMSS(exit.t)}</span>
         )}
