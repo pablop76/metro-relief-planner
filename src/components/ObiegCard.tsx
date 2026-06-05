@@ -104,7 +104,7 @@ export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange, tra
       )}
 
       <div className="oc-foot">
-        <span className="oc-exit">ost. kurs {HHMMSS(exit.t)}</span>
+        <span className="oc-exit">zjazd na STP {HHMMSS(exit.t)}</span>
       </div>
     </div>
   );
