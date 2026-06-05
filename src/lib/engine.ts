@@ -86,7 +86,9 @@ function pickReserve(rs: RState[], slot: Slot): RState | null {
       (r.ref.maxJobs == null || r.count < r.ref.maxJobs)
   );
   if (eligible.length === 0) return null;
-  eligible.sort((a, b) => a.loadMin - b.loadMin || a.count - b.count);
+  // PAKOWANIE: najpierw dobijamy już pracujących (max wykorzystanie, do 6 połówek / limitu 4,5h),
+  // zostawiając świeżych rezerwowych wolnych na trudniejsze, późniejsze obiegi → lepsze pokrycie.
+  eligible.sort((a, b) => b.loadMin - a.loadMin || b.count - a.count);
   return eligible[0];
 }
 
@@ -97,9 +99,10 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const pref = opts.pref ?? PREF_START;
   const score = (s: Slot) => Math.abs(s.startT - pref);
 
-  // kolejność przetwarzania: zacznij od obiegu 1 → całodobowe (1..13) rosnąco, potem D, potem S.
-  // Całodobowe jeżdżą najdłużej, więc jako pierwsze łapią całe przerwy blisko 14:30 (R10).
-  const typeRank = (o: Obieg) => (o.type === "full" ? 0 : o.type === "D" ? 1 : 2);
+  // Kolejność przetwarzania: NAJPIERW szczyty (S) — są najbardziej ograniczone (połówka tylko na A11
+  // i krótkie okno), więc muszą złapać swoje połówki, zanim obiegi D/całodobowe zajmą A11.
+  // Potem całodobowe (1..13) i D — łapią całe na krańcówkach/A7/A18 (R10), tych S nie blokują.
+  const typeRank = (o: Obieg) => (o.type === "S" ? 0 : o.type === "full" ? 1 : 2);
   const numOf = (id: string) => parseInt(id.replace(/\D/g, ""), 10) || 0;
   const order = [...obiegi].sort(
     (a, b) => typeRank(a) - typeRank(b) || numOf(a.id) - numOf(b.id)
