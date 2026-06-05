@@ -72,7 +72,7 @@ body {
 }
 .oc-entry { font-size: 11px; color: var(--muted); text-align: center; }
 .oc-entry em { font-style: normal; color: var(--text); font-weight: 600; }
-.oc-id { font-size: 18px; font-weight: 700; }
+.oc-id { font-size: 12px; font-weight: 700; opacity: .85; }
 .type-S .oc-id { color: var(--red); }
 .type-D .oc-id { color: var(--olive); }
 
@@ -128,8 +128,8 @@ body {
 .oc-body:hover { background: var(--panel-2); }
 .oc-id-row { display: flex; align-items: center; justify-content: center; gap: 5px; }
 .oc-train {
-  width: 44px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-  border-radius: 4px; padding: 1px 4px; font-size: 11px; text-align: center;
+  width: 60px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 4px; font-size: 16px; font-weight: 700; text-align: center;
 }
 .oc-train:focus { outline: none; border-color: var(--accent); }
 .oc-train::placeholder { color: #565c66; }

@@ -36,7 +36,6 @@ export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange, tra
   const [open, setOpen] = useState(false);
   const entry = afternoonEntry(obieg.events);
   const exit = obieg.events[obieg.events.length - 1];
-  const a1has = obieg.a1North < Number.MAX_SAFE_INTEGER;
   const isFull = obieg.type === "full";
   const reserve = assignment?.reserveId ? reserves.find((r) => r.id === assignment.reserveId) : null;
   const brak = assignment && !assignment.reserveId;
@@ -56,11 +55,7 @@ export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange, tra
           />
         </div>
         <span className="oc-entry">
-          {a1has ? (
-            <>
-              <em>A1</em> {HHMMSS(obieg.a1North)}
-            </>
-          ) : isFull ? (
+          {isFull ? (
             <em>całodobowy</em>
           ) : (
             <>
