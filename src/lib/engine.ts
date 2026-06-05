@@ -142,29 +142,30 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     return false;
   };
 
-  // 0. PINY — wymuś wskazanego rezerwowego na obiegu (na jego stacji, blisko 14:30).
+  // 0. PINY — wymuszone obiegi do podmiany przez rezerwowego (po kolei, na jego stacji).
   for (const r of rs) {
-    const pinId = r.ref.pin;
-    if (!pinId || r.ref.blocked) continue;
-    const o = obiegi.find((x) => x.id === pinId);
-    if (!o) continue;
-    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(desiredKind(o)))) {
-      const slots = candidateSlots(o, kind, earliest, latest)
-        .filter((s) => s.station === r.station)
-        .sort((a, b) => score(a) - score(b));
+    if (r.ref.blocked) continue;
+    for (const pinId of r.ref.pins ?? []) {
+      const o = obiegi.find((x) => x.id === pinId);
+      if (!o) continue;
+      const after = Math.max(r.busyUntil, driverFreeAt[o.id] ?? 0);
       let done = false;
-      for (const slot of slots) {
-        if (
-          r.busyUntil <= slot.startT &&
-          r.loadMin + slot.durationMin <= MAX_RESERVE_LOAD_MIN &&
-          (r.ref.maxJobs == null || r.count < r.ref.maxJobs)
-        ) {
-          commit(o, slot, r, true);
-          done = true;
-          break;
+      for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(desiredKind(o)))) {
+        const slots = candidateSlots(o, kind, earliest, latest)
+          .filter((s) => s.station === r.station && s.startT >= after)
+          .sort((a, b) => score(a) - score(b));
+        for (const slot of slots) {
+          if (
+            r.loadMin + slot.durationMin <= MAX_RESERVE_LOAD_MIN &&
+            (r.ref.maxJobs == null || r.count < r.ref.maxJobs)
+          ) {
+            commit(o, slot, r, true);
+            done = true;
+            break;
+          }
         }
+        if (done) break;
       }
-      if (done) break;
     }
   }
 

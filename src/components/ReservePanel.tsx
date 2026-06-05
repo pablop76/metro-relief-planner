@@ -90,7 +90,9 @@ export function ReservePanel({ reserves, onChange, drivers, load, count, byReser
                       <span className="rp-nm">
                         {r.name}
                         {r.blocked && <i className="rp-badge rp-b-block" title="wykluczony">⊘</i>}
-                        {r.pin && <i className="rp-badge rp-b-pin" title={`przypisany do ${r.pin}`}>📌{r.pin}</i>}
+                        {(r.pins?.length ?? 0) > 0 && (
+                          <i className="rp-badge rp-b-pin" title={`obiegi: ${r.pins!.join(", ")}`}>📌{r.pins!.length}</i>
+                        )}
                         {r.maxJobs != null && <i className="rp-badge" title="limit podmian">≤{r.maxJobs}</i>}
                       </span>
                       <span className="rp-load" title="podmiany · minuty">
@@ -148,19 +150,38 @@ export function ReservePanel({ reserves, onChange, drivers, load, count, byReser
                           />
                         </label>
                         <label className="rp-cfg-row">
-                          Przypisz do obiegu
+                          Obiegi do podmiany
                           <select
-                            value={r.pin ?? ""}
-                            onChange={(e) => update(r.id, { pin: e.target.value || undefined })}
+                            value=""
+                            onChange={(e) => {
+                              if (e.target.value) update(r.id, { pins: [...(r.pins ?? []), e.target.value] });
+                            }}
                           >
-                            <option value="">— brak —</option>
-                            {(obiegIds ?? []).map((id) => (
-                              <option key={id} value={id}>
-                                {id}
-                              </option>
-                            ))}
+                            <option value="">+ dodaj…</option>
+                            {(obiegIds ?? [])
+                              .filter((id) => !(r.pins ?? []).includes(id))
+                              .map((id) => (
+                                <option key={id} value={id}>
+                                  {id}
+                                </option>
+                              ))}
                           </select>
                         </label>
+                        {(r.pins?.length ?? 0) > 0 && (
+                          <div className="rp-pin-chips">
+                            {r.pins!.map((id) => (
+                              <span key={id} className="rp-pinchip">
+                                📌{id}
+                                <button
+                                  onClick={() => update(r.id, { pins: (r.pins ?? []).filter((x) => x !== id) })}
+                                  title="usuń"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </li>

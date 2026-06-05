@@ -63,8 +63,8 @@ export interface Reserve {
   blocked?: boolean;
   /** maksymalna liczba podmian (oprócz limitu 4,5h) */
   maxJobs?: number;
-  /** wymuszony przydział do konkretnego obiegu (id) */
-  pin?: string;
+  /** wymuszone obiegi do podmiany przez tego rezerwowego (lista id) — silnik je respektuje */
+  pins?: string[];
 }
 
 /** Pula rezerwowych — lista imienna. */

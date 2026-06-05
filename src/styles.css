@@ -317,6 +317,10 @@ body {
 .rp-cfg-row input[type="number"] { width: 70px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 3px 5px; }
 .rp-cfg-row select { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 3px 5px; max-width: 100px; }
 .rp-cfg-row input[type="checkbox"] { accent-color: var(--accent); }
+.rp-pin-chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.rp-pinchip { display: inline-flex; align-items: center; gap: 2px; background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; padding: 1px 6px; font-size: 10px; }
+.rp-pinchip button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; line-height: 1; padding: 0; }
+.rp-pinchip button:hover { color: var(--red); }
 
 /* --- zwijany / rozsuwany panel rezerwowych --- */
 .resizer {
