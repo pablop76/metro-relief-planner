@@ -28,7 +28,7 @@ Tryb: aplikacja **proponuje** plan, dyspozytor **zatwierdza/zmienia** (hybryda).
 ## 4. Reguły (R)
 
 - **R1** ✅ Przerwy dotyczą **tylko 2. zmiany**.
-- **R2** ✅ **Start przerwy NIE wcześniej niż 14:30** (dolna granica) — przerwa o 14:05 jest za wczesna. Preferencja: jak najbliżej 14:30. Górna granica wg R3 (max 6h od 14:00).
+- **R2** ✅ **Okno startu przerwy: 14:30–18:30.** Nie wcześniej niż 14:30 (14:05 = za wcześnie), nie później niż 18:30 (19:10 = za późno). Preferencja: jak najbliżej 14:30. Brak slotu w oknie → BRAK (ręczna obsada).
 - **R3** ❓ **Max 6h ciągłej pracy** bez przerwy. _Liczone od czego?_ ( od stałej godziny 14:00)
 - **R4** ✅ Stacja podmiany determinuje **długość przerwy** i **kierunek podmiany** (patrz `stations.json`).
 - **R5** ✅ Liczba rezerwowych jest **ograniczona i rozłożona na 5 stacjach** → opcje podmiany są ograniczone.
