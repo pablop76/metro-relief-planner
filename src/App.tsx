@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { parseObiegi, readWorkbook } from "./lib/rozklad";
 import { planBreaks } from "./lib/engine";
 import type { Obieg, Reserve, BreakAssignment, Driver } from "./lib/types";
@@ -152,16 +152,30 @@ export default function App() {
     );
   }, [obiegi]);
 
+  const [planDirty, setPlanDirty] = useState(false);
+
   const generate = (currentManual = manual) => {
     if (!delayed.length) return;
     const res = planBreaks(delayed, reserves);
     const merged: Record<string, BreakAssignment> = { ...res.assignments };
     for (const [id, a] of Object.entries(currentManual)) merged[id] = a;
     setAssignments(merged);
+    setPlanDirty(false);
   };
 
+  // generuj plan automatycznie tylko gdy zmieni się ROZKŁAD/dzień (nie przy zmianie rezerwowych)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => generate(), [delayed, reserves]);
+  useEffect(() => generate(), [delayed]);
+
+  // zmiana rezerwowych NIE przebudowuje planu sama — oznacz go jako nieaktualny (kliknij „Generuj")
+  const firstResRef = useRef(true);
+  useEffect(() => {
+    if (firstResRef.current) {
+      firstResRef.current = false;
+      return;
+    }
+    setPlanDirty(true);
+  }, [reserves]);
 
   useEffect(() => localStorage.setItem(LS.res, JSON.stringify(reserves)), [reserves]);
   useEffect(() => localStorage.setItem(LS.manual, JSON.stringify(manual)), [manual]);
@@ -251,8 +265,12 @@ export default function App() {
             />
             min
           </label>
-          <button className="btn-gen" onClick={() => generate()}>
-            ⟳ Generuj plan
+          <button
+            className={`btn-gen${planDirty ? " dirty" : ""}`}
+            onClick={() => generate()}
+            title={planDirty ? "Zmieniłeś rezerwowych — kliknij, by przeliczyć plan" : "Przelicz plan"}
+          >
+            ⟳ Generuj plan{planDirty ? " •" : ""}
           </button>
           {Object.keys(manual).length > 0 && (
             <button className="btn-reset" onClick={resetManual} title="usuń ręczne korekty">
