@@ -28,7 +28,7 @@ Tryb: aplikacja **proponuje** plan, dyspozytor **zatwierdza/zmienia** (hybryda).
 ## 4. Reguły (R)
 
 - **R1** ✅ Przerwy dotyczą **tylko 2. zmiany**.
-- **R2** ✅ **14:30 to tylko PREFERENCJA** startu przerwy (najlepiej ~14:30), nie sztywne okno. W praktyce starty bywają wcześniej/później zależnie od pociągu i jego godzin pracy.
+- **R2** ✅ **Start przerwy NIE wcześniej niż 14:30** (dolna granica) — przerwa o 14:05 jest za wczesna. Preferencja: jak najbliżej 14:30. Górna granica wg R3 (max 6h od 14:00).
 - **R3** ❓ **Max 6h ciągłej pracy** bez przerwy. _Liczone od czego?_ ( od stałej godziny 14:00)
 - **R4** ✅ Stacja podmiany determinuje **długość przerwy** i **kierunek podmiany** (patrz `stations.json`).
 - **R5** ✅ Liczba rezerwowych jest **ograniczona i rozłożona na 5 stacjach** → opcje podmiany są ograniczone.

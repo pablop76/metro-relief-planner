@@ -7,7 +7,7 @@ import { STATIONS, DURATION, DOWNGRADE, stationSupports } from "./stations";
 const hms = (h: number, m: number) => h * 3600 + m * 60;
 
 export const PREF_START = hms(14, 30);   // preferowany start (R2)
-const EARLIEST_DEFAULT = hms(14, 0);     // 2. zmiana / start liczenia 6h (R3)
+const EARLIEST_DEFAULT = hms(14, 30);    // przerwa NIE wcześniej niż 14:30 (R2)
 const LATEST_DEFAULT = hms(20, 0);       // 14:00 + 6h (R3)
 
 export interface PlanOptions {
