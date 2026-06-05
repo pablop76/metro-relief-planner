@@ -18,6 +18,7 @@ const LS = {
   order: "pm_order5", // v5: kolejność wg odjazdu z A1 w pętli 15:14
   sbW: "pm_sb_w",
   sbCol: "pm_sb_col",
+  trains: "pm_trains",
 };
 
 function loadLS<T>(key: string, fallback: T): T {
@@ -66,6 +67,9 @@ export default function App() {
     loadLS<Record<string, BreakAssignment>>(LS.manual, {})
   );
   const [assignments, setAssignments] = useState<Record<string, BreakAssignment>>({});
+  const [trainNumbers, setTrainNumbers] = useState<Record<string, string>>(() =>
+    loadLS<Record<string, string>>(LS.trains, {})
+  );
   const [globalDelay, setGlobalDelay] = useState<number>(() => loadLS<number>(LS.delay, 0));
   const [order, setOrder] = useState<string[]>(() => loadLS<string[]>(LS.order, []));
   const [dragId, setDragId] = useState<string | null>(null);
@@ -182,6 +186,7 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.drivers, JSON.stringify(drivers)), [drivers]);
   useEffect(() => localStorage.setItem(LS.delay, JSON.stringify(globalDelay)), [globalDelay]);
   useEffect(() => localStorage.setItem(LS.order, JSON.stringify(order)), [order]);
+  useEffect(() => localStorage.setItem(LS.trains, JSON.stringify(trainNumbers)), [trainNumbers]);
   useEffect(() => localStorage.setItem(LS.sbW, JSON.stringify(sidebarWidth)), [sidebarWidth]);
   useEffect(() => localStorage.setItem(LS.sbCol, JSON.stringify(sbCollapsed)), [sbCollapsed]);
 
@@ -331,6 +336,8 @@ export default function App() {
                   assignment={assignments[o.id]}
                   reserves={reserves}
                   onAssignmentChange={onAssignmentChange}
+                  trainNo={trainNumbers[o.id] ?? ""}
+                  onTrainChange={(v) => setTrainNumbers((t) => ({ ...t, [o.id]: v }))}
                 />
               </div>
             ))}

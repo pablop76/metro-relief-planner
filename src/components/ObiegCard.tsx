@@ -28,9 +28,11 @@ interface Props {
   assignment?: BreakAssignment;
   reserves: Reserve[];
   onAssignmentChange: (a: BreakAssignment) => void;
+  trainNo?: string;
+  onTrainChange?: (v: string) => void;
 }
 
-export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange }: Props) {
+export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange, trainNo, onTrainChange }: Props) {
   const [open, setOpen] = useState(false);
   const entry = afternoonEntry(obieg.events);
   const exit = obieg.events[obieg.events.length - 1];
@@ -42,7 +44,17 @@ export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange }: P
   return (
     <div className={`obieg-card type-${obieg.type}`}>
       <div className="oc-head">
-        <span className="oc-id">{obieg.id}</span>
+        <div className="oc-id-row">
+          <span className="oc-id">{obieg.id}</span>
+          <input
+            className="oc-train"
+            value={trainNo ?? ""}
+            placeholder="poc."
+            onChange={(e) => onTrainChange?.(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            title="numer pociągu / składu"
+          />
+        </div>
         <span className="oc-entry">
           {a1has ? (
             <>
@@ -65,7 +77,7 @@ export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange }: P
       >
         {assignment ? (
           <>
-            <span className="oc-kind">{KIND_SHORT[assignment.kind]}</span>
+            <span className={`oc-kind kind-${assignment.kind}`}>{KIND_SHORT[assignment.kind]}</span>
             <span className="oc-time">{HHMMSS(assignment.startT)}</span>
             <span className="oc-stat">
               {assignment.station} · {DIR_ARROW[assignment.dir]}
