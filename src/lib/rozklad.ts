@@ -37,6 +37,7 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
 
   const byId = new Map<string, StationEvent[]>();
   const firstRow = new Map<string, number>();
+  const cleaningSet = new Set<string>(); // obiegi ze sprzątaniem (z UWAGI rozkładu)
 
   // pary [kolumna, stacja, kierunek]
   const northCols: [number, BreakStation][] = [
@@ -52,6 +53,8 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
     const id = (r[COL.obieg] ?? "").toString().trim();
     if (!VALID_OBIEG.test(id)) continue;
     if (!firstRow.has(id)) firstRow.set(id, i);
+    // sprzątanie/odstawienie — wykryte z UWAGI w wierszu obiegu
+    if (/sprz/i.test(r.join(" "))) cleaningSet.add(id);
 
     const ev = byId.get(id) ?? [];
     const pushDir = (cols: [number, BreakStation][], dir: Dir) => {
@@ -81,6 +84,8 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
       firstRow: firstRow.get(id) ?? 0,
       a1North: 0,
       seqOrder: 0,
+      // sprzątanie dotyczy planu tylko dla S/D (7,13 = całodobowe sprzątane PO przerwach)
+      cleaning: cleaningSet.has(id) && classify(id) !== "full",
     });
   }
 

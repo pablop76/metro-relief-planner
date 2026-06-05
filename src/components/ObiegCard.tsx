@@ -30,11 +30,9 @@ interface Props {
   onAssignmentChange: (a: BreakAssignment) => void;
   trainNo?: string;
   onTrainChange?: (v: string) => void;
-  cleaning?: boolean;
-  onCleaningToggle?: () => void;
 }
 
-export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange, trainNo, onTrainChange, cleaning, onCleaningToggle }: Props) {
+export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange, trainNo, onTrainChange }: Props) {
   const [open, setOpen] = useState(false);
   const entry = afternoonEntry(obieg.events);
   const exit = obieg.events[obieg.events.length - 1];
@@ -106,21 +104,11 @@ export function ObiegCard({ obieg, assignment, reserves, onAssignmentChange, tra
       )}
 
       <div className="oc-foot">
-        {cleaning ? (
+        {obieg.cleaning ? (
           <span className="oc-clean">🧹 sprzątanie {exit.station}</span>
         ) : (
           <span className="oc-exit">zjazd na STP {HHMMSS(exit.t)}</span>
         )}
-        <button
-          className={`oc-broom${cleaning ? " on" : ""}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onCleaningToggle?.();
-          }}
-          title="przełącz: zjazd na STP / sprzątanie"
-        >
-          🧹
-        </button>
       </div>
     </div>
   );

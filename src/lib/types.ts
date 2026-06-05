@@ -36,6 +36,8 @@ export interface Obieg {
   seqOrder: number;
   /** godzina odjazdu z A1 na północ w pętli odniesienia (podstawa kolejności); MAX gdy brak */
   a1North: number;
+  /** pociąg idzie na sprzątanie/odstawienie (nie zjazd na STP) — wykryte z UWAGI rozkładu */
+  cleaning: boolean;
 }
 
 /** Maszynista (stała lista wszystkich) — z pliku maszynisci.json, edytowalny. */
