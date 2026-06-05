@@ -57,6 +57,12 @@ export interface Reserve {
   station: BreakStation;
   /** powiązanie z maszynistą z listy (telefon/nr prawa do powiadomień) */
   driverId?: string;
+  /** wykluczony z podmian (nie przydzielać automatycznie) */
+  blocked?: boolean;
+  /** maksymalna liczba podmian (oprócz limitu 4,5h) */
+  maxJobs?: number;
+  /** wymuszony przydział do konkretnego obiegu (id) */
+  pin?: string;
 }
 
 /** Pula rezerwowych — lista imienna. */

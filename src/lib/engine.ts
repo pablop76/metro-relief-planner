@@ -73,18 +73,21 @@ interface RState {
   station: BreakStation;
 }
 
-/** Wybór rezerwowego do slotu: wolny czasowo, w limicie 4,5h (R13), najmniej obciążony. */
+/** Wybór rezerwowego do slotu: TYLKO z tej samej stacji co slot (rezerwowy podmienia tam, gdzie stoi),
+ *  wolny czasowo, w limicie 4,5h (R13) i limicie własnym (maxJobs), nie zablokowany, najmniej obciążony. */
 function pickReserve(rs: RState[], slot: Slot): RState | null {
   const startSec = slot.startT;
   const eligible = rs.filter(
-    (r) => r.busyUntil <= startSec && r.loadMin + slot.durationMin <= MAX_RESERVE_LOAD_MIN
+    (r) =>
+      !r.ref.blocked &&
+      r.station === slot.station && // brak „pożyczania" z innej stacji
+      r.busyUntil <= startSec &&
+      r.loadMin + slot.durationMin <= MAX_RESERVE_LOAD_MIN &&
+      (r.ref.maxJobs == null || r.count < r.ref.maxJobs)
   );
   if (eligible.length === 0) return null;
-  // najpierw rezerwowi już stojący na stacji slotu; gdy brak — „pożyczamy" z innej stacji
-  const local = eligible.filter((r) => r.station === slot.station);
-  const pool = local.length ? local : eligible;
-  pool.sort((a, b) => a.loadMin - b.loadMin || a.count - b.count);
-  return pool[0];
+  eligible.sort((a, b) => a.loadMin - b.loadMin || a.count - b.count);
+  return eligible[0];
 }
 
 /** Główny algorytm planowania przerw. */
