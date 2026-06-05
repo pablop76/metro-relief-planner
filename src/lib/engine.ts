@@ -111,8 +111,44 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
 
   const assignments: Record<string, BreakAssignment> = {};
   const unassigned: string[] = [];
+  const handled = new Set<string>(); // obiegi obsłużone pinem
+
+  // 0. PINY — wymuś wskazanego rezerwowego na konkretnym obiegu (na jego stacji).
+  for (const r of rs) {
+    const pinId = r.ref.pin;
+    if (!pinId || r.ref.blocked) continue;
+    const o = obiegi.find((x) => x.id === pinId);
+    if (!o) continue;
+    const kinds = DOWNGRADE.slice(DOWNGRADE.indexOf(desiredKind(o)));
+    let done = false;
+    for (const kind of kinds) {
+      const slots = candidateSlots(o, kind, earliest, latest)
+        .filter((s) => s.station === r.station) // pin tylko gdy obieg jest na stacji rezerwowego
+        .sort((a, b) => score(a) - score(b));
+      for (const slot of slots) {
+        if (
+          r.busyUntil <= slot.startT &&
+          r.loadMin + slot.durationMin <= MAX_RESERVE_LOAD_MIN &&
+          (r.ref.maxJobs == null || r.count < r.ref.maxJobs)
+        ) {
+          r.busyUntil = slot.startT + slot.durationMin * 60;
+          r.loadMin += slot.durationMin;
+          r.count += 1;
+          assignments[o.id] = {
+            obiegId: o.id, station: slot.station, dir: slot.dir, startT: slot.startT,
+            kind: slot.kind, durationMin: slot.durationMin, reserveId: r.ref.id, manual: true,
+          };
+          handled.add(o.id);
+          done = true;
+          break;
+        }
+      }
+      if (done) break;
+    }
+  }
 
   for (const o of order) {
+    if (handled.has(o.id)) continue;
     const desired = desiredKind(o);
     const kinds = DOWNGRADE.slice(DOWNGRADE.indexOf(desired)); // od pożądanego w dół
     let placed = false;

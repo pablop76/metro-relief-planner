@@ -337,6 +337,7 @@ export default function App() {
                 load={load}
                 count={count}
                 byReserve={byReserve}
+                obiegIds={ordered.map((o) => o.id)}
               />
             </aside>
           </>

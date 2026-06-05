@@ -20,15 +20,20 @@ interface Props {
   load?: Record<string, number>;
   count?: Record<string, number>;
   byReserve?: Record<string, BreakAssignment[]>;
+  obiegIds?: string[];
 }
 
 const newId = () =>
   (crypto as Crypto & { randomUUID?: () => string }).randomUUID?.() ??
   `r${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
-export function ReservePanel({ reserves, onChange, drivers, load, count, byReserve }: Props) {
+export function ReservePanel({ reserves, onChange, drivers, load, count, byReserve, obiegIds }: Props) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [warn, setWarn] = useState("");
+  const [openCfg, setOpenCfg] = useState<string | null>(null);
+
+  const update = (id: string, patch: Partial<Reserve>) =>
+    onChange(reserves.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
   // maszyniści już przypisani jako rezerwowi (nie można drugi raz)
   const usedIds = new Set(reserves.map((r) => r.driverId).filter(Boolean) as string[]);
@@ -78,17 +83,31 @@ export function ReservePanel({ reserves, onChange, drivers, load, count, byReser
                 const c = count?.[r.id] ?? 0;
                 const full = min >= MAX_RESERVE_LOAD_MIN;
                 const jobs = byReserve?.[r.id] ?? [];
+                const cfgOpen = openCfg === r.id;
                 return (
-                  <li key={r.id} className={full ? "rp-full" : ""}>
+                  <li key={r.id} className={`${full ? "rp-full" : ""}${r.blocked ? " rp-blocked" : ""}`}>
                     <div className="rp-row1">
-                      <span className="rp-nm">{r.name}</span>
+                      <span className="rp-nm">
+                        {r.name}
+                        {r.blocked && <i className="rp-badge rp-b-block" title="wykluczony">⊘</i>}
+                        {r.pin && <i className="rp-badge rp-b-pin" title={`przypisany do ${r.pin}`}>📌{r.pin}</i>}
+                        {r.maxJobs != null && <i className="rp-badge" title="limit podmian">≤{r.maxJobs}</i>}
+                      </span>
                       <span className="rp-load" title="podmiany · minuty">
                         {c}× · {min}′
                       </span>
+                      <button
+                        className={`rp-cfg${cfgOpen ? " on" : ""}`}
+                        onClick={() => setOpenCfg(cfgOpen ? null : r.id)}
+                        title="ustawienia"
+                      >
+                        ⚙
+                      </button>
                       <button className="rp-x" onClick={() => remove(r.id)} title="usuń">
                         ×
                       </button>
                     </div>
+
                     {jobs.length > 0 && (
                       <div className="rp-jobs">
                         {jobs.map((a) => (
@@ -101,6 +120,47 @@ export function ReservePanel({ reserves, onChange, drivers, load, count, byReser
                             {a.obiegId}
                           </span>
                         ))}
+                      </div>
+                    )}
+
+                    {cfgOpen && (
+                      <div className="rp-cfg-box">
+                        <label className="rp-cfg-row">
+                          <input
+                            type="checkbox"
+                            checked={!!r.blocked}
+                            onChange={(e) => update(r.id, { blocked: e.target.checked })}
+                          />
+                          Wyklucz z podmian
+                        </label>
+                        <label className="rp-cfg-row">
+                          Max podmian
+                          <input
+                            type="number"
+                            min={0}
+                            value={r.maxJobs ?? ""}
+                            placeholder="bez limitu"
+                            onChange={(e) =>
+                              update(r.id, {
+                                maxJobs: e.target.value === "" ? undefined : Math.max(0, parseInt(e.target.value, 10) || 0),
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="rp-cfg-row">
+                          Przypisz do obiegu
+                          <select
+                            value={r.pin ?? ""}
+                            onChange={(e) => update(r.id, { pin: e.target.value || undefined })}
+                          >
+                            <option value="">— brak —</option>
+                            {(obiegIds ?? []).map((id) => (
+                              <option key={id} value={id}>
+                                {id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                       </div>
                     )}
                   </li>

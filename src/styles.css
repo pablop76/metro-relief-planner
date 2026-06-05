@@ -256,6 +256,23 @@ body {
 .rp-job.kind-połówka .rp-job-g { color: var(--olive); }
 .rp-job.kind-szczeniak .rp-job-g { color: #1f6feb; }
 
+/* --- ustawienia maszynisty (blokada / limit / pin) --- */
+.rp-cfg, .rp-x { background: none; border: none; cursor: pointer; line-height: 1; }
+.rp-cfg { color: var(--muted); font-size: 13px; }
+.rp-cfg:hover, .rp-cfg.on { color: var(--accent); }
+.rp-blocked .rp-nm { color: #6b6f78; text-decoration: line-through; }
+.rp-badge { font-style: normal; font-size: 9px; margin-left: 4px; color: var(--muted); }
+.rp-b-block { color: var(--red); }
+.rp-b-pin { color: var(--accent); }
+.rp-cfg-box {
+  display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; font-size: 11px;
+}
+.rp-cfg-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); }
+.rp-cfg-row input[type="number"] { width: 70px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 3px 5px; }
+.rp-cfg-row select { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 3px 5px; max-width: 100px; }
+.rp-cfg-row input[type="checkbox"] { accent-color: var(--accent); }
+
 /* --- zwijany / rozsuwany panel rezerwowych --- */
 .resizer {
   width: 6px; align-self: stretch; flex-shrink: 0; cursor: col-resize; border-radius: 3px;

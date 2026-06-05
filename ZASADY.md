@@ -41,8 +41,9 @@ Tryb: aplikacja **proponuje** plan, dyspozytor **zatwierdza/zmienia** (hybryda).
 - **R10** ✅ **Długość wg czasu w ruchu**: kto jeździ najdłużej → **cała**; pozostali → **co najmniej połówka**.
 - **R11** ✅ **Pociągi szczytowe (oznaczone literą `S` w rozkładzie, np. S23, S27…)** jeżdżą krócej → mogą dostać **połówkę** (nie potrzebują całej).
 - **R12** ✅ **Szczeniak = ostateczność** (mało rezerwowych); robiony na **A7 (Wilanowska) w stronę Kabat** lub **A18 (Plac Wilsona) w stronę Młocin**. Politechnika (A11) robi **połówkę**, nie szczeniaka.
-- **R13** ⬜ _(miejsce na kolejne reguły — DOPISZ jeśli są)_
-- **R14** ⬜
+- **R13** ✅ **Limit pracy rezerwowego ≈ 4,5 h** łącznie podmian (np. 3 całe lub 6 połówek = 270 min).
+- **R14** ✅ **Rezerwowy podmienia TYLKO na swojej stacji** — podmienia pociąg tam, gdzie stoi; brak „teleportacji" między stacjami. Rozmieszczenie rezerwowych na 5 stacjach decyduje, gdzie możliwe są przerwy.
+- **R15** ✅ **Sterowanie per maszynista (panel):** wykluczenie z podmian (blokada), maksymalna liczba podmian, oraz wymuszone przypisanie do konkretnego obiegu (pin — działa tylko gdy obieg jest na stacji tego rezerwowego).
 
 ## 5. Mechanika podmiany (✅ potwierdzona)
 
