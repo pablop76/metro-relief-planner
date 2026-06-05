@@ -19,6 +19,7 @@ const LS = {
   sbW: "pm_sb_w",
   sbCol: "pm_sb_col",
   trains: "pm_trains",
+  cleaning: "pm_cleaning",
 };
 
 function loadLS<T>(key: string, fallback: T): T {
@@ -69,6 +70,9 @@ export default function App() {
   const [assignments, setAssignments] = useState<Record<string, BreakAssignment>>({});
   const [trainNumbers, setTrainNumbers] = useState<Record<string, string>>(() =>
     loadLS<Record<string, string>>(LS.trains, {})
+  );
+  const [cleaning, setCleaning] = useState<Record<string, boolean>>(() =>
+    loadLS<Record<string, boolean>>(LS.cleaning, {})
   );
   const [globalDelay, setGlobalDelay] = useState<number>(() => loadLS<number>(LS.delay, 0));
   const [order, setOrder] = useState<string[]>(() => loadLS<string[]>(LS.order, []));
@@ -187,6 +191,7 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.delay, JSON.stringify(globalDelay)), [globalDelay]);
   useEffect(() => localStorage.setItem(LS.order, JSON.stringify(order)), [order]);
   useEffect(() => localStorage.setItem(LS.trains, JSON.stringify(trainNumbers)), [trainNumbers]);
+  useEffect(() => localStorage.setItem(LS.cleaning, JSON.stringify(cleaning)), [cleaning]);
   useEffect(() => localStorage.setItem(LS.sbW, JSON.stringify(sidebarWidth)), [sidebarWidth]);
   useEffect(() => localStorage.setItem(LS.sbCol, JSON.stringify(sbCollapsed)), [sbCollapsed]);
 
@@ -338,6 +343,8 @@ export default function App() {
                   onAssignmentChange={onAssignmentChange}
                   trainNo={trainNumbers[o.id] ?? ""}
                   onTrainChange={(v) => setTrainNumbers((t) => ({ ...t, [o.id]: v }))}
+                  cleaning={!!cleaning[o.id]}
+                  onCleaningToggle={() => setCleaning((c) => ({ ...c, [o.id]: !c[o.id] }))}
                 />
               </div>
             ))}

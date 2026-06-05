@@ -79,8 +79,12 @@ body {
 .oc-body { flex: 1; display: grid; place-items: center; padding: 6px; }
 .oc-placeholder { color: #555b66; font-size: 11px; }
 
-.oc-foot { padding: 6px; border-top: 1px solid var(--border); text-align: center; }
+.oc-foot { padding: 6px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: center; gap: 4px; }
 .oc-exit { font-size: 11px; color: var(--muted); }
+.oc-clean { font-size: 11px; color: #6ba4ff; font-weight: 600; }
+.oc-broom { background: none; border: none; cursor: pointer; font-size: 12px; opacity: .35; padding: 0; line-height: 1; filter: grayscale(1); }
+.oc-broom:hover { opacity: .8; filter: none; }
+.oc-broom.on { opacity: 1; filter: none; }
 
 .reserve-panel {
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px;
