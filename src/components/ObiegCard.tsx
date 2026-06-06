@@ -31,9 +31,11 @@ interface Props {
   onBreaksChange: (breaks: BreakAssignment[]) => void;
   trainNo?: string;
   onTrainChange?: (v: string) => void;
+  forcePolowka?: boolean;
+  onTogglePolowka?: () => void;
 }
 
-export function ObiegCard({ obieg, breaks, reserves, onBreaksChange, trainNo, onTrainChange }: Props) {
+export function ObiegCard({ obieg, breaks, reserves, onBreaksChange, trainNo, onTrainChange, forcePolowka, onTogglePolowka }: Props) {
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const entry = afternoonEntry(obieg.events);
   const exit = obieg.events[obieg.events.length - 1];
@@ -74,6 +76,16 @@ export function ObiegCard({ obieg, breaks, reserves, onBreaksChange, trainNo, on
             onChange={(e) => onTrainChange?.(e.target.value)}
             title="numer pociągu / składu"
           />
+          <button
+            className={`oc-half${forcePolowka ? " on" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePolowka?.();
+            }}
+            title="wymuś połówkę (puste = auto)"
+          >
+            ½
+          </button>
         </div>
         <span className="oc-entry">
           {isFull ? <em>całodobowy</em> : <>{HHMMSS(entry.t)} <em>{entry.station}</em></>}

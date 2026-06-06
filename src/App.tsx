@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseObiegi, readWorkbook } from "./lib/rozklad";
 import { planBreaks } from "./lib/engine";
-import type { Obieg, Reserve, BreakAssignment, Driver } from "./lib/types";
+import type { Obieg, Reserve, BreakAssignment, Driver, BreakKind } from "./lib/types";
 import * as XLSX from "xlsx";
 import { ReservePanel } from "./components/ReservePanel";
 import { ObiegCard } from "./components/ObiegCard";
@@ -19,6 +19,7 @@ const LS = {
   sbW: "pm_sb_w",
   sbCol: "pm_sb_col",
   trains: "pm_trains",
+  forcePol: "pm_forcepol",
 };
 
 function loadLS<T>(key: string, fallback: T): T {
@@ -70,6 +71,9 @@ export default function App() {
   const [assignments, setAssignments] = useState<Record<string, BreakAssignment[]>>({});
   const [trainNumbers, setTrainNumbers] = useState<Record<string, string>>(() =>
     loadLS<Record<string, string>>(LS.trains, {})
+  );
+  const [forcePol, setForcePol] = useState<Record<string, boolean>>(() =>
+    loadLS<Record<string, boolean>>(LS.forcePol, {})
   );
   const [globalDelay, setGlobalDelay] = useState<number>(() => loadLS<number>(LS.delay, 0));
   const [order, setOrder] = useState<string[]>(() => loadLS<string[]>(LS.order, []));
@@ -159,13 +163,26 @@ export default function App() {
 
   const [planDirty, setPlanDirty] = useState(false);
 
-  const generate = (currentManual = manual) => {
+  const buildForced = (fp: Record<string, boolean>) => {
+    const forcedKinds: Record<string, BreakKind> = {};
+    for (const [id, on] of Object.entries(fp)) if (on) forcedKinds[id] = "połówka";
+    return forcedKinds;
+  };
+
+  const generate = (currentManual = manual, currentForce = forcePol) => {
     if (!delayed.length) return;
-    const res = planBreaks(delayed, reserves);
+    const res = planBreaks(delayed, reserves, { forcedKinds: buildForced(currentForce) });
     const merged: Record<string, BreakAssignment[]> = { ...res.assignments };
     for (const [id, a] of Object.entries(currentManual)) merged[id] = a;
     setAssignments(merged);
     setPlanDirty(false);
+  };
+
+  // ręczne oznaczenie obiegu do połówki — natychmiast przelicza
+  const togglePolowka = (id: string) => {
+    const next = { ...forcePol, [id]: !forcePol[id] };
+    setForcePol(next);
+    generate(manual, next);
   };
 
   // generuj plan automatycznie tylko gdy zmieni się ROZKŁAD/dzień (nie przy zmianie rezerwowych)
@@ -188,6 +205,7 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.delay, JSON.stringify(globalDelay)), [globalDelay]);
   useEffect(() => localStorage.setItem(LS.order, JSON.stringify(order)), [order]);
   useEffect(() => localStorage.setItem(LS.trains, JSON.stringify(trainNumbers)), [trainNumbers]);
+  useEffect(() => localStorage.setItem(LS.forcePol, JSON.stringify(forcePol)), [forcePol]);
   useEffect(() => localStorage.setItem(LS.sbW, JSON.stringify(sidebarWidth)), [sidebarWidth]);
   useEffect(() => localStorage.setItem(LS.sbCol, JSON.stringify(sbCollapsed)), [sbCollapsed]);
 
@@ -199,7 +217,7 @@ export default function App() {
 
   const resetManual = () => {
     setManual({});
-    const res = planBreaks(delayed, reserves);
+    const res = planBreaks(delayed, reserves, { forcedKinds: buildForced(forcePol) });
     setAssignments(res.assignments);
   };
 
@@ -342,6 +360,8 @@ export default function App() {
                   onBreaksChange={(b) => onBreaksChange(o.id, b)}
                   trainNo={trainNumbers[o.id] ?? ""}
                   onTrainChange={(v) => setTrainNumbers((t) => ({ ...t, [o.id]: v }))}
+                  forcePolowka={!!forcePol[o.id]}
+                  onTogglePolowka={() => togglePolowka(o.id)}
                 />
               </div>
             ))}

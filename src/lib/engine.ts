@@ -16,6 +16,8 @@ export interface PlanOptions {
   pref?: number;
   /** czy Centrum A13 dostępne (R8) — na razie bez slotów (brak kolumny w xlsx) */
   centrumEnabled?: boolean;
+  /** ręcznie wymuszony rodzaj przerwy dla obiegu (klucz = id); brak = auto */
+  forcedKinds?: Record<string, BreakKind>;
 }
 
 /** Wjazd na linię po południu: pierwsze zdarzenie po przerwie >60 min (po 12:00), inaczej pierwsze. */
@@ -99,6 +101,8 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const latest = opts.latest ?? LATEST_DEFAULT;
   const pref = opts.pref ?? PREF_START;
   const score = (s: Slot) => Math.abs(s.startT - pref);
+  const forced = opts.forcedKinds ?? {};
+  const dk = (o: Obieg) => forced[o.id] ?? desiredKind(o); // ręczny mark > auto
 
   // Kolejność przetwarzania: NAJPIERW szczyty (S) — są najbardziej ograniczone (połówka tylko na A11
   // i krótkie okno), więc muszą złapać swoje połówki, zanim obiegi D/całodobowe zajmą A11.
@@ -131,7 +135,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // Próba przydzielenia obiegowi (kolejnej) przerwy PO powrocie maszynisty; byTime → najwcześniejszy slot.
   const tryAssign = (o: Obieg, byTime: boolean): boolean => {
     const after = driverFreeAt[o.id] ?? 0;
-    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(desiredKind(o)))) {
+    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
       const slots = candidateSlots(o, kind, earliest, latest)
         .filter((s) => s.startT >= after)
         .sort((a, b) => (byTime ? a.startT - b.startT : score(a) - score(b)));
@@ -151,7 +155,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       if (!o) continue;
       const after = Math.max(r.busyUntil, driverFreeAt[o.id] ?? 0);
       let done = false;
-      for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(desiredKind(o)))) {
+      for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
         const slots = candidateSlots(o, kind, earliest, latest)
           .filter((s) => s.station === r.station && s.startT >= after)
           .sort((a, b) => score(a) - score(b));
@@ -175,7 +179,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     if (assignments[o.id]?.length) continue; // już ma (pin)
     if (tryAssign(o, false)) continue;
     let fb: Slot | null = null;
-    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(desiredKind(o)))) {
+    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
       const s = candidateSlots(o, kind, earliest, latest).sort((a, b) => score(a) - score(b))[0];
       if (s) { fb = s; break; }
     }
