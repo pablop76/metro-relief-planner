@@ -19,7 +19,8 @@ const LS = {
   sbW: "pm_sb_w",
   sbCol: "pm_sb_col",
   trains: "pm_trains",
-  forcePol: "pm_forcepol",
+  forceKind: "pm_forcekind",
+  rows: "pm_rows",
 };
 
 function loadLS<T>(key: string, fallback: T): T {
@@ -72,9 +73,10 @@ export default function App() {
   const [trainNumbers, setTrainNumbers] = useState<Record<string, string>>(() =>
     loadLS<Record<string, string>>(LS.trains, {})
   );
-  const [forcePol, setForcePol] = useState<Record<string, boolean>>(() =>
-    loadLS<Record<string, boolean>>(LS.forcePol, {})
+  const [forceKind, setForceKind] = useState<Record<string, BreakKind>>(() =>
+    loadLS<Record<string, BreakKind>>(LS.forceKind, {})
   );
+  const [rows, setRows] = useState<number>(() => loadLS<number>(LS.rows, 2));
   const [globalDelay, setGlobalDelay] = useState<number>(() => loadLS<number>(LS.delay, 0));
   const [order, setOrder] = useState<string[]>(() => loadLS<string[]>(LS.order, []));
   const [dragId, setDragId] = useState<string | null>(null);
@@ -163,25 +165,24 @@ export default function App() {
 
   const [planDirty, setPlanDirty] = useState(false);
 
-  const buildForced = (fp: Record<string, boolean>) => {
-    const forcedKinds: Record<string, BreakKind> = {};
-    for (const [id, on] of Object.entries(fp)) if (on) forcedKinds[id] = "połówka";
-    return forcedKinds;
-  };
-
-  const generate = (currentManual = manual, currentForce = forcePol) => {
+  const generate = (currentManual = manual, currentForce = forceKind) => {
     if (!delayed.length) return;
-    const res = planBreaks(delayed, reserves, { forcedKinds: buildForced(currentForce) });
+    const res = planBreaks(delayed, reserves, { forcedKinds: currentForce });
     const merged: Record<string, BreakAssignment[]> = { ...res.assignments };
     for (const [id, a] of Object.entries(currentManual)) merged[id] = a;
     setAssignments(merged);
     setPlanDirty(false);
   };
 
-  // ręczne oznaczenie obiegu do połówki — natychmiast przelicza
-  const togglePolowka = (id: string) => {
-    const next = { ...forcePol, [id]: !forcePol[id] };
-    setForcePol(next);
+  // ręczny mark rodzaju: auto → połówka → cała → auto; natychmiast przelicza
+  const cycleKind = (id: string) => {
+    const cur = forceKind[id];
+    const nextVal: BreakKind | undefined =
+      cur === undefined ? "połówka" : cur === "połówka" ? "cała" : undefined;
+    const next = { ...forceKind };
+    if (nextVal) next[id] = nextVal;
+    else delete next[id];
+    setForceKind(next);
     generate(manual, next);
   };
 
@@ -205,7 +206,8 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.delay, JSON.stringify(globalDelay)), [globalDelay]);
   useEffect(() => localStorage.setItem(LS.order, JSON.stringify(order)), [order]);
   useEffect(() => localStorage.setItem(LS.trains, JSON.stringify(trainNumbers)), [trainNumbers]);
-  useEffect(() => localStorage.setItem(LS.forcePol, JSON.stringify(forcePol)), [forcePol]);
+  useEffect(() => localStorage.setItem(LS.forceKind, JSON.stringify(forceKind)), [forceKind]);
+  useEffect(() => localStorage.setItem(LS.rows, JSON.stringify(rows)), [rows]);
   useEffect(() => localStorage.setItem(LS.sbW, JSON.stringify(sidebarWidth)), [sidebarWidth]);
   useEffect(() => localStorage.setItem(LS.sbCol, JSON.stringify(sbCollapsed)), [sbCollapsed]);
 
@@ -217,7 +219,7 @@ export default function App() {
 
   const resetManual = () => {
     setManual({});
-    const res = planBreaks(delayed, reserves, { forcedKinds: buildForced(forcePol) });
+    const res = planBreaks(delayed, reserves, { forcedKinds: forceKind });
     setAssignments(res.assignments);
   };
 
@@ -260,8 +262,8 @@ export default function App() {
   const planned = allBreaks.filter((a) => a.reserveId).length;
   const def = defaultOrder(obiegi);
   const orderChanged = order.length > 0 && order.some((id, i) => def[i] !== id);
-  // dwa równe rzędy (jak w arkuszu): liczba kolumn = połowa obiegów
-  const cols = Math.max(1, Math.ceil(ordered.length / 2));
+  // liczba kolumn = obiegi / wybrana liczba rzędów
+  const cols = Math.max(1, Math.ceil(ordered.length / rows));
 
   return (
     <div className="app">
@@ -283,6 +285,16 @@ export default function App() {
               ))}
             </select>
           )}
+          <label className="delay-ctl" title="liczba rzędów kafelków">
+            ▦ rzędy
+            <select value={rows} onChange={(e) => setRows(parseInt(e.target.value, 10))}>
+              <option value={2}>2</option>
+              <option value={3}>3</option>
+              <option value={4}>4</option>
+              <option value={5}>5</option>
+              <option value={6}>6</option>
+            </select>
+          </label>
           <label className="delay-ctl" title="opóźnienie całej linii w minutach">
             ⏱ opóźnienie
             <input
@@ -360,8 +372,8 @@ export default function App() {
                   onBreaksChange={(b) => onBreaksChange(o.id, b)}
                   trainNo={trainNumbers[o.id] ?? ""}
                   onTrainChange={(v) => setTrainNumbers((t) => ({ ...t, [o.id]: v }))}
-                  forcePolowka={!!forcePol[o.id]}
-                  onTogglePolowka={() => togglePolowka(o.id)}
+                  forceKind={forceKind[o.id]}
+                  onCycleKind={() => cycleKind(o.id)}
                 />
               </div>
             ))}

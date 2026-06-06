@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { HHMMSS } from "../lib/types";
-import type { Obieg, StationEvent, BreakAssignment, Reserve } from "../lib/types";
+import type { Obieg, StationEvent, BreakAssignment, Reserve, BreakKind } from "../lib/types";
 import { BreakEditor } from "./BreakEditor";
 import { feasibleSlots } from "../lib/engine";
 
@@ -31,11 +31,11 @@ interface Props {
   onBreaksChange: (breaks: BreakAssignment[]) => void;
   trainNo?: string;
   onTrainChange?: (v: string) => void;
-  forcePolowka?: boolean;
-  onTogglePolowka?: () => void;
+  forceKind?: BreakKind;
+  onCycleKind?: () => void;
 }
 
-export function ObiegCard({ obieg, breaks, reserves, onBreaksChange, trainNo, onTrainChange, forcePolowka, onTogglePolowka }: Props) {
+export function ObiegCard({ obieg, breaks, reserves, onBreaksChange, trainNo, onTrainChange, forceKind, onCycleKind }: Props) {
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const entry = afternoonEntry(obieg.events);
   const exit = obieg.events[obieg.events.length - 1];
@@ -77,14 +77,14 @@ export function ObiegCard({ obieg, breaks, reserves, onBreaksChange, trainNo, on
             title="numer pociągu / składu"
           />
           <button
-            className={`oc-half${forcePolowka ? " on" : ""}`}
+            className={`oc-half k-${forceKind ?? "auto"}`}
             onClick={(e) => {
               e.stopPropagation();
-              onTogglePolowka?.();
+              onCycleKind?.();
             }}
-            title="wymuś połówkę (puste = auto)"
+            title="wymuś rodzaj: auto → połówka → cała"
           >
-            ½
+            {forceKind === "połówka" ? "½" : forceKind === "cała" ? "C" : "·"}
           </button>
         </div>
         <span className="oc-entry">

@@ -29,11 +29,6 @@ export function afternoonEntryT(o: Obieg): number {
   return e.length ? e[0].t : 0;
 }
 
-/** Pożądany rodzaj przerwy wg typu obiegu (R10/R11). */
-function desiredKind(o: Obieg): BreakKind {
-  return o.type === "S" ? "połówka" : "cała"; // S → połówka; całodobowe + D → cała
-}
-
 interface Slot {
   station: BreakStation;
   dir: Dir;
@@ -102,7 +97,15 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const pref = opts.pref ?? PREF_START;
   const score = (s: Slot) => Math.abs(s.startT - pref);
   const forced = opts.forcedKinds ?? {};
-  const dk = (o: Obieg) => forced[o.id] ?? desiredKind(o); // ręczny mark > auto
+  // BILANS MOCY (tok dyspozytora): moc = rezerwowi × 3 koła; deficyt → 2× połówek.
+  const capacity = reserves.reduce((s, r) => s + (r.blocked ? 0 : Math.min(3, r.maxJobs ?? 3)), 0);
+  const deficit = obiegi.length - capacity;
+  const polCount = Math.max(0, deficit * 2);
+  // połówki dostają obiegi z NAJMNIEJSZĄ liczbą kół (szczyty); reszta całe.
+  const autoPolowka = new Set(
+    [...obiegi].sort((a, b) => a.loops - b.loops || a.firstT - b.firstT).slice(0, polCount).map((o) => o.id)
+  );
+  const dk = (o: Obieg) => forced[o.id] ?? (autoPolowka.has(o.id) ? "połówka" : "cała"); // ręczny mark > auto bilans
 
   // Kolejność przetwarzania: NAJPIERW szczyty (S) — są najbardziej ograniczone (połówka tylko na A11
   // i krótkie okno), więc muszą złapać swoje połówki, zanim obiegi D/całodobowe zajmą A11.
