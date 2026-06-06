@@ -65,6 +65,8 @@ export interface Reserve {
   maxJobs?: number;
   /** wymuszone obiegi do podmiany przez tego rezerwowego (lista id) — silnik je respektuje */
   pins?: string[];
+  /** tylko ręcznie: robi WYŁĄCZNIE wpisane piny, silnik nie dokłada mu nic automatycznie */
+  manualOnly?: boolean;
 }
 
 /** Pula rezerwowych — lista imienna. */

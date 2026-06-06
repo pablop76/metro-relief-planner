@@ -133,7 +133,15 @@ export function ReservePanel({ reserves, onChange, drivers, load, count, byReser
                             checked={!!r.blocked}
                             onChange={(e) => update(r.id, { blocked: e.target.checked })}
                           />
-                          Wyklucz z podmian
+                          Wyklucz z podmian (standby)
+                        </label>
+                        <label className="rp-cfg-row">
+                          <input
+                            type="checkbox"
+                            checked={!!r.manualOnly}
+                            onChange={(e) => update(r.id, { manualOnly: e.target.checked })}
+                          />
+                          Tylko moje obiegi (bez auto)
                         </label>
                         <label className="rp-cfg-row">
                           Max podmian

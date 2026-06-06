@@ -80,6 +80,7 @@ function pickReserve(rs: RState[], slot: Slot): RState | null {
   const eligible = rs.filter(
     (r) =>
       !r.ref.blocked &&
+      !r.ref.manualOnly && // „tylko ręcznie" — pomijany w automatycznym doborze (robi tylko piny)
       r.station === slot.station && // brak „pożyczania" z innej stacji
       r.busyUntil <= startSec &&
       r.loadMin + slot.durationMin <= MAX_RESERVE_LOAD_MIN &&
