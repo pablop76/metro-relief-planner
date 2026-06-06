@@ -86,6 +86,8 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
       seqOrder: 0,
       // sprzątanie dotyczy planu tylko dla S/D (7,13 = całodobowe sprzątane PO przerwach)
       cleaning: cleaningSet.has(id) && classify(id) !== "full",
+      // koło = odjazd z A1 na północ (start okrążenia)
+      loops: ev.filter((e) => e.station === "A1" && e.dir === "Młociny").length,
     });
   }
 

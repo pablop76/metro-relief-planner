@@ -38,6 +38,8 @@ export interface Obieg {
   a1North: number;
   /** pociąg idzie na sprzątanie/odstawienie (nie zjazd na STP) — wykryte z UWAGI rozkładu */
   cleaning: boolean;
+  /** liczba kół (okrążeń) w ciągu dnia — mało kół = szczyt, kandydat na połówkę */
+  loops: number;
 }
 
 /** Maszynista (stała lista wszystkich) — z pliku maszynisci.json, edytowalny. */
