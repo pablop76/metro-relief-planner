@@ -46,6 +46,30 @@ Tryb: aplikacja **proponuje** plan, dyspozytor **zatwierdza/zmienia** (hybryda).
 - **R15** ✅ **Sterowanie per maszynista (panel):** wykluczenie z podmian (blokada), maksymalna liczba podmian, oraz wymuszone przypisanie do konkretnego obiegu (pin — działa tylko gdy obieg jest na stacji tego rezerwowego).
 - **R16** ⬜ **Maksymalne wykorzystanie rezerwowych — wiele przerw na obieg.** Najpierw każdy obieg dostaje 1 obowiązkową przerwę (R9). Potem, dopóki są wolni rezerwowi (w limicie 4,5h), rozdajemy **dodatkowe przerwy**: pociąg może mieć **>1 przerwę** (np. dwie połówki, cała+połówka, dwie całe) gdy rezerwowych jest dużo. Cel: nie marnować dostępnych rezerwowych. Kolejne przerwy tego samego obiegu muszą być **po powrocie maszynisty** z poprzedniej i w oknie 14:30–18:30.
 
+## 4a. ALGORYTM DYSPOZYTORA (tok rozpisywania — docelowy silnik)
+
+Kolejność decyzji tak, jak robi to dyspozytor ręcznie:
+
+**Krok 1 — bilans mocy:**
+```
+standby_koła = 0/1/2/3            (rezerwa ruchowa na Kabatach, R17; 3 = tryb trudny)
+moc = (rezerwowi − 1) × 3 + standby_koła     (każdy ~3 całe = 4,5 h)
+deficyt = liczba_obiegów − moc
+połówek = 2 × deficyt             (gdy deficyt > 0; inaczej 0)
+całych  = liczba_obiegów − połówek
+```
+(uwzględnić R18: maszynista z krótszym oknem dostępności liczy mniej niż 3 koła)
+
+**Krok 2 — rozdanie całych:** najpierw CAŁE na wszystkich stacjach **oprócz A11** (Kabaty A1, Wilanowska A7, Plac Wilsona A18, Młociny A23).
+
+**Krok 3 — rozdanie połówek (A11 Politechnika):** połówki dostają **najpierw szczyty (S)** wg priorytetu (do potwierdzenia): `S34, S32, S22?, S26, S27, S28, S29, S23, S35, S36`.
+
+**Krok 4 — wyjątek (do doprecyzowania):** nie dawaj szczytowi połówki, jeśli na **pierwszym kole** ma tylko połówki.
+
+**R17** ✅ Rezerwa ruchowa (Kabaty): 1 maszynista standby, tryb **0/1/2/3 koła** (3 = trudna obsada, brak odłożonej rezerwy; awarię obsługuje ten, kto ma przerwę).
+**R18** ✅ Rezerwowi mają **okno dostępności [od–do]** (do 16:00 / do 18:00 / od 18:00 do rana). Przerwa musi się zmieścić: `start ≥ od` i `start + długość ≤ do`. „Od 18:00" robi całą (start 18:00 → wraca ~19:30).
+**R19** ✅ Sterowanie: **„tylko moje obiegi"** (manualOnly) — rezerwowy robi wyłącznie wpisane piny, bez auto.
+
 ## 5. Mechanika podmiany (✅ potwierdzona)
 
 1. Rezerwowy czeka na stacji X. Gdy nadjeżdża pociąg (obieg) w kierunku K → **wsiada i prowadzi pociąg dalej**.
