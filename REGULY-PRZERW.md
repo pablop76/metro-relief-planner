@@ -1,116 +1,117 @@
-# Reguły planowania przerw — Metro M1 (do weryfikacji)
+# Liczenie kół i przydział przerw — Metro M1
 
-> Stan na 2026-06-07. Dokument roboczy — reguły do sprawdzenia i poprawy.
-> Po weryfikacji zaczynamy logikę planowania od nowa.
+> Specyfikacja **silnika** (stan zaimplementowany): `src/lib/rozklad.ts` (`countLoops2nd`,
+> `lapDuration`) i `src/lib/engine.ts` (`planBreaks`). Pełny kontrakt domenowy: [`ZASADY.md`](ZASADY.md).
 
 ---
 
 ## 1. Liczenie kół (2. zmiana)
 
-- Liczymy **odjazdy ze stacji na której pociąg jest w okilcy 13:45** w oknie **14:00–20:00** (`LAST_LAP_DEP = 20:00`)
-- **+0.5 koła** jeśli obieg wjeżdża z innej stacji niż A1 (np. S31 z A18 → "midline")
-- **+0.5 koła** jeśli obieg startuje 2. zmianę o 13:00/13:30 (lista `EARLY_START_2ND`):
-  D17, D18, D19, D20, D22, S26, S27, S28, S29, S32, S33, S34, S35
+Koła liczone **czasowo, bez zaokrąglania** (`countLoops2nd`):
 
-**⚠️ ZGŁOSZONE BŁĘDY:**
+```
+koła = (zjazd − wjazd) / czas_koła
+```
 
-- S31: wjeżdża z A18 o 14:32, zjeżdża 19:17 → **nie robi nawet 4 kół** (system liczy źle)
-- S34: kończy na A23 → też **nie robi 4 kół**
-- D20: start 13:00, koniec 20:17 → **robi 4,5 koła** (system pokazuje co innego)
-- "takich kwiatków jest więcej" — liczenie kół jest generalnie błędne
-- **Podejrzenie: parser xlsx czyta tylko 1 wiersz dla S31/S34 zamiast ~7** (scalone komórki w kolumnie "obieg"?) → przez to liczba kół zaniżona
+- **czas_koła** = mediana odstępu między kolejnymi odjazdami A1→Młociny tego obiegu, z pominięciem
+  postojów > 3 h (`lapDuration`; fallback 84 min, gdy za mało danych).
+- **wjazd** = realny wjazd z rozkładu — pierwsze zdarzenie po przerwie > 60 min po 12:00
+  (`afternoonEntry`); dla obiegów jadących ciągiem (bez postoju w dzień) start maszynisty z grafiku
+  (`SHIFT2_DRIVER_START`: D17–D20 = 13:00, D22 = 13:30). Domyślnie 14:00.
+- **zjazd** = ostatnie zdarzenie obiegu (cap na 22:00 = koniec 2. zmiany).
+- Częściowe pierwsze/ostatnie koło wychodzi jako **realny ułamek** — np. S23 (wjazd A11 14:41 →
+  zjazd 19:54) = **3,73**, a nie zaokrąglone 4. Zakończenie na A23 (zjazd/sprzątanie) to pół koła,
+  nie całe — liczenie czasowe robi to poprawnie samo, bez korekt.
+
+### 1a. Kogo liczymy
+
+O rodzaju przerwy decyduje długość pracy maszynisty 2. zmiany: czy sam dowozi pociąg na zjazd, czy
+zmienia go ktoś na linii.
+
+| Kryterium (ostatnie zdarzenie obiegu)        | Koła           | Kto |
+| --- | --- | --- |
+| **zjazd ≥ 21:00** — zmiennik na linii / 3. zmiana / całodobowy | `Infinity`, zawsze cała (`throughShift`) | 1–13, D14, D15, D21 |
+| **zjazd < 21:00** — maszynista sam zjeżdża na STP | liczone | wszystkie S, D16, D17–D20, D22 |
+
+- Detekcja: `lastT >= RELIEF_ON_LINE` (21:00) → cała (nieliczone). Próg = deklarowana zmiana na
+  linii „nie później niż 21:00".
+- D17–D20 są liczone, ale mają najwięcej kół (~5,0–5,15) → ranking i tak daje im całą.
+  D22 zjeżdża sam wcześnie (≈19:19) → realny kandydat na połówkę.
+
+**Przykłady zweryfikowane (2026-06-07):**
+
+| Obieg | Wjazd | Zjazd | Koła |
+| --- | --- | --- | --- |
+| S23 | A11 14:41 | 19:54 | 3,73 |
+| S31 | A18 14:32 | 19:17 | ~3,5 |
+| S34 | — | A23 (zjazd/sprzątanie) | ~3,45 |
+| D20 | 13:00 | 20:17 | ~4,5 |
 
 ---
 
-## 2. Rodzaj przerwy (kto dostaje połówkę)
+## 2. Rodzaj przerwy (połówka vs cała)
 
-- Obiegi z **≤ 2.5 koła** → zawsze **połówka** (niezależnie od liczby rezerwowych)
-- Gdy rezerwowych za mało (deficyt) → kolejne obiegi (wg rosnącej liczby kół) dostają **połówkę**
-- Reszta → **cała**
-- Zasada nadrzędna: **najmniej kół = połówka**, najwięcej kół = cała
+Decyduje liczba kół (`planBreaks`):
 
-**⚠️ ZGŁOSZONE BŁĘDY:**
-
-- Przy 12 rezerwowych powinno wyjść **6 połówek, reszta całe** — wychodziło 28/17 połówek
-- S34 robi najmniej kół, a dostawał najwięcej przerwy (cała) — "karygodny błąd"
+- Obiegi z **≤ 2,5 koła** (`POL_MAX_LOOPS`) → zawsze **połówka**, niezależnie od liczby rezerwowych.
+- **Deficyt mocy** (`liczba_obiegów − rezerwowi×3`) zwiększa liczbę połówek o `2 × deficyt`.
+- Połówki trafiają do obiegów z **najmniejszą liczbą kół** (szczyty); reszta → **cała**.
+- Zasada nadrzędna: **najmniej kół = połówka**, najwięcej kół = cała.
+- Ręczny override rodzaju (`forcedKinds`) ma pierwszeństwo nad auto-bilansem.
 
 ---
 
-## 3. Okna czasowe (start przerwy)
+## 3. Okna startu przerwy
 
-- **najwcześniej 14:30** (wszystkie rodzaje)
-- **preferencja: 16:00–17:30** — najlepsze przerwy startują w tym oknie (NIE „jak najbliżej 14:30")
-- **DWA OKNA — pierwsze krótsze:**
-  - **1. przerwa** (główna) — start najpóźniej **18:30** ("19:10 = za późno")
-  - **2. przerwa** (dodatkowa) — **dłuższe okno**, start może być później (do ~20:00); realnie ogranicza ją zjazd pociągu (R7 — musi wrócić przed zjazdem)
-- **nie zaczynać przerw od obiegów, które mają tylko połówki** (najpierw całe)
+- **Najwcześniej 14:30** (`EARLIEST_DEFAULT`); override per obieg dozwolony (`earliestByObieg`).
+- **Preferencja 16:00–17:30** (`PREF_WINDOW`) — najlepsze przerwy startują w tym oknie; slot w oknie
+  ma score 0, poza oknem — odległość do najbliższej krawędzi.
+- **Dwa okna:**
+  - **1. (główna) przerwa** — start najpóźniej **18:30** (`LATEST_FIRST`; „19:10 = za późno").
+  - **2. (dodatkowa) przerwa** — okno dłuższe, do **20:00** (`LATEST_SECOND`); realnie limituje ją
+    zjazd pociągu (musi wrócić, zanim zjedzie — patrz §1).
+- Nie zaczynać przerw od obiegów mających tylko połówki — najpierw całe (kolejność w §5).
 
-## 3a. Druga (dodatkowa) przerwa — kombinacje
+### 3a. Druga (dodatkowa) przerwa — kombinacje
 
-Obieg może mieć max 2 przerwy. Dozwolone kombinacje:
+Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). Dozwolone kombinacje:
 
-- **cała + połówka** — dowolna kolejność (może być połówka, potem cała); to **NAJLEPSZA** kombinacja
-- **połówka + połówka**
-- **cała + cała** — dozwolone przy **dużej liczbie maszynistów manewrowych** (nadmiar rezerwy)
-- **szczeniak jako dokładka** — gdy jest taka potrzeba (ostateczność)
+- **cała + połówka** — dowolna kolejność; **najlepsza** kombinacja.
+- **połówka + połówka** — rozsunięte ~2,5 h (`SPACING_POLOWKI`).
+- **cała + cała** — tylko przy nadmiarze rezerwowych manewrowych.
+- **szczeniak** jako dokładka — ostateczność.
 
-Rozmieszczenie (R2):
-
-- **dwie połówki** — rozsunięte ~2,5 h od siebie (co 2–3 h)
-- **cała + połówka** (i pozostałe) — blisko siebie / mały odstęp po powrocie maszynisty (np. sąsiednie koła)
+Pozostałe kombinacje kładzione blisko powrotu maszynisty (mały odstęp).
 
 ---
 
 ## 4. Stacje podmian
 
-| Stacja         | Rodzaj przerwy   | Kierunek  |
-| -------------- | ---------------- | --------- |
-| A1 (Kabaty)    | cała             | oba       |
-| A7             | cała + szczeniak | ↓ Kabaty  |
-| A11 (Centrum?) | połówka          | oba       |
-| A18            | cała + szczeniak | ↑ Młociny |
-| A23 (Młociny)  | cała             | oba       |
+Konfiguracja w [`src/lib/stations.ts`](src/lib/stations.ts) / `data/stations.json`:
 
-**⚠️ ZGŁOSZONE BŁĘDY:**
+| Stacja          | Rodzaje przerw   | Kierunek          |
+| --------------- | ---------------- | ----------------- |
+| A1 (Kabaty)     | cała             | oba (krańcówka)   |
+| A7 (Wilanowska) | cała, szczeniak  | szczeniak ↓ Kabaty |
+| A11 (Politechnika) | cała, połówka | oba               |
+| A18 (Plac Wilsona) | cała, szczeniak | szczeniak ↑ Młociny |
+| A23 (Młociny)   | cała             | oba (krańcówka)   |
 
-- Szczeniak pojawiał się na A18 tam, gdzie nie powinien
-
----
-
-## 5. Rezerwowi (obciążenie)
-
-- Rezerwowy podmienia **tylko na swojej stacji** (brak "pożyczania" z innej stacji)
-- Maks. obciążenie: **270 min (4,5h)** na rezerwowego
-- Maks. podmian: **3** na rezerwowego (domyślnie; edytowalne w UI)
-- Packing: najpierw dobijamy najczęściej używanego rezerwowego (żeby świeżych zostawić na trudne obiegi)
-
-**⚠️ ZGŁOSZONE BŁĘDY / WYMAGANIA:**
-
-- **Na Kabatach (A1): jeden rezerwowy robi MAX jedno koło, reszta po trzy** — system dawał "po dwa koła"
-- **A11: dawał po jednej połówce** na rezerwowego = pracuje tylko 45 min na 8h → marnotrawstwo, ma robić więcej
+Długość przerwy liczona z **realnego rozkładu** (czas od wejścia w obieg do powrotu pociągu na tę
+stację), nie ze sztywnych 90/45/30 min.
 
 ---
 
-## 6. Kolejność przetwarzania
+## 5. Rezerwowi i kolejność przetwarzania
 
-- Obieg z **najmniejszą liczbą dostępnych slotów** → przetwarzany pierwszy
-- Remis → najwcześniejszy zjazd → S przed full przed D
-- Cel: każdy obieg dostaje ≥1 przerwę (D19/D20 nie mogą zostać bez podmiany)
-
----
-
-## 7. Pozostałe wymagania / pomysły
-
-- Każdy z 36 obiegów MUSI dostać ≥1 przerwę gdy mocy wystarcza (rezerwowi×3 ≥ liczba obiegów)
-- Szczeniak = ostateczność (tylko gdy nie ma cała ani połówka)
-- Nie dawać połówki szczytowi, jeśli na 1. kole ma tylko połówki (wspomniane, niewdrożone)
-
----
-
-## Dane wejściowe (kontekst)
-
-- 36 obiegów: 1–13 całodobowe (full), D14–D22 dodatkowe, S23–S36 szczyty
-- Drużyna = obieg (numer drużyny = numer obiegu)
-- 2. zmiana nominalnie 14:00–22:00; część drużyn od 13:00/13:30
-- Maszyniści zmieniają się ~30 min przed końcem zmiany (dojeżdżają na swoją stację)
-- 189 maszynistów w `maszynisci.json`
+- Rezerwowy podmienia **tylko na swojej stacji** (brak „pożyczania" z innej).
+- Limit obciążenia: **3 całe** liczone w równowartości (cała=1, połówka=0,5, szczeniak=⅓), nie w
+  minutach (`MAX_RESERVE_LOAD_EQ`). 3 całe = 6 połówek = 2 całe+2 połówki = 1 cała+4 połówki.
+  „Pełny" gdy równowartość ≥ 3.
+- Pakowanie: najpierw dobijamy najczęściej używanego rezerwowego, świeżych zostawiamy na trudniejsze,
+  późniejsze obiegi.
+- Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.
+- **Kolejność:** najpierw obiegi z całą, potem z połówką; w grupie — najmniej slotów najpierw, dalej
+  najwcześniejszy zjazd, S przed full przed D.
+- Cel: każdy obieg dostaje ≥ 1 przerwę; brak wolnego rezerwowego → **BRAK** (ręczna obsada), bez
+  schodzenia do niższego rodzaju.

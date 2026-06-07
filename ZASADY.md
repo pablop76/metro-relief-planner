@@ -28,8 +28,10 @@ Tryb: aplikacja **proponuje** plan, pomocnik instruktora **zatwierdza/zmienia** 
 ## 4. Reguły (R)
 
 - **R1** ✅ Przerwy dotyczą **tylko 2. zmiany**.
-- **R2** ✅ **Okno startu przerwy: 14:30–18:30** (granice poprawne — nie wcześniej niż 14:30, nie później niż 18:30). **Preferencja czasu (POPRAWIONA):**
-  - najlepsze przerwy startują w okolicy **16:00–17:30**,
+- **R2** ✅ **Okno startu przerwy.** Najwcześniej **14:30** (wszystkie rodzaje). **Dwa okna:**
+  - **1. (główna) przerwa** — start najpóźniej **18:30** („19:10 = za późno"),
+  - **2. (dodatkowa) przerwa** — okno dłuższe (do ~20:00); realnie limituje ją zjazd pociągu (R7).
+  - **Preferencja czasu:** najlepsze przerwy startują w okolicy **16:00–17:30**,
   - dobra alternatywa: **dwie połówki co 2–3 h**,
   - **najlepszy wariant: cała + połówka razem lub w niewielkim odstępie** (np. na sąsiednich kołach).
   - Brak slotu w oknie → BRAK (ręczna obsada).
@@ -43,7 +45,7 @@ Tryb: aplikacja **proponuje** plan, pomocnik instruktora **zatwierdza/zmienia** 
 - **R7** ✅ Pociągi **wjeżdżające do ruchu po ~14:00** są do podmiany później, ALE **zjeżdżają przed ~20:00** → trzeba je podmienić **odpowiednio wcześnie**, by zdążyć przed zjazdem.
 - **R8** ❓ Stacja **Centrum (A13)** dostępna jako przerwowa **tylko gdy > 15 rezerwowych**.
 - **R9** ✅ **Każdy pociąg/obieg w ruchu dostaje przerwę OBOWIĄZKOWO** (pełne pokrycie).
-- **R10** ✅ **Długość wg czasu w ruchu**: kto jeździ najdłużej → **cała**; pozostali → **co najmniej połówka**.
+- **R10** ✅ **Długość wg liczby kół 2. zmiany** (`countLoops2nd`, czasowo, bez zaokrąglania — patrz [`REGULY-PRZERW.md`](REGULY-PRZERW.md)): najmniej kół → **połówka**, najwięcej → **cała**. Obiegi z ≤ 2,5 koła zawsze połówka; obiegi jadące do/po 21:00 zawsze cała.
 - **R11** ✅ **Pociągi szczytowe (oznaczone literą `S` w rozkładzie, np. S23, S27…)** jeżdżą krócej → mogą dostać **połówkę** (nie potrzebują całej).
 - **R12** ✅ **Szczeniak = ostateczność** (mało rezerwowych); robiony na **A7 (Wilanowska) w stronę Kabat** lub **A18 (Plac Wilsona) w stronę Młocin**. Politechnika (A11) robi **połówkę**, nie szczeniaka.
 - **R13** ✅ **Limit pracy rezerwowego ≈ 4,5 h** łącznie podmian (np. 3 całe lub 6 połówek = 270 min).
@@ -56,6 +58,7 @@ Tryb: aplikacja **proponuje** plan, pomocnik instruktora **zatwierdza/zmienia** 
 Kolejność decyzji tak, jak robi to pomocnik instruktora ręcznie:
 
 **Krok 1 — bilans mocy:**
+
 ```
 standby_koła = 0/1/2/3            (rezerwa ruchowa na Kabatach, R17; 3 = tryb trudny)
 moc = (rezerwowi − 1) × 3 + standby_koła     (każdy ~3 całe = 4,5 h)
@@ -63,13 +66,14 @@ deficyt = liczba_obiegów − moc
 połówek = 2 × deficyt             (gdy deficyt > 0; inaczej 0)
 całych  = liczba_obiegów − połówek
 ```
+
 (uwzględnić R18: maszynista z krótszym oknem dostępności liczy mniej niż 3 koła)
 
 **Krok 2 — rozdanie całych:** najpierw CAŁE na wszystkich stacjach **oprócz A11** (Kabaty A1, Wilanowska A7, Plac Wilsona A18, Młociny A23).
 
 **Krok 3 — rozdanie połówek (A11 Politechnika):** połówki dostają **najpierw szczyty (S)** wg priorytetu (do potwierdzenia): `S34, S32, S22?, S26, S27, S28, S29, S23, S35, S36`.
 
-**Krok 4 — wyjątek (do doprecyzowania):** nie dawaj szczytowi połówki, jeśli na **pierwszym kole** ma tylko połówki.
+**Krok 4 — wyjątek (do doprecyzowania):** nie dawaj szczytowi pierwszym połówki, jeśli mają mieć tylko połówki. Przesun je na pózniejszy czas, najlepiej po kole ale przed 18:15
 
 **R17** ✅ Rezerwa ruchowa (Kabaty): 1 maszynista standby, tryb **0/1/2/3 koła** (3 = trudna obsada, brak odłożonej rezerwy; awarię obsługuje ten, kto ma przerwę).
 **R18** ✅ Rezerwowi mają **okno dostępności [od–do]** (do 16:00 / do 18:00 / od 18:00 do rana). Przerwa musi się zmieścić: `start ≥ od` i `start + długość ≤ do`. „Od 18:00" robi całą (start 18:00 → wraca ~19:30).
@@ -97,7 +101,8 @@ Każda kolumna = jeden **obieg**. Oznaczenia: liczby 1–13 (całodzienne), `S##
 
 ## 7. Pytania otwarte (do rozstrzygnięcia)
 
-1. Czy **każdy pociąg/obieg** w ruchu po południu musi dostać **dokładnie jedną** przerwę, czy część obiegów nie wymaga przerwy (np. te kończące służbę wcześnie)?
-2. **Priorytet planu** gdy brakuje rezerwowych: (a) maksymalnie dużo CAŁYCH przerw, (b) „każdy dostaje cokolwiek" choćby szczeniaka, (c) inne?
-3. Ile trwa sama **podmiana** (czas wejścia/zejścia maszynisty na stacji) — pomijalne czy doliczać?
-4. Czy rezerwowy musi wrócić **na tę samą stację**, z której ruszył, czy może zwolnić się gdziekolwiek?
+1. Ile trwa sama **podmiana** (czas wejścia/zejścia maszynisty na stacji) — pomijalne czy doliczać? (Obecnie pomijane.)
+
+> Rozstrzygnięte: każdy obieg ≥ 1 przerwa (R9), więcej przy nadmiarze rezerwy (R16); priorytet przy
+> deficycie = najpierw całe, potem połówki, szczeniak ostateczność (R6, §4a); rezerwowy podmienia i
+> wraca tylko na swojej stacji (R14).
