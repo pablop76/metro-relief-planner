@@ -1,32 +1,1325 @@
 [
-  { "id": "d01", "imie": "Adam",      "nazwisko": "Kowalski",     "nrPrawa": "PKM-04821", "telefon": "+48 512 340 118" },
-  { "id": "d02", "imie": "Piotr",     "nazwisko": "Nowak",        "nrPrawa": "PKM-04930", "telefon": "+48 601 224 765" },
-  { "id": "d03", "imie": "Marcin",    "nazwisko": "Wiśniewski",   "nrPrawa": "PKM-05012", "telefon": "+48 698 110 432" },
-  { "id": "d04", "imie": "Tomasz",    "nazwisko": "Wójcik",       "nrPrawa": "PKM-05144", "telefon": "+48 783 559 021" },
-  { "id": "d05", "imie": "Krzysztof", "nazwisko": "Kowalczyk",    "nrPrawa": "PKM-05203", "telefon": "+48 514 887 360" },
-  { "id": "d06", "imie": "Paweł",     "nazwisko": "Kamiński",     "nrPrawa": "PKM-05290", "telefon": "+48 602 945 117" },
-  { "id": "d07", "imie": "Michał",    "nazwisko": "Lewandowski",  "nrPrawa": "PKM-05311", "telefon": "+48 691 203 588" },
-  { "id": "d08", "imie": "Grzegorz",  "nazwisko": "Zieliński",    "nrPrawa": "PKM-05377", "telefon": "+48 728 410 996" },
-  { "id": "d09", "imie": "Jakub",     "nazwisko": "Szymański",    "nrPrawa": "PKM-05402", "telefon": "+48 535 662 140" },
-  { "id": "d10", "imie": "Andrzej",   "nazwisko": "Woźniak",      "nrPrawa": "PKM-05456", "telefon": "+48 604 318 207" },
-  { "id": "d11", "imie": "Rafał",     "nazwisko": "Dąbrowski",    "nrPrawa": "PKM-05510", "telefon": "+48 697 552 883" },
-  { "id": "d12", "imie": "Marek",     "nazwisko": "Kozłowski",    "nrPrawa": "PKM-05588", "telefon": "+48 512 904 671" },
-  { "id": "d13", "imie": "Łukasz",    "nazwisko": "Jankowski",    "nrPrawa": "PKM-05601", "telefon": "+48 600 137 459" },
-  { "id": "d14", "imie": "Dariusz",   "nazwisko": "Mazur",        "nrPrawa": "PKM-05677", "telefon": "+48 781 226 304" },
-  { "id": "d15", "imie": "Sławomir",  "nazwisko": "Kwiatkowski",  "nrPrawa": "PKM-05712", "telefon": "+48 533 870 192" },
-  { "id": "d16", "imie": "Robert",    "nazwisko": "Krawczyk",     "nrPrawa": "PKM-05790", "telefon": "+48 602 441 738" },
-  { "id": "d17", "imie": "Mariusz",   "nazwisko": "Piotrowski",   "nrPrawa": "PKM-05833", "telefon": "+48 695 018 627" },
-  { "id": "d18", "imie": "Wojciech",  "nazwisko": "Grabowski",    "nrPrawa": "PKM-05901", "telefon": "+48 726 553 480" },
-  { "id": "d19", "imie": "Jan",       "nazwisko": "Nowakowski",   "nrPrawa": "PKM-05944", "telefon": "+48 514 209 366" },
-  { "id": "d20", "imie": "Zbigniew",  "nazwisko": "Pawłowski",    "nrPrawa": "PKM-06002", "telefon": "+48 601 776 845" },
-  { "id": "d21", "imie": "Sebastian", "nazwisko": "Michalski",    "nrPrawa": "PKM-06078", "telefon": "+48 698 334 921" },
-  { "id": "d22", "imie": "Damian",    "nazwisko": "Adamczyk",     "nrPrawa": "PKM-06120", "telefon": "+48 783 660 215" },
-  { "id": "d23", "imie": "Kamil",     "nazwisko": "Dudek",        "nrPrawa": "PKM-06190", "telefon": "+48 535 118 904" },
-  { "id": "d24", "imie": "Artur",     "nazwisko": "Zając",        "nrPrawa": "PKM-06233", "telefon": "+48 604 902 357" },
-  { "id": "d25", "imie": "Maciej",    "nazwisko": "Wieczorek",    "nrPrawa": "PKM-06301", "telefon": "+48 697 240 681" },
-  { "id": "d26", "imie": "Przemysław","nazwisko": "Jabłoński",    "nrPrawa": "PKM-06355", "telefon": "+48 728 815 470" },
-  { "id": "d27", "imie": "Bartosz",   "nazwisko": "Król",         "nrPrawa": "PKM-06402", "telefon": "+48 512 537 209" },
-  { "id": "d28", "imie": "Tadeusz",   "nazwisko": "Majewski",     "nrPrawa": "PKM-06478", "telefon": "+48 601 093 644" },
-  { "id": "d29", "imie": "Norbert",   "nazwisko": "Olszewski",    "nrPrawa": "PKM-06521", "telefon": "+48 695 461 278" },
-  { "id": "d30", "imie": "Daniel",    "nazwisko": "Stępień",      "nrPrawa": "PKM-06599", "telefon": "+48 781 350 806" }
+  {
+    "id": "0001",
+    "imie": "",
+    "nazwisko": "Kopyt",
+    "nrPrawa": "0001",
+    "telefon": ""
+  },
+  {
+    "id": "0002",
+    "imie": "",
+    "nazwisko": "Kornaszewski",
+    "nrPrawa": "0002",
+    "telefon": ""
+  },
+  {
+    "id": "0003",
+    "imie": "",
+    "nazwisko": "Łada",
+    "nrPrawa": "0003",
+    "telefon": ""
+  },
+  {
+    "id": "0004",
+    "imie": "",
+    "nazwisko": "Miros",
+    "nrPrawa": "0004",
+    "telefon": ""
+  },
+  {
+    "id": "0005",
+    "imie": "",
+    "nazwisko": "Szczepanik",
+    "nrPrawa": "0005",
+    "telefon": ""
+  },
+  {
+    "id": "0006",
+    "imie": "",
+    "nazwisko": "Żeńca",
+    "nrPrawa": "0006",
+    "telefon": ""
+  },
+  {
+    "id": "0007",
+    "imie": "",
+    "nazwisko": "Kępa",
+    "nrPrawa": "0007",
+    "telefon": ""
+  },
+  {
+    "id": "0008",
+    "imie": "",
+    "nazwisko": "Mańkowski",
+    "nrPrawa": "0008",
+    "telefon": ""
+  },
+  {
+    "id": "0009",
+    "imie": "",
+    "nazwisko": "Bogucki",
+    "nrPrawa": "0009",
+    "telefon": ""
+  },
+  {
+    "id": "0010",
+    "imie": "H.",
+    "nazwisko": "Galicki",
+    "nrPrawa": "0010",
+    "telefon": ""
+  },
+  {
+    "id": "0011",
+    "imie": "",
+    "nazwisko": "Gnas",
+    "nrPrawa": "0011",
+    "telefon": ""
+  },
+  {
+    "id": "0012",
+    "imie": "",
+    "nazwisko": "Jówko",
+    "nrPrawa": "0012",
+    "telefon": ""
+  },
+  {
+    "id": "0013",
+    "imie": "M.",
+    "nazwisko": "Piotrowski",
+    "nrPrawa": "0013",
+    "telefon": ""
+  },
+  {
+    "id": "0014",
+    "imie": "",
+    "nazwisko": "Półtoraczyk",
+    "nrPrawa": "0014",
+    "telefon": ""
+  },
+  {
+    "id": "0015",
+    "imie": "",
+    "nazwisko": "Tryńdak",
+    "nrPrawa": "0015",
+    "telefon": ""
+  },
+  {
+    "id": "0016",
+    "imie": "",
+    "nazwisko": "Derpiński",
+    "nrPrawa": "0016",
+    "telefon": ""
+  },
+  {
+    "id": "0017",
+    "imie": "",
+    "nazwisko": "Moszumański",
+    "nrPrawa": "0017",
+    "telefon": ""
+  },
+  {
+    "id": "0018",
+    "imie": "",
+    "nazwisko": "Piętka",
+    "nrPrawa": "0018",
+    "telefon": ""
+  },
+  {
+    "id": "0019",
+    "imie": "",
+    "nazwisko": "Szoka",
+    "nrPrawa": "0019",
+    "telefon": ""
+  },
+  {
+    "id": "0020",
+    "imie": "",
+    "nazwisko": "Szymański",
+    "nrPrawa": "0020",
+    "telefon": ""
+  },
+  {
+    "id": "0021",
+    "imie": "G.",
+    "nazwisko": "Borowski",
+    "nrPrawa": "0021",
+    "telefon": ""
+  },
+  {
+    "id": "0022",
+    "imie": "",
+    "nazwisko": "Grabiec",
+    "nrPrawa": "0022",
+    "telefon": ""
+  },
+  {
+    "id": "0023",
+    "imie": "",
+    "nazwisko": "Gutt",
+    "nrPrawa": "0023",
+    "telefon": ""
+  },
+  {
+    "id": "0024",
+    "imie": "",
+    "nazwisko": "Kaźmierczak",
+    "nrPrawa": "0024",
+    "telefon": ""
+  },
+  {
+    "id": "0025",
+    "imie": "",
+    "nazwisko": "Jóźwiak",
+    "nrPrawa": "0025",
+    "telefon": ""
+  },
+  {
+    "id": "0026",
+    "imie": "Mat.",
+    "nazwisko": "Kowalczyk",
+    "nrPrawa": "0026",
+    "telefon": ""
+  },
+  {
+    "id": "0027",
+    "imie": "P.",
+    "nazwisko": "Kucharski",
+    "nrPrawa": "0027",
+    "telefon": ""
+  },
+  {
+    "id": "0028",
+    "imie": "G.",
+    "nazwisko": "Osiński",
+    "nrPrawa": "0028",
+    "telefon": ""
+  },
+  {
+    "id": "0029",
+    "imie": "",
+    "nazwisko": "Kwapiński",
+    "nrPrawa": "0029",
+    "telefon": ""
+  },
+  {
+    "id": "0030",
+    "imie": "",
+    "nazwisko": "Lenart",
+    "nrPrawa": "0030",
+    "telefon": ""
+  },
+  {
+    "id": "0031",
+    "imie": "",
+    "nazwisko": "Pawelec",
+    "nrPrawa": "0031",
+    "telefon": ""
+  },
+  {
+    "id": "0032",
+    "imie": "",
+    "nazwisko": "Podgórski",
+    "nrPrawa": "0032",
+    "telefon": ""
+  },
+  {
+    "id": "0033",
+    "imie": "",
+    "nazwisko": "Górniak",
+    "nrPrawa": "0033",
+    "telefon": ""
+  },
+  {
+    "id": "0034",
+    "imie": "M.",
+    "nazwisko": "Makowski",
+    "nrPrawa": "0034",
+    "telefon": ""
+  },
+  {
+    "id": "0035",
+    "imie": "",
+    "nazwisko": "Michalski",
+    "nrPrawa": "0035",
+    "telefon": ""
+  },
+  {
+    "id": "0036",
+    "imie": "K.",
+    "nazwisko": "Piotrowski",
+    "nrPrawa": "0036",
+    "telefon": ""
+  },
+  {
+    "id": "0037",
+    "imie": "",
+    "nazwisko": "Herod",
+    "nrPrawa": "0037",
+    "telefon": ""
+  },
+  {
+    "id": "0038",
+    "imie": "",
+    "nazwisko": "Peciak",
+    "nrPrawa": "0038",
+    "telefon": ""
+  },
+  {
+    "id": "0039",
+    "imie": "",
+    "nazwisko": "Probe",
+    "nrPrawa": "0039",
+    "telefon": ""
+  },
+  {
+    "id": "0040",
+    "imie": "",
+    "nazwisko": "Rondoś",
+    "nrPrawa": "0040",
+    "telefon": ""
+  },
+  {
+    "id": "0041",
+    "imie": "",
+    "nazwisko": "Maliszewski",
+    "nrPrawa": "0041",
+    "telefon": ""
+  },
+  {
+    "id": "0042",
+    "imie": "",
+    "nazwisko": "Sochacki",
+    "nrPrawa": "0042",
+    "telefon": ""
+  },
+  {
+    "id": "0043",
+    "imie": "",
+    "nazwisko": "Solarski",
+    "nrPrawa": "0043",
+    "telefon": ""
+  },
+  {
+    "id": "0044",
+    "imie": "",
+    "nazwisko": "Stypułkowski",
+    "nrPrawa": "0044",
+    "telefon": ""
+  },
+  {
+    "id": "0045",
+    "imie": "",
+    "nazwisko": "Borowy",
+    "nrPrawa": "0045",
+    "telefon": ""
+  },
+  {
+    "id": "0046",
+    "imie": "B.",
+    "nazwisko": "Janicki",
+    "nrPrawa": "0046",
+    "telefon": ""
+  },
+  {
+    "id": "0047",
+    "imie": "",
+    "nazwisko": "Woliński",
+    "nrPrawa": "0047",
+    "telefon": ""
+  },
+  {
+    "id": "0048",
+    "imie": "P.",
+    "nazwisko": "Zgorzałek",
+    "nrPrawa": "0048",
+    "telefon": ""
+  },
+  {
+    "id": "0049",
+    "imie": "",
+    "nazwisko": "Boruszewski",
+    "nrPrawa": "0049",
+    "telefon": ""
+  },
+  {
+    "id": "0050",
+    "imie": "",
+    "nazwisko": "Brodniewicz",
+    "nrPrawa": "0050",
+    "telefon": ""
+  },
+  {
+    "id": "0051",
+    "imie": "",
+    "nazwisko": "Brzostek",
+    "nrPrawa": "0051",
+    "telefon": ""
+  },
+  {
+    "id": "0052",
+    "imie": "",
+    "nazwisko": "Frąckiewicz",
+    "nrPrawa": "0052",
+    "telefon": ""
+  },
+  {
+    "id": "0053",
+    "imie": "",
+    "nazwisko": "Bogumił",
+    "nrPrawa": "0053",
+    "telefon": ""
+  },
+  {
+    "id": "0054",
+    "imie": "",
+    "nazwisko": "Klimczak",
+    "nrPrawa": "0054",
+    "telefon": ""
+  },
+  {
+    "id": "0055",
+    "imie": "",
+    "nazwisko": "Korodziejewski",
+    "nrPrawa": "0055",
+    "telefon": ""
+  },
+  {
+    "id": "0056",
+    "imie": "",
+    "nazwisko": "Kruszewski",
+    "nrPrawa": "0056",
+    "telefon": ""
+  },
+  {
+    "id": "0057",
+    "imie": "",
+    "nazwisko": "Kapałka",
+    "nrPrawa": "0057",
+    "telefon": ""
+  },
+  {
+    "id": "0058",
+    "imie": "",
+    "nazwisko": "Maćkowiak",
+    "nrPrawa": "0058",
+    "telefon": ""
+  },
+  {
+    "id": "0059",
+    "imie": "",
+    "nazwisko": "Molak",
+    "nrPrawa": "0059",
+    "telefon": ""
+  },
+  {
+    "id": "0060",
+    "imie": "",
+    "nazwisko": "Pakuła",
+    "nrPrawa": "0060",
+    "telefon": ""
+  },
+  {
+    "id": "0061",
+    "imie": "",
+    "nazwisko": "Frelik",
+    "nrPrawa": "0061",
+    "telefon": ""
+  },
+  {
+    "id": "0062",
+    "imie": "J.",
+    "nazwisko": "Mroczek",
+    "nrPrawa": "0062",
+    "telefon": ""
+  },
+  {
+    "id": "0063",
+    "imie": "",
+    "nazwisko": "Olechowicz",
+    "nrPrawa": "0063",
+    "telefon": ""
+  },
+  {
+    "id": "0064",
+    "imie": "",
+    "nazwisko": "Woronowicz",
+    "nrPrawa": "0064",
+    "telefon": ""
+  },
+  {
+    "id": "0065",
+    "imie": "",
+    "nazwisko": "Gostkowski",
+    "nrPrawa": "0065",
+    "telefon": ""
+  },
+  {
+    "id": "0066",
+    "imie": "",
+    "nazwisko": "Knieja",
+    "nrPrawa": "0066",
+    "telefon": ""
+  },
+  {
+    "id": "0067",
+    "imie": "",
+    "nazwisko": "Rudziński",
+    "nrPrawa": "0067",
+    "telefon": ""
+  },
+  {
+    "id": "0068",
+    "imie": "",
+    "nazwisko": "Szparaga",
+    "nrPrawa": "0068",
+    "telefon": ""
+  },
+  {
+    "id": "0069",
+    "imie": "",
+    "nazwisko": "Gójski",
+    "nrPrawa": "0069",
+    "telefon": ""
+  },
+  {
+    "id": "0070",
+    "imie": "",
+    "nazwisko": "Opałka",
+    "nrPrawa": "0070",
+    "telefon": ""
+  },
+  {
+    "id": "0071",
+    "imie": "",
+    "nazwisko": "Trentowski",
+    "nrPrawa": "0071",
+    "telefon": ""
+  },
+  {
+    "id": "0072",
+    "imie": "",
+    "nazwisko": "Załęcki",
+    "nrPrawa": "0072",
+    "telefon": ""
+  },
+  {
+    "id": "0073",
+    "imie": "Z.",
+    "nazwisko": "Janicki",
+    "nrPrawa": "0073",
+    "telefon": ""
+  },
+  {
+    "id": "0074",
+    "imie": "",
+    "nazwisko": "Mikulski",
+    "nrPrawa": "0074",
+    "telefon": ""
+  },
+  {
+    "id": "0075",
+    "imie": "",
+    "nazwisko": "Jagoda",
+    "nrPrawa": "0075",
+    "telefon": ""
+  },
+  {
+    "id": "0076",
+    "imie": "",
+    "nazwisko": "Skowyrski",
+    "nrPrawa": "0076",
+    "telefon": ""
+  },
+  {
+    "id": "0077",
+    "imie": "D.",
+    "nazwisko": "Gontarz",
+    "nrPrawa": "0077",
+    "telefon": ""
+  },
+  {
+    "id": "0078",
+    "imie": "",
+    "nazwisko": "Szabelski",
+    "nrPrawa": "0078",
+    "telefon": ""
+  },
+  {
+    "id": "0079",
+    "imie": "",
+    "nazwisko": "Filipiak",
+    "nrPrawa": "0079",
+    "telefon": ""
+  },
+  {
+    "id": "0080",
+    "imie": "",
+    "nazwisko": "Śliwa",
+    "nrPrawa": "0080",
+    "telefon": ""
+  },
+  {
+    "id": "0081",
+    "imie": "",
+    "nazwisko": "Korycki",
+    "nrPrawa": "0081",
+    "telefon": ""
+  },
+  {
+    "id": "0082",
+    "imie": "",
+    "nazwisko": "Ziegler",
+    "nrPrawa": "0082",
+    "telefon": ""
+  },
+  {
+    "id": "0083",
+    "imie": "",
+    "nazwisko": "Haś",
+    "nrPrawa": "0083",
+    "telefon": ""
+  },
+  {
+    "id": "0084",
+    "imie": "K.",
+    "nazwisko": "Kaczorek",
+    "nrPrawa": "0084",
+    "telefon": ""
+  },
+  {
+    "id": "0085",
+    "imie": "",
+    "nazwisko": "Bober",
+    "nrPrawa": "0085",
+    "telefon": ""
+  },
+  {
+    "id": "0086",
+    "imie": "",
+    "nazwisko": "Widyński",
+    "nrPrawa": "0086",
+    "telefon": ""
+  },
+  {
+    "id": "0087",
+    "imie": "",
+    "nazwisko": "Cendrowski",
+    "nrPrawa": "0087",
+    "telefon": ""
+  },
+  {
+    "id": "0088",
+    "imie": "",
+    "nazwisko": "Kostrzyński",
+    "nrPrawa": "0088",
+    "telefon": ""
+  },
+  {
+    "id": "0089",
+    "imie": "",
+    "nazwisko": "Wrzosek",
+    "nrPrawa": "0089",
+    "telefon": ""
+  },
+  {
+    "id": "0090",
+    "imie": "",
+    "nazwisko": "Kulczyk",
+    "nrPrawa": "0090",
+    "telefon": ""
+  },
+  {
+    "id": "0091",
+    "imie": "",
+    "nazwisko": "Link",
+    "nrPrawa": "0091",
+    "telefon": ""
+  },
+  {
+    "id": "0092",
+    "imie": "",
+    "nazwisko": "Melon",
+    "nrPrawa": "0092",
+    "telefon": ""
+  },
+  {
+    "id": "0093",
+    "imie": "",
+    "nazwisko": "Siroję",
+    "nrPrawa": "0093",
+    "telefon": ""
+  },
+  {
+    "id": "0094",
+    "imie": "",
+    "nazwisko": "Jeżewski",
+    "nrPrawa": "0094",
+    "telefon": ""
+  },
+  {
+    "id": "0095",
+    "imie": "",
+    "nazwisko": "Raczyński",
+    "nrPrawa": "0095",
+    "telefon": ""
+  },
+  {
+    "id": "0096",
+    "imie": "",
+    "nazwisko": "Gosik",
+    "nrPrawa": "0096",
+    "telefon": ""
+  },
+  {
+    "id": "0097",
+    "imie": "",
+    "nazwisko": "Serwatka",
+    "nrPrawa": "0097",
+    "telefon": ""
+  },
+  {
+    "id": "0098",
+    "imie": "",
+    "nazwisko": "Szałowska",
+    "nrPrawa": "0098",
+    "telefon": ""
+  },
+  {
+    "id": "0099",
+    "imie": "",
+    "nazwisko": "Zaręba",
+    "nrPrawa": "0099",
+    "telefon": ""
+  },
+  {
+    "id": "0100",
+    "imie": "",
+    "nazwisko": "Hermann",
+    "nrPrawa": "0100",
+    "telefon": ""
+  },
+  {
+    "id": "0101",
+    "imie": "R. A.",
+    "nazwisko": "Kowalski",
+    "nrPrawa": "0101",
+    "telefon": ""
+  },
+  {
+    "id": "0102",
+    "imie": "",
+    "nazwisko": "Herb",
+    "nrPrawa": "0102",
+    "telefon": ""
+  },
+  {
+    "id": "0103",
+    "imie": "",
+    "nazwisko": "Marzec",
+    "nrPrawa": "0103",
+    "telefon": ""
+  },
+  {
+    "id": "0104",
+    "imie": "",
+    "nazwisko": "Błoński",
+    "nrPrawa": "0104",
+    "telefon": ""
+  },
+  {
+    "id": "0105",
+    "imie": "",
+    "nazwisko": "Jeleń",
+    "nrPrawa": "0105",
+    "telefon": ""
+  },
+  {
+    "id": "0106",
+    "imie": "",
+    "nazwisko": "Gawryś",
+    "nrPrawa": "0106",
+    "telefon": ""
+  },
+  {
+    "id": "0107",
+    "imie": "R.",
+    "nazwisko": "Makowski",
+    "nrPrawa": "0107",
+    "telefon": ""
+  },
+  {
+    "id": "0108",
+    "imie": "",
+    "nazwisko": "Rotuski",
+    "nrPrawa": "0108",
+    "telefon": ""
+  },
+  {
+    "id": "0109",
+    "imie": "",
+    "nazwisko": "Mirka",
+    "nrPrawa": "0109",
+    "telefon": ""
+  },
+  {
+    "id": "0110",
+    "imie": "",
+    "nazwisko": "Wróblewski",
+    "nrPrawa": "0110",
+    "telefon": ""
+  },
+  {
+    "id": "0111",
+    "imie": "",
+    "nazwisko": "Anuszewski",
+    "nrPrawa": "0111",
+    "telefon": ""
+  },
+  {
+    "id": "0112",
+    "imie": "",
+    "nazwisko": "Iwaszek",
+    "nrPrawa": "0112",
+    "telefon": ""
+  },
+  {
+    "id": "0113",
+    "imie": "",
+    "nazwisko": "Seliga",
+    "nrPrawa": "0113",
+    "telefon": ""
+  },
+  {
+    "id": "0114",
+    "imie": "",
+    "nazwisko": "Wojtas",
+    "nrPrawa": "0114",
+    "telefon": ""
+  },
+  {
+    "id": "0115",
+    "imie": "",
+    "nazwisko": "Krasa",
+    "nrPrawa": "0115",
+    "telefon": ""
+  },
+  {
+    "id": "0116",
+    "imie": "P.",
+    "nazwisko": "Rostkowski",
+    "nrPrawa": "0116",
+    "telefon": ""
+  },
+  {
+    "id": "0117",
+    "imie": "D.",
+    "nazwisko": "Królikowski",
+    "nrPrawa": "0117",
+    "telefon": ""
+  },
+  {
+    "id": "0118",
+    "imie": "",
+    "nazwisko": "Świderski",
+    "nrPrawa": "0118",
+    "telefon": ""
+  },
+  {
+    "id": "0119",
+    "imie": "",
+    "nazwisko": "Dominiewski",
+    "nrPrawa": "0119",
+    "telefon": ""
+  },
+  {
+    "id": "0120",
+    "imie": "",
+    "nazwisko": "Radach",
+    "nrPrawa": "0120",
+    "telefon": ""
+  },
+  {
+    "id": "0121",
+    "imie": "",
+    "nazwisko": "Adamczyk",
+    "nrPrawa": "0121",
+    "telefon": ""
+  },
+  {
+    "id": "0122",
+    "imie": "",
+    "nazwisko": "Angielczyk",
+    "nrPrawa": "0122",
+    "telefon": ""
+  },
+  {
+    "id": "0123",
+    "imie": "",
+    "nazwisko": "Baran",
+    "nrPrawa": "0123",
+    "telefon": ""
+  },
+  {
+    "id": "0124",
+    "imie": "",
+    "nazwisko": "Berta",
+    "nrPrawa": "0124",
+    "telefon": ""
+  },
+  {
+    "id": "0125",
+    "imie": "",
+    "nazwisko": "Biały",
+    "nrPrawa": "0125",
+    "telefon": ""
+  },
+  {
+    "id": "0126",
+    "imie": "",
+    "nazwisko": "Boniecki",
+    "nrPrawa": "0126",
+    "telefon": ""
+  },
+  {
+    "id": "0127",
+    "imie": "H.",
+    "nazwisko": "Borowski",
+    "nrPrawa": "0127",
+    "telefon": ""
+  },
+  {
+    "id": "0128",
+    "imie": "",
+    "nazwisko": "Brodowski",
+    "nrPrawa": "0128",
+    "telefon": ""
+  },
+  {
+    "id": "0129",
+    "imie": "",
+    "nazwisko": "Chalecki",
+    "nrPrawa": "0129",
+    "telefon": ""
+  },
+  {
+    "id": "0130",
+    "imie": "",
+    "nazwisko": "Chojecki",
+    "nrPrawa": "0130",
+    "telefon": ""
+  },
+  {
+    "id": "0131",
+    "imie": "",
+    "nazwisko": "Dąbrowski",
+    "nrPrawa": "0131",
+    "telefon": ""
+  },
+  {
+    "id": "0132",
+    "imie": "",
+    "nazwisko": "Ględala",
+    "nrPrawa": "0132",
+    "telefon": ""
+  },
+  {
+    "id": "0133",
+    "imie": "",
+    "nazwisko": "Gołębiewski",
+    "nrPrawa": "0133",
+    "telefon": ""
+  },
+  {
+    "id": "0134",
+    "imie": "",
+    "nazwisko": "Gołosiński",
+    "nrPrawa": "0134",
+    "telefon": ""
+  },
+  {
+    "id": "0135",
+    "imie": "",
+    "nazwisko": "Gomoradzki",
+    "nrPrawa": "0135",
+    "telefon": ""
+  },
+  {
+    "id": "0136",
+    "imie": "E.",
+    "nazwisko": "Gontarz",
+    "nrPrawa": "0136",
+    "telefon": ""
+  },
+  {
+    "id": "0137",
+    "imie": "",
+    "nazwisko": "Gromulski",
+    "nrPrawa": "0137",
+    "telefon": ""
+  },
+  {
+    "id": "0138",
+    "imie": "",
+    "nazwisko": "Horwat",
+    "nrPrawa": "0138",
+    "telefon": ""
+  },
+  {
+    "id": "0139",
+    "imie": "",
+    "nazwisko": "Kalata",
+    "nrPrawa": "0139",
+    "telefon": ""
+  },
+  {
+    "id": "0140",
+    "imie": "",
+    "nazwisko": "Kamiński",
+    "nrPrawa": "0140",
+    "telefon": ""
+  },
+  {
+    "id": "0141",
+    "imie": "",
+    "nazwisko": "Klimecki",
+    "nrPrawa": "0141",
+    "telefon": ""
+  },
+  {
+    "id": "0142",
+    "imie": "",
+    "nazwisko": "Kołak",
+    "nrPrawa": "0142",
+    "telefon": ""
+  },
+  {
+    "id": "0143",
+    "imie": "",
+    "nazwisko": "Koza",
+    "nrPrawa": "0143",
+    "telefon": ""
+  },
+  {
+    "id": "0144",
+    "imie": "",
+    "nazwisko": "Kroszczyński",
+    "nrPrawa": "0144",
+    "telefon": ""
+  },
+  {
+    "id": "0145",
+    "imie": "",
+    "nazwisko": "Krystek",
+    "nrPrawa": "0145",
+    "telefon": ""
+  },
+  {
+    "id": "0146",
+    "imie": "",
+    "nazwisko": "Kuchciński",
+    "nrPrawa": "0146",
+    "telefon": ""
+  },
+  {
+    "id": "0147",
+    "imie": "",
+    "nazwisko": "Kukwa",
+    "nrPrawa": "0147",
+    "telefon": ""
+  },
+  {
+    "id": "0148",
+    "imie": "",
+    "nazwisko": "Kurowski",
+    "nrPrawa": "0148",
+    "telefon": ""
+  },
+  {
+    "id": "0149",
+    "imie": "",
+    "nazwisko": "Łobodowski",
+    "nrPrawa": "0149",
+    "telefon": ""
+  },
+  {
+    "id": "0150",
+    "imie": "",
+    "nazwisko": "Majewski",
+    "nrPrawa": "0150",
+    "telefon": ""
+  },
+  {
+    "id": "0151",
+    "imie": "",
+    "nazwisko": "Marczak",
+    "nrPrawa": "0151",
+    "telefon": ""
+  },
+  {
+    "id": "0152",
+    "imie": "",
+    "nazwisko": "Masłuch",
+    "nrPrawa": "0152",
+    "telefon": ""
+  },
+  {
+    "id": "0153",
+    "imie": "",
+    "nazwisko": "Matczak",
+    "nrPrawa": "0153",
+    "telefon": ""
+  },
+  {
+    "id": "0154",
+    "imie": "",
+    "nazwisko": "Mazurkiewicz",
+    "nrPrawa": "0154",
+    "telefon": ""
+  },
+  {
+    "id": "0155",
+    "imie": "",
+    "nazwisko": "Melner",
+    "nrPrawa": "0155",
+    "telefon": ""
+  },
+  {
+    "id": "0156",
+    "imie": "",
+    "nazwisko": "Milczarek",
+    "nrPrawa": "0156",
+    "telefon": ""
+  },
+  {
+    "id": "0157",
+    "imie": "",
+    "nazwisko": "Miłkowski",
+    "nrPrawa": "0157",
+    "telefon": ""
+  },
+  {
+    "id": "0158",
+    "imie": "",
+    "nazwisko": "Modzelewska-Skoczek",
+    "nrPrawa": "0158",
+    "telefon": ""
+  },
+  {
+    "id": "0159",
+    "imie": "",
+    "nazwisko": "Moreń",
+    "nrPrawa": "0159",
+    "telefon": ""
+  },
+  {
+    "id": "0160",
+    "imie": "",
+    "nazwisko": "Mrowiński",
+    "nrPrawa": "0160",
+    "telefon": ""
+  },
+  {
+    "id": "0161",
+    "imie": "",
+    "nazwisko": "Oklesiński",
+    "nrPrawa": "0161",
+    "telefon": ""
+  },
+  {
+    "id": "0162",
+    "imie": "",
+    "nazwisko": "Olobry",
+    "nrPrawa": "0162",
+    "telefon": ""
+  },
+  {
+    "id": "0163",
+    "imie": "A.",
+    "nazwisko": "Osiński",
+    "nrPrawa": "0163",
+    "telefon": ""
+  },
+  {
+    "id": "0164",
+    "imie": "",
+    "nazwisko": "Osman",
+    "nrPrawa": "0164",
+    "telefon": ""
+  },
+  {
+    "id": "0165",
+    "imie": "",
+    "nazwisko": "Peter",
+    "nrPrawa": "0165",
+    "telefon": ""
+  },
+  {
+    "id": "0166",
+    "imie": "",
+    "nazwisko": "Pietrasik",
+    "nrPrawa": "0166",
+    "telefon": ""
+  },
+  {
+    "id": "0167",
+    "imie": "",
+    "nazwisko": "Pietrowicz",
+    "nrPrawa": "0167",
+    "telefon": ""
+  },
+  {
+    "id": "0168",
+    "imie": "",
+    "nazwisko": "Pindor",
+    "nrPrawa": "0168",
+    "telefon": ""
+  },
+  {
+    "id": "0169",
+    "imie": "",
+    "nazwisko": "Pira",
+    "nrPrawa": "0169",
+    "telefon": ""
+  },
+  {
+    "id": "0170",
+    "imie": "",
+    "nazwisko": "Pluta",
+    "nrPrawa": "0170",
+    "telefon": ""
+  },
+  {
+    "id": "0171",
+    "imie": "",
+    "nazwisko": "Przybylski",
+    "nrPrawa": "0171",
+    "telefon": ""
+  },
+  {
+    "id": "0172",
+    "imie": "",
+    "nazwisko": "Pyrkosz",
+    "nrPrawa": "0172",
+    "telefon": ""
+  },
+  {
+    "id": "0173",
+    "imie": "",
+    "nazwisko": "Radziszewski",
+    "nrPrawa": "0173",
+    "telefon": ""
+  },
+  {
+    "id": "0174",
+    "imie": "",
+    "nazwisko": "Rajski",
+    "nrPrawa": "0174",
+    "telefon": ""
+  },
+  {
+    "id": "0175",
+    "imie": "Ł.",
+    "nazwisko": "Rostkowski",
+    "nrPrawa": "0175",
+    "telefon": ""
+  },
+  {
+    "id": "0176",
+    "imie": "",
+    "nazwisko": "Rutkowski",
+    "nrPrawa": "0176",
+    "telefon": ""
+  },
+  {
+    "id": "0177",
+    "imie": "",
+    "nazwisko": "Sukiennik",
+    "nrPrawa": "0177",
+    "telefon": ""
+  },
+  {
+    "id": "0178",
+    "imie": "",
+    "nazwisko": "Szalucha",
+    "nrPrawa": "0178",
+    "telefon": ""
+  },
+  {
+    "id": "0179",
+    "imie": "",
+    "nazwisko": "Szliter",
+    "nrPrawa": "0179",
+    "telefon": ""
+  },
+  {
+    "id": "0180",
+    "imie": "",
+    "nazwisko": "Świerczewski",
+    "nrPrawa": "0180",
+    "telefon": ""
+  },
+  {
+    "id": "0181",
+    "imie": "",
+    "nazwisko": "Walczak",
+    "nrPrawa": "0181",
+    "telefon": ""
+  },
+  {
+    "id": "0182",
+    "imie": "",
+    "nazwisko": "Wiącek",
+    "nrPrawa": "0182",
+    "telefon": ""
+  },
+  {
+    "id": "0183",
+    "imie": "",
+    "nazwisko": "Wikiel",
+    "nrPrawa": "0183",
+    "telefon": ""
+  },
+  {
+    "id": "0184",
+    "imie": "",
+    "nazwisko": "Wingert",
+    "nrPrawa": "0184",
+    "telefon": ""
+  },
+  {
+    "id": "0185",
+    "imie": "",
+    "nazwisko": "Wiśniak",
+    "nrPrawa": "0185",
+    "telefon": ""
+  },
+  {
+    "id": "0186",
+    "imie": "",
+    "nazwisko": "Wiśniewski",
+    "nrPrawa": "0186",
+    "telefon": ""
+  },
+  {
+    "id": "0187",
+    "imie": "P.",
+    "nazwisko": "Wójcik",
+    "nrPrawa": "0187",
+    "telefon": ""
+  },
+  {
+    "id": "0188",
+    "imie": "",
+    "nazwisko": "Wypych",
+    "nrPrawa": "0188",
+    "telefon": ""
+  },
+  {
+    "id": "0189",
+    "imie": "",
+    "nazwisko": "Zakrzewski",
+    "nrPrawa": "0189",
+    "telefon": ""
+  }
 ]
