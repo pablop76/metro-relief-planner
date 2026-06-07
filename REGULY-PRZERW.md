@@ -53,7 +53,8 @@ zmienia go ktoś na linii.
 
 Decyduje liczba kół (`planBreaks`):
 
-- Obiegi z **≤ 2,5 koła** (`POL_MAX_LOOPS`) → zawsze **połówka**, niezależnie od liczby rezerwowych.
+- Obiegi z **≤ 3 koła** (`POL_MAX_LOOPS`) → **połówka zawsze**, niezależnie od liczby rezerwowych (twardy próg).
+- Obiegi **3–4 koła** → **elastycznie**: przy nadwyżce rezerwy dostają **całą**, przy deficycie schodzą na **połówkę**. „Zawsze połówka" powyżej 3 kół to sugestia — decyduje bilans.
 - **Deficyt mocy** (`liczba_obiegów − rezerwowi×3`) zwiększa liczbę połówek o `2 × deficyt`.
 - Połówki trafiają do obiegów z **najmniejszą liczbą kół** (szczyty); reszta → **cała**.
 - Zasada nadrzędna: **najmniej kół = połówka**, najwięcej kół = cała.
@@ -113,8 +114,9 @@ stację), nie ze sztywnych 90/45/30 min.
 - Limit obciążenia: **3 całe** liczone w równowartości (cała=1, godzinka=⅔, połówka=0,5, szczeniak=⅓),
   nie w minutach (`MAX_RESERVE_LOAD_EQ`). 3 całe = 6 połówek = 2 całe+2 połówki = 1 cała+4 połówki.
   „Pełny" gdy równowartość ≥ 3.
-- **Limit liczby podmian wg stacji** (`jobCapOf`): **A1 (Kabaty) = domyślnie 1** podmiana — rezerwa
-  ruchowa musi zostać pod ręką (R17). Pozostałe stacje: bez limitu liczby (ogranicza je tylko 3 koła).
+- **Limit liczby podmian wg stacji** (`jobCapOf`): na **A1 (Kabaty) tylko JEDEN** rezerwowy z obsady ma
+  **domyślnie 1** podmianę — rezerwa ruchowa musi zostać pod ręką (R17); **pozostali rezerwowi A1
+  pracują normalnie do 3 kół**. Inne stacje: bez limitu liczby (ogranicza je tylko 3 koła).
   Instruktor może nadpisać ręcznie (`Reserve.maxJobs`).
 - **Maksymalne wykorzystanie:** dodatkowe przerwy (R16) rozdawane są tak, by dobić każdego rezerwowego
   (poza A1) do **pełnych 3 kół**. Dlatego druga **cała** jest dozwolona zawsze (nie tylko przy nadmiarze)

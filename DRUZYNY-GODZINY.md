@@ -56,8 +56,12 @@ Tabela startów jest źródłem dla `SHIFT2_DRIVER_START` (tylko obiegi jadące 
 ## Rezerwowi (do podmian na przerwy)
 | Rezerwa | Stacja | Maszyniści |
 |---|---|---|
-| A01 | A1 Kabaty | Kopyt, Kornaszewski, Łada, Miros, Szczepanik, Żeńca |
-| A07 | A7 Wilanowska | Kępa, Mańkowski |
-| A11/A23 | A11 Politechnika / A23 Młociny | Bogucki, Galicki H., Gnas, Jówko, Piotrowski M., Półtoraczyk, Tryńdak |
+| A1 | Kabaty | Kopyt, Kornaszewski, Łada |
+| A7 | Wilanowska | Kępa, Mańkowski |
+| A11 | Politechnika | Bogucki, Galicki H., Gnas, Jówko, Piotrowski M. |
+| A18 | Plac Wilsona | Moszumański, Jóźwiak |
+| A23 | Młociny | Półtoraczyk, Tryńdak |
+
+> Stan na czerwiec 2026 (14 osób) — **liczba zmienna** (R5). Na A1 jeden z obsady = rezerwa ruchowa (max 1 koło, R17).
 
 Norma 2. zmiany na rezerwie wg legend A01: `1/A1* 5:00–13:00`, `2/A1* 13:00–21:00`, `2/A1# 13:30–21:30`, `1/XXII 5:30–13:30`.

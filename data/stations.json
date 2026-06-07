@@ -152,9 +152,20 @@
     "tylko_druga_zmiana": true,
     "okno_startu_przerwy": {
       "od": "14:30",
-      "do": "18:30",
-      "preferencja": "jak najbliżej 14:30"
+      "do_pierwsza_przerwa": "18:30",
+      "do_druga_przerwa": "20:00",
+      "preferencja": "16:00-17:30 (tylko bonus — przy małej liczbie rezerwowych nie każdy się załapie; sloty upychać od 14:30)"
     },
-    "max_ciagla_praca_h": 6
+    "max_ciagla_praca_h": 6,
+    "max_ciagla_praca_liczona_od": "realny start maszynisty (13:00/13:30/14:00 wg drużyny)",
+    "prog_polowki_kola": {
+      "twardy": 3,
+      "elastyczny_gorny": 4,
+      "opis": "≤3 koła = połówka zawsze; 3-4 koła = cała przy nadwyżce rezerwy, połówka przy deficycie; >4 koła = cała"
+    },
+    "podmiana_przeciwny_tor": {
+      "bufor_min": 5,
+      "alert": "gdy podmiana opiera się na trafieniu w odjazd z przeciwnego toru/kierunku — pokaż znak ostrzegawczy 'mało czasu (~5 min), skontaktuj się z pociągiem' na przerwie w planie i na pasku bocznym (Rezerwowi na stacjach)"
+    }
   }
 }
