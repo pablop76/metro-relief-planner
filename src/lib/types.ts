@@ -9,6 +9,13 @@ export type BreakKind = "cała" | "połówka" | "szczeniak";
 /** Typ obiegu wg oznaczenia w rozkładzie. */
 export type ObiegType = "full" | "S" | "D";
 
+/** Linie metra — rezerwowy może być z M1 lub M2 (mamy dwie linie). */
+export type MetroLine = "M1" | "M2";
+
+/** Typy taboru do autoryzacji maszynisty. */
+export type TrainType = "81" | "Inspiro" | "Škoda" | "Metropolis";
+export const TRAIN_TYPES: TrainType[] = ["81", "Inspiro", "Škoda", "Metropolis"];
+
 /** Stacje przerwowe (mają rezerwowych). */
 export const BREAK_STATIONS = ["A1", "A7", "A11", "A18", "A23"] as const;
 export type BreakStation = (typeof BREAK_STATIONS)[number];
@@ -69,6 +76,16 @@ export interface Reserve {
   pins?: string[];
   /** tylko ręcznie: robi WYŁĄCZNIE wpisane piny, silnik nie dokłada mu nic automatycznie */
   manualOnly?: boolean;
+  /** linia macierzysta rezerwowego (mamy dwie linie: M1/M2) */
+  line?: MetroLine;
+  /** dostępność: od której godziny pracuje (sekundy od północy) — R18 */
+  availFrom?: number;
+  /** dostępność: do której godziny pracuje (sekundy od północy) — R18 */
+  availTo?: number;
+  /** autoryzacje na typy taboru — rezerwowy podmienia tylko pociąg, na który ma autoryzację */
+  auth?: TrainType[];
+  /** dowolny opis autoryzacji — pojawia się przy ikonce pociągu na belce rezerwowego */
+  authNote?: string;
 }
 
 /** Pula rezerwowych — lista imienna. */
@@ -112,4 +129,11 @@ export const HHMMSS = (sec: number): string => {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+};
+
+/** "HH:MM" → sekundy od północy; undefined gdy puste/niepoprawne. */
+export const hmToSec = (v: string): number | undefined => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(v.trim());
+  if (!m) return undefined;
+  return parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60;
 };

@@ -38,7 +38,10 @@ export const STATIONS: Record<BreakStation, StationCfg> = {
   },
   A11: {
     code: "A11", name: "Politechnika", terminus: false,
-    options: [{ kind: "połówka", dirs: ["Kabaty", "Młociny"] }],
+    options: [
+      { kind: "cała", dirs: ["Kabaty", "Młociny"] },     // na A11 można też robić całe
+      { kind: "połówka", dirs: ["Kabaty", "Młociny"] },
+    ],
   },
   A18: {
     code: "A18", name: "Plac Wilsona", terminus: false,

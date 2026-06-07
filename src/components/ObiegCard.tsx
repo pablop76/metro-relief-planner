@@ -28,21 +28,28 @@ interface Props {
   obieg: Obieg;
   breaks: BreakAssignment[];
   reserves: Reserve[];
+  /** wszystkie przerwy wg rezerwowego (do wykrywania konfliktów czasowych przy ręcznej edycji) */
+  byReserve: Record<string, BreakAssignment[]>;
   onBreaksChange: (breaks: BreakAssignment[]) => void;
   trainNo?: string;
   onTrainChange?: (v: string) => void;
   forceKind?: BreakKind;
   onCycleKind?: () => void;
+  /** efektywny próg „nie wcześniej niż" dla tego obiegu (override ?? globalny) */
+  earliest: number;
+  /** override progu per-obieg (undefined = używa globalnego) */
+  earliestOverride?: number;
+  onEarliestChange?: (sec?: number) => void;
 }
 
-export function ObiegCard({ obieg, breaks, reserves, onBreaksChange, trainNo, onTrainChange, forceKind, onCycleKind }: Props) {
+export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, trainNo, onTrainChange, forceKind, onCycleKind, earliest, earliestOverride, onEarliestChange }: Props) {
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const entry = afternoonEntry(obieg.events);
   const exit = obieg.events[obieg.events.length - 1];
   const isFull = obieg.type === "full";
 
   const sorted = [...breaks].sort((a, b) => a.startT - b.startT);
-  const loopClass = obieg.loops <= 8 ? "loops-few" : obieg.loops <= 11 ? "loops-mid" : "loops-many";
+  const loopClass = obieg.loops <= 3 ? "loops-few" : obieg.loops <= 4 ? "loops-mid" : "loops-many";
 
   const updateBreak = (i: number, a: BreakAssignment) => {
     const next = sorted.slice();
@@ -54,7 +61,7 @@ export function ObiegCard({ obieg, breaks, reserves, onBreaksChange, trainNo, on
     setEditIdx(null);
   };
   const addBreak = () => {
-    const s = feasibleSlots(obieg)[0];
+    const s = feasibleSlots(obieg, { earliest })[0];
     if (!s) return;
     const nb: BreakAssignment = {
       obiegId: obieg.id, station: s.station, dir: s.dir, startT: s.startT,
@@ -128,6 +135,10 @@ export function ObiegCard({ obieg, breaks, reserves, onBreaksChange, trainNo, on
           obieg={obieg}
           assignment={sorted[editIdx]}
           reserves={reserves}
+          byReserve={byReserve}
+          earliest={earliest}
+          earliestOverride={earliestOverride}
+          onEarliestChange={onEarliestChange}
           onChange={(a) => updateBreak(editIdx, a)}
           onClose={() => setEditIdx(null)}
           onRemove={() => removeBreak(editIdx)}

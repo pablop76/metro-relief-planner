@@ -357,3 +357,25 @@ body {
   font-size: 12px; font-weight: 600; letter-spacing: .5px;
 }
 .sidebar-expand:hover { border-color: var(--accent); }
+
+/* podpowiedzi w edytorze przerwy + pola dostępności/autoryzacji rezerwowego */
+.be-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.35; }
+.be-warn { color: var(--bad, #e0564b); }
+.rp-auth { flex-direction: column; align-items: flex-start; gap: 4px; }
+.rp-auth-list { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.rp-auth-chk { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 400; }
+
+/* edytor przerwy: pole „najwcześniej (ten obieg)" */
+.be-early { display: inline-flex; align-items: center; gap: 4px; }
+.be-early-clear { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; }
+.be-early-clear:hover { color: var(--bad, #e0564b); }
+
+/* panel rezerwowych pod tabelą — układ poziomy (stacje obok siebie) */
+.bottom-panel { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.reserve-panel.horizontal { display: flex; flex-flow: row wrap; gap: 10px 14px; align-items: flex-start; }
+.reserve-panel.horizontal > h2,
+.reserve-panel.horizontal > .rp-warn,
+.reserve-panel.horizontal > .reserve-total { flex-basis: 100%; }
+.reserve-panel.horizontal > .rp-station { flex: 1 1 220px; min-width: 190px; max-width: 340px; }
+.btn-layout { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 13px; }
+.btn-layout:hover { border-color: var(--accent); }

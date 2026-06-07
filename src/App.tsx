@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { parseObiegi, readWorkbook } from "./lib/rozklad";
 import { planBreaks } from "./lib/engine";
 import type { Obieg, Reserve, BreakAssignment, Driver, BreakKind } from "./lib/types";
+import { HHMMSS, hmToSec } from "./lib/types";
 import * as XLSX from "xlsx";
 import { ReservePanel } from "./components/ReservePanel";
 import { ObiegCard } from "./components/ObiegCard";
@@ -10,6 +11,7 @@ import { DriversManager } from "./components/DriversManager";
 const DEFAULT_FILE = "/RJ_M1_A1_od_13_05_2026.xlsx";
 const DRIVERS_FILE = "/maszynisci.json";
 const BUILD = __BUILD_TIME__;
+const DEFAULT_EARLIEST = 14 * 3600 + 30 * 60; // 14:30 — domyślny próg „nie wcześniej niż"
 const LS = {
   res: "pm_reserves",
   manual: "pm_manual",
@@ -21,6 +23,9 @@ const LS = {
   trains: "pm_trains",
   forceKind: "pm_forcekind",
   rows: "pm_rows",
+  earliest: "pm_earliest",
+  earliestObieg: "pm_earliest_obieg",
+  layout: "pm_layout",
 };
 
 function loadLS<T>(key: string, fallback: T): T {
@@ -78,10 +83,15 @@ export default function App() {
   );
   const [rows, setRows] = useState<number>(() => loadLS<number>(LS.rows, 2));
   const [globalDelay, setGlobalDelay] = useState<number>(() => loadLS<number>(LS.delay, 0));
+  const [earliestStart, setEarliestStart] = useState<number>(() => loadLS<number>(LS.earliest, DEFAULT_EARLIEST));
+  const [earliestByObieg, setEarliestByObieg] = useState<Record<string, number>>(() =>
+    loadLS<Record<string, number>>(LS.earliestObieg, {})
+  );
   const [order, setOrder] = useState<string[]>(() => loadLS<string[]>(LS.order, []));
   const [dragId, setDragId] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => loadLS<number>(LS.sbW, 360));
   const [sbCollapsed, setSbCollapsed] = useState<boolean>(() => loadLS<boolean>(LS.sbCol, false));
+  const [layout, setLayout] = useState<"side" | "bottom">(() => loadLS<"side" | "bottom">(LS.layout, "side"));
   const [error, setError] = useState<string>("");
 
   const startResize = (e: React.MouseEvent) => {
@@ -167,7 +177,11 @@ export default function App() {
 
   const generate = (currentManual = manual, currentForce = forceKind) => {
     if (!delayed.length) return;
-    const res = planBreaks(delayed, reserves, { forcedKinds: currentForce });
+    const res = planBreaks(delayed, reserves, {
+      forcedKinds: currentForce,
+      earliest: earliestStart,
+      earliestByObieg,
+    });
     const merged: Record<string, BreakAssignment[]> = { ...res.assignments };
     for (const [id, a] of Object.entries(currentManual)) merged[id] = a;
     setAssignments(merged);
@@ -188,7 +202,7 @@ export default function App() {
 
   // generuj plan automatycznie tylko gdy zmieni się ROZKŁAD/dzień (nie przy zmianie rezerwowych)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => generate(), [delayed]);
+  useEffect(() => generate(), [delayed, earliestStart, earliestByObieg]);
 
   // zmiana rezerwowych NIE przebudowuje planu sama — oznacz go jako nieaktualny (kliknij „Generuj")
   const firstResRef = useRef(true);
@@ -208,8 +222,11 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.trains, JSON.stringify(trainNumbers)), [trainNumbers]);
   useEffect(() => localStorage.setItem(LS.forceKind, JSON.stringify(forceKind)), [forceKind]);
   useEffect(() => localStorage.setItem(LS.rows, JSON.stringify(rows)), [rows]);
+  useEffect(() => localStorage.setItem(LS.earliest, JSON.stringify(earliestStart)), [earliestStart]);
+  useEffect(() => localStorage.setItem(LS.earliestObieg, JSON.stringify(earliestByObieg)), [earliestByObieg]);
   useEffect(() => localStorage.setItem(LS.sbW, JSON.stringify(sidebarWidth)), [sidebarWidth]);
   useEffect(() => localStorage.setItem(LS.sbCol, JSON.stringify(sbCollapsed)), [sbCollapsed]);
+  useEffect(() => localStorage.setItem(LS.layout, JSON.stringify(layout)), [layout]);
 
   // ręczna zmiana całej listy przerw obiegu (edycja/dodanie/usunięcie) — utrwala jako override
   const onBreaksChange = (obiegId: string, breaks: BreakAssignment[]) => {
@@ -217,9 +234,18 @@ export default function App() {
     setAssignments((prev) => ({ ...prev, [obiegId]: breaks }));
   };
 
+  // override progu „nie wcześniej niż" dla pojedynczego obiegu (undefined = wróć do globalnego)
+  const setObiegEarliest = (id: string, sec?: number) =>
+    setEarliestByObieg((prev) => {
+      const next = { ...prev };
+      if (sec == null) delete next[id];
+      else next[id] = sec;
+      return next;
+    });
+
   const resetManual = () => {
     setManual({});
-    const res = planBreaks(delayed, reserves, { forcedKinds: forceKind });
+    const res = planBreaks(delayed, reserves, { forcedKinds: forceKind, earliest: earliestStart, earliestByObieg });
     setAssignments(res.assignments);
   };
 
@@ -304,6 +330,14 @@ export default function App() {
             />
             min
           </label>
+          <label className="delay-ctl" title="nie planuj przerw wcześniej niż ta godzina (próg globalny; override per-obieg w edytorze przerwy)">
+            ⏰ nie wcześniej niż
+            <input
+              type="time"
+              value={HHMMSS(earliestStart)}
+              onChange={(e) => setEarliestStart(hmToSec(e.target.value) ?? earliestStart)}
+            />
+          </label>
           <button
             className={`btn-gen${planDirty ? " dirty" : ""}`}
             onClick={() => generate()}
@@ -324,6 +358,13 @@ export default function App() {
           <button className="btn-drivers" onClick={() => setShowDrivers(true)}>
             👤 Maszyniści ({drivers.length})
           </button>
+          <button
+            className="btn-layout"
+            onClick={() => setLayout((l) => (l === "side" ? "bottom" : "side"))}
+            title="panel rezerwowych: z boku / pod tabelą (poziomo)"
+          >
+            {layout === "side" ? "▭ panel: dół" : "▥ panel: bok"}
+          </button>
           <label className="file-btn">
             Wczytaj rozkład…
             <input type="file" accept=".xlsx" onChange={onFile} hidden />
@@ -342,7 +383,7 @@ export default function App() {
 
       {error && <div className="error">⚠ {error}</div>}
 
-      <div className="layout">
+      <div className={`layout layout-${layout}`}>
         <main className="grid-area">
           <div className="summary">
             <strong>{obiegi.length}</strong> obiegów&nbsp;·&nbsp;
@@ -369,18 +410,22 @@ export default function App() {
                   obieg={o}
                   breaks={assignments[o.id] ?? []}
                   reserves={reserves}
+                  byReserve={byReserve}
                   onBreaksChange={(b) => onBreaksChange(o.id, b)}
                   trainNo={trainNumbers[o.id] ?? ""}
                   onTrainChange={(v) => setTrainNumbers((t) => ({ ...t, [o.id]: v }))}
                   forceKind={forceKind[o.id]}
                   onCycleKind={() => cycleKind(o.id)}
+                  earliest={earliestByObieg[o.id] ?? earliestStart}
+                  earliestOverride={earliestByObieg[o.id]}
+                  onEarliestChange={(sec) => setObiegEarliest(o.id, sec)}
                 />
               </div>
             ))}
           </div>
         </main>
 
-        {sbCollapsed ? (
+        {layout === "side" && (sbCollapsed ? (
           <button className="sidebar-expand" onClick={() => setSbCollapsed(false)} title="rozwiń panel">
             ‹ Rezerwowi
           </button>
@@ -402,8 +447,23 @@ export default function App() {
               />
             </aside>
           </>
-        )}
+        ))}
       </div>
+
+      {layout === "bottom" && (
+        <aside className="bottom-panel">
+          <ReservePanel
+            reserves={reserves}
+            onChange={setReserves}
+            drivers={drivers}
+            load={load}
+            count={count}
+            byReserve={byReserve}
+            obiegIds={ordered.map((o) => o.id)}
+            horizontal
+          />
+        </aside>
+      )}
     </div>
   );
 }

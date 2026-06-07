@@ -9,7 +9,7 @@
 
 Zaplanować **podmiany maszynistów na przerwy** dla pociągów (obiegów) będących w ruchu po południu, zmiana druga.
 Wynik = lista podmian: **kto podmienia · jaki pociąg/obieg · na której stacji · w którym kierunku · jak długa przerwa**.
-Tryb: aplikacja **proponuje** plan, dyspozytor **zatwierdza/zmienia** (hybryda).
+Tryb: aplikacja **proponuje** plan, pomocnik instruktora **zatwierdza/zmienia** (hybryda).
 
 ## 2. Dane wejściowe
 
@@ -28,7 +28,12 @@ Tryb: aplikacja **proponuje** plan, dyspozytor **zatwierdza/zmienia** (hybryda).
 ## 4. Reguły (R)
 
 - **R1** ✅ Przerwy dotyczą **tylko 2. zmiany**.
-- **R2** ✅ **Okno startu przerwy: 14:30–18:30.** Nie wcześniej niż 14:30 (14:05 = za wcześnie), nie później niż 18:30 (19:10 = za późno). Preferencja: jak najbliżej 14:30. Brak slotu w oknie → BRAK (ręczna obsada).
+- **R2** ✅ **Okno startu przerwy: 14:30–18:30** (granice poprawne — nie wcześniej niż 14:30, nie później niż 18:30). **Preferencja czasu (POPRAWIONA):**
+  - najlepsze przerwy startują w okolicy **16:00–17:30**,
+  - dobra alternatywa: **dwie połówki co 2–3 h**,
+  - **najlepszy wariant: cała + połówka razem lub w niewielkim odstępie** (np. na sąsiednich kołach).
+  - Brak slotu w oknie → BRAK (ręczna obsada).
+- **R2a** ✅ **Nie zaczynaj przerw od pociągów (obiegów), które mają tylko połówki** — najpierw obsługuj obiegi kwalifikujące się do całych.
 - **R3** ❓ **Max 6h ciągłej pracy** bez przerwy. _Liczone od czego?_ ( od stałej godziny 14:00)
 - **R4** ✅ Stacja podmiany determinuje **długość przerwy** i **kierunek podmiany** (patrz `stations.json`).
 - **R5** ✅ Liczba rezerwowych jest **ograniczona i rozłożona na 5 stacjach** → opcje podmiany są ograniczone.
@@ -46,9 +51,9 @@ Tryb: aplikacja **proponuje** plan, dyspozytor **zatwierdza/zmienia** (hybryda).
 - **R15** ✅ **Sterowanie per maszynista (panel):** wykluczenie z podmian (blokada), maksymalna liczba podmian, oraz wymuszone przypisanie do konkretnego obiegu (pin — działa tylko gdy obieg jest na stacji tego rezerwowego).
 - **R16** ⬜ **Maksymalne wykorzystanie rezerwowych — wiele przerw na obieg.** Najpierw każdy obieg dostaje 1 obowiązkową przerwę (R9). Potem, dopóki są wolni rezerwowi (w limicie 4,5h), rozdajemy **dodatkowe przerwy**: pociąg może mieć **>1 przerwę** (np. dwie połówki, cała+połówka, dwie całe) gdy rezerwowych jest dużo. Cel: nie marnować dostępnych rezerwowych. Kolejne przerwy tego samego obiegu muszą być **po powrocie maszynisty** z poprzedniej i w oknie 14:30–18:30.
 
-## 4a. ALGORYTM DYSPOZYTORA (tok rozpisywania — docelowy silnik)
+## 4a. ALGORYTM POMOCNIKA INSTRUKTORA (tok rozpisywania — docelowy silnik)
 
-Kolejność decyzji tak, jak robi to dyspozytor ręcznie:
+Kolejność decyzji tak, jak robi to pomocnik instruktora ręcznie:
 
 **Krok 1 — bilans mocy:**
 ```
@@ -81,14 +86,14 @@ całych  = liczba_obiegów − połówek
 
 ## 6. Stacje (✅): A13 Centrum i A14 Świętokrzyska to DWIE RÓŻNE stacje. A14 jest w rozkładzie jako punkt pomiarowy; A13 Centrum trzeba interpolować między A11 a A14.
 
-## 6a. Arkusz planowania dyspozytora (✅ z fotki — PONIEDZIAŁEK–CZWARTEK)
+## 6a. Arkusz planowania pomocnika instruktora (✅ z fotki — PONIEDZIAŁEK–CZWARTEK)
 
 Każda kolumna = jeden **obieg**. Oznaczenia: liczby 1–13 (całodzienne), `S##` (szczytowe), `D##` (dodatkowe). **Łącznie 36 obiegów — KAŻDY musi dostać przerwę.**
 
 - **górna komórka** „godz. + stacja" = **wjazd na linię** wg rozkładu (np. S30 → 14:07 na A7),
 - **dolna czarna** = **wyjazd z linii** (zjazd składu, np. 19:34),
 - **dolna czerwona** = **do której godziny pracuje maszynista** (np. 21:00),
-- puste, duże pole w środku kolumny = miejsce, gdzie dyspozytor wpisuje **plan przerwy** (to generuje nasza apka).
+- puste, duże pole w środku kolumny = miejsce, gdzie pomocnik instruktora wpisuje **plan przerwy** (to generuje nasza apka).
 
 ## 7. Pytania otwarte (do rozstrzygnięcia)
 

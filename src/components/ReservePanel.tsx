@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { BREAK_STATIONS, MAX_RESERVE_LOAD_MIN, driverFullName, HHMMSS } from "../lib/types";
-import type { Reserve, BreakStation, Driver, BreakAssignment } from "../lib/types";
+import { BREAK_STATIONS, MAX_RESERVE_LOAD_MIN, TRAIN_TYPES, driverFullName, HHMMSS, hmToSec } from "../lib/types";
+import type { Reserve, BreakStation, Driver, BreakAssignment, MetroLine, TrainType } from "../lib/types";
 
 // piktogram długości przerwy
 const KIND_GLYPH: Record<string, string> = { "cała": "●", "połówka": "◐", "szczeniak": "○" };
@@ -21,13 +21,15 @@ interface Props {
   count?: Record<string, number>;
   byReserve?: Record<string, BreakAssignment[]>;
   obiegIds?: string[];
+  /** układ poziomy — stacje obok siebie (panel pod tabelą) zamiast pionowego sidebaru */
+  horizontal?: boolean;
 }
 
 const newId = () =>
   (crypto as Crypto & { randomUUID?: () => string }).randomUUID?.() ??
   `r${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
-export function ReservePanel({ reserves, onChange, drivers, load, count, byReserve, obiegIds }: Props) {
+export function ReservePanel({ reserves, onChange, drivers, load, count, byReserve, obiegIds, horizontal }: Props) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [warn, setWarn] = useState("");
   const [openCfg, setOpenCfg] = useState<string | null>(null);
@@ -59,7 +61,7 @@ export function ReservePanel({ reserves, onChange, drivers, load, count, byReser
   const remove = (id: string) => onChange(reserves.filter((r) => r.id !== id));
 
   return (
-    <div className="reserve-panel">
+    <div className={`reserve-panel${horizontal ? " horizontal" : ""}`}>
       <datalist id="pm-roster">
         {available.map((d) => (
           <option key={d.id} value={driverFullName(d)} />
@@ -94,6 +96,17 @@ export function ReservePanel({ reserves, onChange, drivers, load, count, byReser
                           <i className="rp-badge rp-b-pin" title={`obiegi: ${r.pins!.join(", ")}`}>📌{r.pins!.length}</i>
                         )}
                         {r.maxJobs != null && <i className="rp-badge" title="limit podmian">≤{r.maxJobs}</i>}
+                        {r.line && <i className="rp-badge" title="linia">{r.line}</i>}
+                        {r.availTo != null && <i className="rp-badge" title="pracuje do">⏲{HHMMSS(r.availTo)}</i>}
+                        {((r.auth?.length ?? 0) > 0 || r.authNote) && (
+                          <i
+                            className="rp-badge rp-b-auth"
+                            title={`autoryzacje: ${(r.auth ?? []).join(", ") || "—"}${r.authNote ? " · " + r.authNote : ""}`}
+                          >
+                            🚆{r.auth?.length ? r.auth.length : ""}
+                            {r.authNote ? ` ${r.authNote}` : ""}
+                          </i>
+                        )}
                       </span>
                       <span className="rp-load" title="podmiany · minuty">
                         {c}× · {min}′
@@ -155,6 +168,64 @@ export function ReservePanel({ reserves, onChange, drivers, load, count, byReser
                                 maxJobs: e.target.value === "" ? undefined : Math.max(0, parseInt(e.target.value, 10) || 0),
                               })
                             }
+                          />
+                        </label>
+                        <label className="rp-cfg-row">
+                          Linia
+                          <select
+                            value={r.line ?? ""}
+                            onChange={(e) =>
+                              update(r.id, { line: (e.target.value || undefined) as MetroLine | undefined })
+                            }
+                          >
+                            <option value="">—</option>
+                            <option value="M1">M1</option>
+                            <option value="M2">M2</option>
+                          </select>
+                        </label>
+                        <label className="rp-cfg-row">
+                          Pracuje od
+                          <input
+                            type="time"
+                            value={r.availFrom != null ? HHMMSS(r.availFrom) : ""}
+                            onChange={(e) => update(r.id, { availFrom: hmToSec(e.target.value) })}
+                          />
+                        </label>
+                        <label className="rp-cfg-row">
+                          Pracuje do
+                          <input
+                            type="time"
+                            value={r.availTo != null ? HHMMSS(r.availTo) : ""}
+                            onChange={(e) => update(r.id, { availTo: hmToSec(e.target.value) })}
+                          />
+                        </label>
+                        <div className="rp-cfg-row rp-auth">
+                          <span>Autoryzacje (tabor)</span>
+                          <div className="rp-auth-list">
+                            {TRAIN_TYPES.map((t) => (
+                              <label key={t} className="rp-auth-chk">
+                                <input
+                                  type="checkbox"
+                                  checked={r.auth?.includes(t) ?? false}
+                                  onChange={(e) => {
+                                    const cur = new Set<TrainType>(r.auth ?? []);
+                                    if (e.target.checked) cur.add(t);
+                                    else cur.delete(t);
+                                    update(r.id, { auth: cur.size ? [...cur] : undefined });
+                                  }}
+                                />
+                                {t}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        <label className="rp-cfg-row">
+                          Opis autoryzacji
+                          <input
+                            type="text"
+                            value={r.authNote ?? ""}
+                            placeholder="np. tylko Inspiro/Škoda"
+                            onChange={(e) => update(r.id, { authNote: e.target.value || undefined })}
                           />
                         </label>
                         <label className="rp-cfg-row">

@@ -6,13 +6,22 @@ import { STATIONS, DURATION, DOWNGRADE, stationSupports } from "./stations";
 
 const hms = (h: number, m: number) => h * 3600 + m * 60;
 
-export const PREF_START = hms(14, 30);   // preferowany start (R2)
-const EARLIEST_DEFAULT = hms(14, 30);    // przerwa NIE wcześniej niż 14:30 (R2)
-const LATEST_DEFAULT = hms(18, 30);      // przerwa NIE później niż 18:30 (R2)
+// Preferowane OKNO startu (R2, poprawione 2026-06-07): najlepsze przerwy startują ~16:00–17:30,
+// NIE „jak najbliżej 14:30". Slot w oknie = score 0; poza oknem = odległość do najbliższej krawędzi.
+export const PREF_WINDOW: [number, number] = [hms(16, 0), hms(17, 30)];
+export const PREF_START = PREF_WINDOW[0]; // zachowane dla zgodności eksportu
+const EARLIEST_DEFAULT = hms(14, 30);    // granica: przerwa NIE wcześniej niż 14:30 (R2)
+// DWA OKNA startu (R2, model potwierdzony 2026-06-07): okno PIERWSZEJ (głównej) przerwy jest krótsze
+// — start najpóźniej 18:30. Okno DRUGIEJ (dodatkowej) przerwy jest dłuższe (może startować później);
+// i tak ogranicza je fizycznie R7 (pociąg musi wrócić przed zjazdem). Druga = zawsze połówka.
+const LATEST_FIRST = hms(18, 30);  // pierwsza przerwa: twardo do 18:30 (R2: „19:10 = za późno")
+const LATEST_SECOND = hms(20, 0);  // druga przerwa: dłuższe okno (realnie limituje R7/zjazd)
 
 export interface PlanOptions {
+  /** globalny próg „nie wcześniej niż" (sekundy od północy); domyślnie 14:30 */
   earliest?: number;
-  latest?: number;
+  /** ręczny override progu per obieg (klucz = id) — pozwala zacząć wcześniej niż próg globalny */
+  earliestByObieg?: Record<string, number>;
   pref?: number;
   /** czy Centrum A13 dostępne (R8) — na razie bez slotów (brak kolumny w xlsx) */
   centrumEnabled?: boolean;
@@ -37,7 +46,7 @@ interface Slot {
   durationMin: number;
 }
 
-/** Sloty kandydujące dla obiegu i rodzaju przerwy. */
+/** Sloty kandydujące dla obiegu i rodzaju przerwy. `latest` = najpóźniejszy START (okno 1. lub 2. przerwy). */
 function candidateSlots(o: Obieg, kind: BreakKind, earliest: number, latest: number): Slot[] {
   const durSec = DURATION[kind] * 60;
   const minStart = Math.max(earliest, afternoonEntryT(o));
@@ -53,10 +62,9 @@ function candidateSlots(o: Obieg, kind: BreakKind, earliest: number, latest: num
 
 /** Wszystkie dopuszczalne sloty obiegu (wszystkie rodzaje) — do ręcznej edycji w UI. */
 export function feasibleSlots(o: Obieg, opts: PlanOptions = {}): Slot[] {
-  const earliest = opts.earliest ?? EARLIEST_DEFAULT;
-  const latest = opts.latest ?? LATEST_DEFAULT;
+  const earliest = opts.earliestByObieg?.[o.id] ?? opts.earliest ?? EARLIEST_DEFAULT;
   const all: Slot[] = [];
-  for (const kind of DOWNGRADE) all.push(...candidateSlots(o, kind, earliest, latest));
+  for (const kind of DOWNGRADE) all.push(...candidateSlots(o, kind, earliest, LATEST_SECOND));
   return all.sort((a, b) => a.startT - b.startT || b.durationMin - a.durationMin);
 }
 
@@ -80,6 +88,8 @@ function pickReserve(rs: RState[], slot: Slot): RState | null {
       !r.ref.manualOnly && // „tylko ręcznie" — pomijany w automatycznym doborze (robi tylko piny)
       r.station === slot.station && // brak „pożyczania" z innej stacji
       r.busyUntil <= startSec &&
+      (r.ref.availFrom == null || slot.startT >= r.ref.availFrom) && // R18: okno dostępności rezerwowego
+      (r.ref.availTo == null || slot.startT + slot.durationMin * 60 <= r.ref.availTo) &&
       r.loadMin + slot.durationMin <= MAX_RESERVE_LOAD_MIN &&
       (r.ref.maxJobs == null || r.count < r.ref.maxJobs)
   );
@@ -93,27 +103,46 @@ function pickReserve(rs: RState[], slot: Slot): RState | null {
 /** Główny algorytm planowania przerw. */
 export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptions = {}): PlanResult {
   const earliest = opts.earliest ?? EARLIEST_DEFAULT;
-  const latest = opts.latest ?? LATEST_DEFAULT;
-  const pref = opts.pref ?? PREF_START;
-  const score = (s: Slot) => Math.abs(s.startT - pref);
+  // próg „nie wcześniej niż" per obieg: override > próg globalny (R2)
+  const earliestOf = (o: Obieg) => opts.earliestByObieg?.[o.id] ?? earliest;
+  // Score slotu (R2): 0 wewnątrz preferowanego okna 16:00–17:30, poza — odległość do krawędzi.
+  // opts.pref (jeśli podane) wymusza pojedynczy punkt preferencji (back-compat, UI tego nie używa).
+  const [prefLo, prefHi] = opts.pref != null ? [opts.pref, opts.pref] : PREF_WINDOW;
+  const score = (s: Slot) =>
+    s.startT < prefLo ? prefLo - s.startT : s.startT > prefHi ? s.startT - prefHi : 0;
   const forced = opts.forcedKinds ?? {};
   // BILANS MOCY (tok dyspozytora): moc = rezerwowi × 3 koła; deficyt → 2× połówek.
   const capacity = reserves.reduce((s, r) => s + (r.blocked ? 0 : Math.min(3, r.maxJobs ?? 3)), 0);
   const deficit = obiegi.length - capacity;
-  const polCount = Math.max(0, deficit * 2);
+  // Minimum połówek: obiegi z ≤2,5 kołami zawsze dostają połówkę (krótkie szczyty, np. S31/S34 = 1,5 koła).
+  // To jest niezależne od liczby rez. — zawsze obowiązuje. Deficyt może tylko ZWIĘKSZYĆ polCount.
+  const POL_MAX_LOOPS = 2.5;
+  const minPol = obiegi.filter((o) => !forced[o.id] && o.loops <= POL_MAX_LOOPS).length;
+  const polCount = Math.max(minPol, Math.max(0, deficit * 2));
   // połówki dostają obiegi z NAJMNIEJSZĄ liczbą kół (szczyty); reszta całe.
   const autoPolowka = new Set(
     [...obiegi].sort((a, b) => a.loops - b.loops || a.firstT - b.firstT).slice(0, polCount).map((o) => o.id)
   );
   const dk = (o: Obieg) => forced[o.id] ?? (autoPolowka.has(o.id) ? "połówka" : "cała"); // ręczny mark > auto bilans
 
-  // Kolejność przetwarzania: NAJPIERW szczyty (S) — są najbardziej ograniczone (połówka tylko na A11
-  // i krótkie okno), więc muszą złapać swoje połówki, zanim obiegi D/całodobowe zajmą A11.
-  // Potem całodobowe (1..13) i D — łapią całe na krańcówkach/A7/A18 (R10), tych S nie blokują.
+  // Kolejność przetwarzania (R2a): NAJPIERW obiegi z całą, dopiero potem z połówką/szczeniakiem
+  // („nie zaczynaj przerw od pociągów z połówkami"). To zgodne z tokiem pomocnika instruktora
+  // (§4a: Krok 2 = całe, Krok 3 = połówki na A11). Połówki idą głównie na A11 (osobna pula rez.),
+  // więc nie konkurują o tych samych rezerwowych co całe → bezpieczne dla pokrycia.
+  // W obrębie jednej grupy: NAJBARDZIEJ OGRANICZONE najpierw (najmniej slotów), potem najwcześniejszy zjazd,
+  // żeby ciasne obiegi złapały rezerwowego, zanim elastyczne całodobowe zajmą stacje.
+  const kindRank = (o: Obieg) => DOWNGRADE.indexOf(dk(o)); // cała=0, połówka=1, szczeniak=2
   const typeRank = (o: Obieg) => (o.type === "S" ? 0 : o.type === "full" ? 1 : 2);
   const numOf = (id: string) => parseInt(id.replace(/\D/g, ""), 10) || 0;
+  const slotCount = (o: Obieg) =>
+    DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o))).reduce((n, k) => n + candidateSlots(o, k, earliestOf(o), LATEST_FIRST).length, 0);
   const order = [...obiegi].sort(
-    (a, b) => typeRank(a) - typeRank(b) || numOf(a.id) - numOf(b.id)
+    (a, b) =>
+      kindRank(a) - kindRank(b) ||
+      slotCount(a) - slotCount(b) ||
+      a.lastT - b.lastT ||
+      typeRank(a) - typeRank(b) ||
+      numOf(a.id) - numOf(b.id)
   );
 
   const rs: RState[] = reserves.map((r) => ({
@@ -135,17 +164,20 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     driverFreeAt[o.id] = slot.startT + slot.durationMin * 60;
   };
 
-  // Próba przydzielenia obiegowi (kolejnej) przerwy PO powrocie maszynisty; byTime → najwcześniejszy slot.
-  const tryAssign = (o: Obieg, byTime: boolean): boolean => {
+  // Próba przydzielenia obiegowi PIERWSZEJ przerwy PO powrocie maszynisty, wg preferowanego okna 16:00–17:30 (R2).
+  // Okno 1. przerwy: start do LATEST_FIRST (18:30). Reguła pokrycia: ma sloty, brak rez. → BRAK; NIE schodź niżej.
+  const tryAssign = (o: Obieg, latest = LATEST_FIRST): boolean => {
     const after = driverFreeAt[o.id] ?? 0;
     for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
-      const slots = candidateSlots(o, kind, earliest, latest)
+      const slots = candidateSlots(o, kind, earliestOf(o), latest)
         .filter((s) => s.startT >= after)
-        .sort((a, b) => (byTime ? a.startT - b.startT : score(a) - score(b)));
+        .sort((a, b) => score(a) - score(b));
+      if (slots.length === 0) continue; // brak slotów → prawdziwy downgrade (nie ma fizycznej możliwości)
       for (const slot of slots) {
         const r = pickReserve(rs, slot);
         if (r) { commit(o, slot, r); return true; }
       }
+      return false; // ma sloty, brak wolnego rez. → BRAK; NIE schodź do niższego rodzaju
     }
     return false;
   };
@@ -159,7 +191,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       const after = Math.max(r.busyUntil, driverFreeAt[o.id] ?? 0);
       let done = false;
       for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
-        const slots = candidateSlots(o, kind, earliest, latest)
+        const slots = candidateSlots(o, kind, earliestOf(o), LATEST_SECOND)
           .filter((s) => s.station === r.station && s.startT >= after)
           .sort((a, b) => score(a) - score(b));
         for (const slot of slots) {
@@ -180,10 +212,10 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // 1. POKRYCIE — każdy obieg dostaje ≥1 przerwę (najbliżej 14:30); inaczej BRAK.
   for (const o of order) {
     if (assignments[o.id]?.length) continue; // już ma (pin)
-    if (tryAssign(o, false)) continue;
+    if (tryAssign(o)) continue;
     let fb: Slot | null = null;
     for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
-      const s = candidateSlots(o, kind, earliest, latest).sort((a, b) => score(a) - score(b))[0];
+      const s = candidateSlots(o, kind, earliestOf(o), LATEST_FIRST).sort((a, b) => score(a) - score(b))[0];
       if (s) { fb = s; break; }
     }
     if (fb) {
@@ -195,7 +227,12 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     unassigned.push(o.id);
   }
 
-  // 2. R16 — DODATKOWE przerwy (maks. wykorzystanie rezerwowych), do MAX_BREAKS_PER_OBIEG na obieg.
+  // 2. R16 — DODATKOWA (druga) przerwa: maks. wykorzystanie rezerwowych, do MAX_BREAKS_PER_OBIEG na obieg.
+  // Dozwolone kombinacje 2 przerw: {cała+połówka} (DOWOLNA kolejność) lub {połówka+połówka};
+  // szczeniak dopuszczalny jako dokładka „gdy trzeba". ZAKAZ {cała+cała}.
+  // Okno 2. przerwy dłuższe (start do LATEST_SECOND; realnie limituje R7/zjazd). Rozmieszczenie (R2):
+  // dwie połówki ~2,5 h od siebie; pozostałe kombinacje — blisko powrotu maszynisty (mały odstęp).
+  const SPACING_POLOWKI = hms(2, 30);
   let progress = true;
   while (progress) {
     progress = false;
@@ -203,7 +240,30 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       const cur = assignments[o.id];
       if (!cur || cur.length === 0 || cur.length >= MAX_BREAKS_PER_OBIEG) continue;
       if (cur.some((a) => !a.reserveId)) continue; // BRAK — nie dokładaj
-      if (tryAssign(o, true)) progress = true;
+      const first = cur[cur.length - 1];
+      const after = driverFreeAt[o.id] ?? 0;
+      // Preferuj najlepsze kombinacje. Dla 1.=cała: {cała+połówka} (najlepsza) → {cała+cała}
+      // (dopuszczalna przy NADMIARZE manewrowych — wejdzie, gdy połówka się nie złapie) → szczeniak.
+      // Dla 1.=połówka: {połówka+cała}=cała+połówka (najlepsza) → {połówka+połówka} → szczeniak.
+      const secondKinds: BreakKind[] =
+        first.kind === "cała"
+          ? ["połówka", "cała", "szczeniak"]
+          : ["cała", "połówka", "szczeniak"];
+      let placed = false;
+      for (const kind of secondKinds) {
+        // dwie połówki rozsuń ~2,5 h; pozostałe kombinacje kładź blisko powrotu (mały odstęp).
+        const target =
+          first.kind === "połówka" && kind === "połówka" ? first.startT + SPACING_POLOWKI : after;
+        const slots = candidateSlots(o, kind, earliestOf(o), LATEST_SECOND)
+          .filter((s) => s.startT >= after)
+          .sort((a, b) => Math.abs(a.startT - target) - Math.abs(b.startT - target));
+        for (const slot of slots) {
+          const r = pickReserve(rs, slot);
+          if (r) { commit(o, slot, r); placed = true; break; }
+        }
+        if (placed) break; // dokładka położona — nie próbuj mniejszych rodzajów
+      }
+      if (placed) progress = true;
     }
   }
 

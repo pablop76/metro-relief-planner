@@ -29,6 +29,7 @@
       "nazwa": "Politechnika",
       "krancowa": false,
       "mozliwe_przerwy": [
+        { "rodzaj": "cała",    "kierunek_podmiany": ["Kabaty", "Młociny"] },
         { "rodzaj": "połówka", "kierunek_podmiany": ["Kabaty", "Młociny"] }
       ]
     },
