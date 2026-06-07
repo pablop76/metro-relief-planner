@@ -113,11 +113,17 @@ Długość przerwy liczona z **realnego rozkładu** (czas od wejścia w obieg do
 stację), nie ze sztywnych 90/45/30 min. Wartości 90/60/45/30 (`DURATION`) pokazujemy pomocnikowi jako
 **poglądowe** (D1) — w UI „~45′ (realnie 47′)".
 
-**R20 — przeciwny tor** (`isCrossTrackBreak`, `BreakAssignment.crossTrack`): każda przerwa **inna niż „cała"**
-(połówka/godzinka/szczeniak) wraca w **przeciwnym kierunku** → maszynista/rezerwowy przechodzi na drugi peron
-→ zakładany bufor **~5 min**. Silnik oznacza taką podmianę `crossTrack`, a UI pokazuje **⚠** w planie
-([`ObiegCard`](src/components/ObiegCard.tsx)) i na pasku bocznym ([`ReservePanel`](src/components/ReservePanel.tsx)).
-„cała" wraca tym samym torem (ten sam pociąg) → bez bufora.
+**R20 — przeciwny tor** (`BreakAssignment.crossTrack`): **NIE** dotyczy każdej połówki. Liczy się **moment
+między podmianami** jednego rezerwowego: po oddaniu pociągu musi czasem **przejść na drugą stronę toru**, by
+zdążyć na kolejną podmianę (częste „łapanie pociągu z drugiej strony peronu na kolejną podmianę", żeby nie
+rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
+- **Auto** (post-pass w `planBreaks`): `crossTrack = true`, gdy peron **wsiadania** do kolejnej ≠ peron
+  **oddania** poprzedniej, a czas na przejście **≤ 5 min** (`XFER_BUFFER_MIN`). `returnsOppositeTrack` ustala
+  tylko, gdzie rezerwowy **stoi po oddaniu** (cała wraca tym samym torem; połówka/godzinka/szczeniak —
+  przeciwnym). Pierwsza podmiana rezerwowego nigdy nie jest „ciasna".
+- **Ręcznie**: przełącznik ⚠ w edytorze przerwy ([`BreakEditor`](src/components/BreakEditor.tsx)).
+- UI pokazuje **⚠** w planie ([`ObiegCard`](src/components/ObiegCard.tsx)) i na pasku bocznym
+  ([`ReservePanel`](src/components/ReservePanel.tsx)) tylko gdy `crossTrack=true`.
 
 ---
 
