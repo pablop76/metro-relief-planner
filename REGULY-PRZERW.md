@@ -113,5 +113,8 @@ stację), nie ze sztywnych 90/45/30 min.
 - Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.
 - **Kolejność:** najpierw obiegi z całą, potem z połówką; w grupie — najmniej slotów najpierw, dalej
   najwcześniejszy zjazd, S przed full przed D.
-- Cel: każdy obieg dostaje ≥ 1 przerwę; brak wolnego rezerwowego → **BRAK** (ręczna obsada), bez
-  schodzenia do niższego rodzaju.
+- **Pokrycie (R9) jest nadrzędne:** każdy obieg dostaje ≥ 1 przerwę. Najpierw próba w preferowanym
+  rodzaju i oknie (do 18:30). Gdy nie złapie wolnego rezerwowego — **pokrycie awaryjne** (`tryCover`):
+  zejście na krótszy rodzaj (połówka/szczeniak) i/lub szersze okno (do 20:00). Dopiero gdy NIGDZIE
+  nie ma wolnego rezerwowego → **BRAK** (ręczna obsada).
+- Dodatkowe (drugie) przerwy z R16 rozdawane są **dopiero po** zapewnieniu pokrycia wszystkim obiegom.

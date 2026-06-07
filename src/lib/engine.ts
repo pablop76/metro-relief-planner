@@ -1,8 +1,8 @@
 import type {
   Obieg, Reserve, BreakAssignment, PlanResult, BreakKind, Dir, BreakStation,
 } from "./types";
-import { MAX_RESERVE_LOAD_MIN, MAX_BREAKS_PER_OBIEG } from "./types";
-import { STATIONS, DURATION, DOWNGRADE, stationSupports } from "./stations";
+import { CALA_EQ, MAX_BREAKS_PER_OBIEG, fitsLoad } from "./types";
+import { STATIONS, DOWNGRADE, stationSupports } from "./stations";
 
 const hms = (h: number, m: number) => h * 3600 + m * 60;
 
@@ -46,16 +46,33 @@ interface Slot {
   durationMin: number;
 }
 
-/** Sloty kandydujące dla obiegu i rodzaju przerwy. `latest` = najpóźniejszy START (okno 1. lub 2. przerwy). */
+/** Sloty kandydujące dla obiegu i rodzaju przerwy. `latest` = najpóźniejszy START (okno 1. lub 2. przerwy).
+ *  Długość liczona z REALNEGO rozkładu (nie sztywne 90/45/30): rezerwowy jest zajęty od wejścia w obieg
+ *  do faktycznego POWROTU pociągu na tę stację. cała = następne minięcie tej stacji w TYM SAMYM kierunku
+ *  (pełna pętla); połówka/szczeniak = najbliższe minięcie w PRZECIWNYM kierunku (pół pętli / krótki nawrót).
+ *  Dwa pociągi dzielą minutę tylko mijając się w przeciwnych kierunkach, więc powrót tego samego obiegu
+ *  jest jednoznaczny i zachowuje kolejność (pociąg jadący z tyłu wraca po pociągu z przodu). */
 function candidateSlots(o: Obieg, kind: BreakKind, earliest: number, latest: number): Slot[] {
-  const durSec = DURATION[kind] * 60;
   const minStart = Math.max(earliest, afternoonEntryT(o));
+  const sameDir = kind === "cała";
   const out: Slot[] = [];
-  for (const ev of o.events) {
+  for (let i = 0; i < o.events.length; i++) {
+    const ev = o.events[i];
     if (ev.t < minStart || ev.t > latest) continue;
     if (!stationSupports(ev.station, kind, ev.dir)) continue;
-    if (ev.t + durSec > o.lastT) continue; // R7: pociąg musi wrócić przed zjazdem
-    out.push({ station: ev.station, dir: ev.dir, startT: ev.t, kind, durationMin: DURATION[kind] });
+    // realny powrót na tę stację (R7: musi wrócić, zanim zjedzie — czyli zdarzenie istnieje w rozkładzie)
+    let returnT = -1;
+    for (let j = i + 1; j < o.events.length; j++) {
+      const e2 = o.events[j];
+      if (e2.station === ev.station && (sameDir ? e2.dir === ev.dir : e2.dir !== ev.dir)) {
+        returnT = e2.t;
+        break;
+      }
+    }
+    if (returnT < 0) continue; // pociąg nie wraca już na tę stację (zjazd) → ta przerwa niemożliwa
+    out.push({
+      station: ev.station, dir: ev.dir, startT: ev.t, kind, durationMin: Math.round((returnT - ev.t) / 60),
+    });
   }
   return out;
 }
@@ -72,7 +89,8 @@ export type { Slot };
 
 interface RState {
   ref: Reserve;
-  loadMin: number;
+  loadMin: number;  // realne minuty (informacyjnie / do wyświetlania)
+  loadEq: number;   // równowartość całych (limit pracy = 3) — cała=1, połówka=0,5, szczeniak=⅓
   count: number;
   busyUntil: number;
   station: BreakStation;
@@ -90,7 +108,7 @@ function pickReserve(rs: RState[], slot: Slot): RState | null {
       r.busyUntil <= startSec &&
       (r.ref.availFrom == null || slot.startT >= r.ref.availFrom) && // R18: okno dostępności rezerwowego
       (r.ref.availTo == null || slot.startT + slot.durationMin * 60 <= r.ref.availTo) &&
-      r.loadMin + slot.durationMin <= MAX_RESERVE_LOAD_MIN &&
+      fitsLoad(r.loadEq, slot.kind) && // limit 3 całe (R13) — w równowartości całych, nie minutach
       (r.ref.maxJobs == null || r.count < r.ref.maxJobs)
   );
   if (eligible.length === 0) return null;
@@ -146,7 +164,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   );
 
   const rs: RState[] = reserves.map((r) => ({
-    ref: r, loadMin: 0, count: 0, busyUntil: 0, station: r.station,
+    ref: r, loadMin: 0, loadEq: 0, count: 0, busyUntil: 0, station: r.station,
   }));
 
   const assignments: Record<string, BreakAssignment[]> = {};
@@ -156,6 +174,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const commit = (o: Obieg, slot: Slot, r: RState, manual = false) => {
     r.busyUntil = slot.startT + slot.durationMin * 60;
     r.loadMin += slot.durationMin;
+    r.loadEq += CALA_EQ[slot.kind];
     r.count += 1;
     (assignments[o.id] ??= []).push({
       obiegId: o.id, station: slot.station, dir: slot.dir, startT: slot.startT,
@@ -177,7 +196,24 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
         const r = pickReserve(rs, slot);
         if (r) { commit(o, slot, r); return true; }
       }
-      return false; // ma sloty, brak wolnego rez. → BRAK; NIE schodź do niższego rodzaju
+      return false; // ma sloty, brak wolnego rez. → spróbuj pokrycia awaryjnego (tryCover)
+    }
+    return false;
+  };
+
+  // POKRYCIE AWARYJNE (R9 > preferencja rodzaju): gdy preferowany rodzaj nie złapał rezerwowego,
+  // zejdź na krótszy (połówka/szczeniak) i/lub szersze okno (do LATEST_SECOND), byle obieg dostał
+  // JAKĄKOLWIEK przerwę. Lepszy krótszy/późniejszy break niż BRAK. Nie schodzi przy braku slotów.
+  const tryCover = (o: Obieg): boolean => {
+    const after = driverFreeAt[o.id] ?? 0;
+    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
+      const slots = candidateSlots(o, kind, earliestOf(o), LATEST_SECOND)
+        .filter((s) => s.startT >= after)
+        .sort((a, b) => score(a) - score(b));
+      for (const slot of slots) {
+        const r = pickReserve(rs, slot);
+        if (r) { commit(o, slot, r); return true; }
+      }
     }
     return false;
   };
@@ -196,7 +232,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
           .sort((a, b) => score(a) - score(b));
         for (const slot of slots) {
           if (
-            r.loadMin + slot.durationMin <= MAX_RESERVE_LOAD_MIN &&
+            fitsLoad(r.loadEq, slot.kind) &&
             (r.ref.maxJobs == null || r.count < r.ref.maxJobs)
           ) {
             commit(o, slot, r, true);
@@ -213,6 +249,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   for (const o of order) {
     if (assignments[o.id]?.length) continue; // już ma (pin)
     if (tryAssign(o)) continue;
+    if (tryCover(o)) continue; // R9: pokrycie obowiązkowe — downgrade zanim oznaczysz BRAK
     let fb: Slot | null = null;
     for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
       const s = candidateSlots(o, kind, earliestOf(o), LATEST_FIRST).sort((a, b) => score(a) - score(b))[0];
