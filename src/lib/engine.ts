@@ -1,10 +1,20 @@
 import type {
   Obieg, Reserve, BreakAssignment, PlanResult, BreakKind, Dir, BreakStation,
 } from "./types";
-import { CALA_EQ, MAX_BREAKS_PER_OBIEG, fitsLoad } from "./types";
+import { CALA_EQ, MAX_BREAKS_PER_OBIEG, MAX_RESERVE_LOAD_EQ, fitsLoad } from "./types";
 import { STATIONS, DOWNGRADE, stationSupports } from "./stations";
 
 const hms = (h: number, m: number) => h * 3600 + m * 60;
+
+// A1 (Kabaty) = stanowisko rezerwy ruchowej: maszynista musi zostać pod ręką, by wprowadzić pociąg
+// rezerwy za skład, który uległ awarii / wymaga sprzątania. Dlatego DOMYŚLNIE robi tylko 1 koło
+// (jedna cała) — gdyby wyjechał na 3 koła, w razie potrzeby zabrakłoby rezerwowego na Kabatach.
+// Instruktor może świadomie podnieść limit ręcznie (Reserve.maxJobs). Poza A1: limit 3 koła (R13).
+const A1_DEFAULT_MAX_JOBS = 1;
+/** Maks. liczba podmian rezerwowego: ręczny maxJobs > domyślny (A1 = 1, pozostałe stacje = bez limitu
+ *  liczby — ogranicza je dopiero limit 3 kół w równowartości całych, fitsLoad). */
+const jobCapOf = (r: Reserve): number =>
+  r.maxJobs ?? (r.station === "A1" ? A1_DEFAULT_MAX_JOBS : Infinity);
 
 // Preferowane OKNO startu (R2, poprawione 2026-06-07): najlepsze przerwy startują ~16:00–17:30,
 // NIE „jak najbliżej 14:30". Slot w oknie = score 0; poza oknem = odległość do najbliższej krawędzi.
@@ -109,7 +119,7 @@ function pickReserve(rs: RState[], slot: Slot): RState | null {
       (r.ref.availFrom == null || slot.startT >= r.ref.availFrom) && // R18: okno dostępności rezerwowego
       (r.ref.availTo == null || slot.startT + slot.durationMin * 60 <= r.ref.availTo) &&
       fitsLoad(r.loadEq, slot.kind) && // limit 3 całe (R13) — w równowartości całych, nie minutach
-      (r.ref.maxJobs == null || r.count < r.ref.maxJobs)
+      r.count < jobCapOf(r.ref) // limit liczby podmian: A1 = 1 (rezerwa ruchowa), reszta = bez limitu
   );
   if (eligible.length === 0) return null;
   // PAKOWANIE: najpierw dobijamy już pracujących (max wykorzystanie, do 6 połówek / limitu 4,5h),
@@ -130,7 +140,10 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     s.startT < prefLo ? prefLo - s.startT : s.startT > prefHi ? s.startT - prefHi : 0;
   const forced = opts.forcedKinds ?? {};
   // BILANS MOCY (tok dyspozytora): moc = rezerwowi × 3 koła; deficyt → 2× połówek.
-  const capacity = reserves.reduce((s, r) => s + (r.blocked ? 0 : Math.min(3, r.maxJobs ?? 3)), 0);
+  const capacity = reserves.reduce(
+    (s, r) => s + (r.blocked ? 0 : Math.min(MAX_RESERVE_LOAD_EQ, jobCapOf(r))),
+    0
+  );
   const deficit = obiegi.length - capacity;
   // Minimum połówek: obiegi z ≤2,5 kołami zawsze dostają połówkę (krótkie szczyty, np. S31/S34 = 1,5 koła).
   // To jest niezależne od liczby rez. — zawsze obowiązuje. Deficyt może tylko ZWIĘKSZYĆ polCount.
@@ -231,10 +244,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
           .filter((s) => s.station === r.station && s.startT >= after)
           .sort((a, b) => score(a) - score(b));
         for (const slot of slots) {
-          if (
-            fitsLoad(r.loadEq, slot.kind) &&
-            (r.ref.maxJobs == null || r.count < r.ref.maxJobs)
-          ) {
+          if (fitsLoad(r.loadEq, slot.kind) && r.count < jobCapOf(r.ref)) {
             commit(o, slot, r, true);
             done = true;
             break;
@@ -279,17 +289,18 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       if (cur.some((a) => !a.reserveId)) continue; // BRAK — nie dokładaj
       const first = cur[cur.length - 1];
       const after = driverFreeAt[o.id] ?? 0;
-      // Preferuj najlepsze kombinacje. {cała+cała} TYLKO przy nadmiarze (pełne pokrycie, brak BRAK) —
-      // przy deficycie zamiast 2. całej dajemy godzinkę/połówkę, by nie zjadać mocy potrzebnej gdzie indziej.
-      // Dla 1.=cała: {cała+połówka} (najlepsza) → cała+godzinka → [cała+cała gdy nadmiar] → szczeniak.
-      // Dla 1.=połówka: {cała+połówka} (najlepsza) → +godzinka → {połówka+połówka} → szczeniak.
-      const surplus = unassigned.length === 0; // brak nieobsadzonych = można podwoić do cała+cała
+      // CEL (potwierdzone 2026-06-07): poza A1 dobić każdego rezerwowego do PEŁNYCH 3 kół, sumując
+      // wszystkie rodzaje przerw. Pokrycie (R9) jest już zapewnione wyżej, a ewentualny BRAK to brak
+      // rezerwowego NA KONKRETNEJ stacji (innych stacji nie zasila — R14), więc dokładanie 2. przerwy
+      // gdzie indziej nikomu nie odbiera pokrycia. Dlatego {cała+cała} jest dozwolona zawsze (nie tylko
+      // przy nadmiarze), żeby domknąć rezerwowemu limit. Preferencja kombinacji bez zmian:
+      // {cała+połówka} najlepsza, ale cała dostępna do dopełnienia 3 kół.
       const secondKinds: BreakKind[] =
         first.kind === "cała"
-          ? (surplus ? ["połówka", "godzinka", "cała", "szczeniak"] : ["połówka", "godzinka", "szczeniak"])
+          ? ["połówka", "godzinka", "cała", "szczeniak"]
           : first.kind === "połówka"
           ? ["cała", "godzinka", "połówka", "szczeniak"]
-          : ["połówka", "godzinka", "szczeniak"]; // 1.=godzinka/szczeniak
+          : ["połówka", "godzinka", "cała", "szczeniak"]; // 1.=godzinka/szczeniak
       let placed = false;
       for (const kind of secondKinds) {
         // dwie połówki rozsuń ~2,5 h; pozostałe kombinacje kładź blisko powrotu (mały odstęp).

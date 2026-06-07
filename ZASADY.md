@@ -49,7 +49,7 @@ Tryb: aplikacja **proponuje** plan, pomocnik instruktora **zatwierdza/zmienia** 
 - **R10** ✅ **Długość wg liczby kół 2. zmiany** (`countLoops2nd`, czasowo, bez zaokrąglania — patrz [`REGULY-PRZERW.md`](REGULY-PRZERW.md)): najmniej kół → **połówka**, najwięcej → **cała**. Obiegi z ≤ 2,5 koła zawsze połówka; obiegi jadące do/po 21:00 zawsze cała.
 - **R11** ✅ **Pociągi szczytowe (oznaczone literą `S` w rozkładzie, np. S23, S27…)** jeżdżą krócej → mogą dostać **połówkę** (nie potrzebują całej).
 - **R12** ✅ **Szczeniak = ostateczność** (mało rezerwowych); robiony na **A7 (Wilanowska) w stronę Kabat** lub **A18 (Plac Wilsona) w stronę Młocin**. Politechnika (A11) robi **połówkę**, nie szczeniaka.
-- **R13** ✅ **Limit pracy rezerwowego ≈ 4,5 h** łącznie podmian (np. 3 całe lub 6 połówek = 270 min).
+- **R13** ✅ **Limit pracy rezerwowego ≈ 4,5 h = 3 koła** łącznie podmian (np. 3 całe lub 6 połówek = 270 min). **Maksymalne wykorzystanie:** poza A1 silnik dobija każdego rezerwowego do **pełnych 3 kół** (sumując wszystkie rodzaje przerw — cała=1, godzinka=⅔, połówka=½, szczeniak=⅓), żeby nie zostawiać niewykorzystanej mocy. Wyjątek: **A1** (patrz R17). Instruktor może zdecydować inaczej (ręczny `maxJobs`).
 - **R14** ✅ **Rezerwowy podmienia TYLKO na swojej stacji** — podmienia pociąg tam, gdzie stoi; brak „teleportacji" między stacjami. Rozmieszczenie rezerwowych na 5 stacjach decyduje, gdzie możliwe są przerwy.
 - **R15** ✅ **Sterowanie per maszynista (panel):** wykluczenie z podmian (blokada), maksymalna liczba podmian, oraz wymuszone przypisanie do konkretnego obiegu (pin — działa tylko gdy obieg jest na stacji tego rezerwowego).
 - **R16** ⬜ **Maksymalne wykorzystanie rezerwowych — wiele przerw na obieg.** Najpierw każdy obieg dostaje 1 obowiązkową przerwę (R9). Potem, dopóki są wolni rezerwowi (w limicie 4,5h), rozdajemy **dodatkowe przerwy**: pociąg może mieć **>1 przerwę** (np. dwie połówki, cała+połówka, dwie całe) gdy rezerwowych jest dużo. Cel: nie marnować dostępnych rezerwowych. Kolejne przerwy tego samego obiegu muszą być **po powrocie maszynisty** z poprzedniej i w oknie 14:30–18:30.
@@ -76,7 +76,7 @@ całych  = liczba_obiegów − połówek
 
 **Krok 4 — wyjątek (do doprecyzowania):** nie dawaj szczytowi pierwszym połówki, jeśli mają mieć tylko połówki. Przesun je na pózniejszy czas, najlepiej po kole ale przed 18:15
 
-**R17** ✅ Rezerwa ruchowa (Kabaty): 1 maszynista standby, tryb **0/1/2/3 koła** (3 = trudna obsada, brak odłożonej rezerwy; awarię obsługuje ten, kto ma przerwę).
+**R17** ✅ Rezerwa ruchowa (Kabaty A1): na A1 stoi pociąg rezerwy ruchowej z maszynistą oddelegowanym do wprowadzania składu za pociąg, który uległ awarii / wymaga sprzątania. Dlatego rezerwowy na A1 robi **DOMYŚLNIE max 1 koło** (jedną całą) — gdyby wyjechał na 3 koła, w razie nagłej potrzeby zabrakłoby maszynisty rezerwowego na Kabatach. Może zrobić więcej (do 3), ale to ryzyko; bezpieczniej 1, ewentualnie „na zakładkę" (jeden czeka, reszta podmienia). Tryb **0/1/2/3 koła** ustawia instruktor ręcznie (`maxJobs`); 3 = trudna obsada, brak odłożonej rezerwy.
 **R18** ✅ Rezerwowi mają **okno dostępności [od–do]** (do 16:00 / do 18:00 / od 18:00 do rana). Przerwa musi się zmieścić: `start ≥ od` i `start + długość ≤ do`. „Od 18:00" robi całą (start 18:00 → wraca ~19:30).
 **R19** ✅ Sterowanie: **„tylko moje obiegi"** (manualOnly) — rezerwowy robi wyłącznie wpisane piny, bez auto.
 

@@ -78,7 +78,7 @@ Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). Dozwolone kombinacje:
 
 - **cała + połówka** — dowolna kolejność; **najlepsza** kombinacja.
 - **połówka + połówka** — rozsunięte ~2,5 h (`SPACING_POLOWKI`).
-- **cała + cała** — tylko przy nadmiarze rezerwowych manewrowych.
+- **cała + cała** — dozwolona, gdy trzeba dobić rezerwowego do pełnych 3 kół (pokrycie już zapewnione).
 - **szczeniak** jako dokładka — ostateczność.
 
 Pozostałe kombinacje kładzione blisko powrotu maszynisty (mały odstęp).
@@ -110,9 +110,16 @@ stację), nie ze sztywnych 90/45/30 min.
 ## 5. Rezerwowi i kolejność przetwarzania
 
 - Rezerwowy podmienia **tylko na swojej stacji** (brak „pożyczania" z innej).
-- Limit obciążenia: **3 całe** liczone w równowartości (cała=1, połówka=0,5, szczeniak=⅓), nie w
-  minutach (`MAX_RESERVE_LOAD_EQ`). 3 całe = 6 połówek = 2 całe+2 połówki = 1 cała+4 połówki.
+- Limit obciążenia: **3 całe** liczone w równowartości (cała=1, godzinka=⅔, połówka=0,5, szczeniak=⅓),
+  nie w minutach (`MAX_RESERVE_LOAD_EQ`). 3 całe = 6 połówek = 2 całe+2 połówki = 1 cała+4 połówki.
   „Pełny" gdy równowartość ≥ 3.
+- **Limit liczby podmian wg stacji** (`jobCapOf`): **A1 (Kabaty) = domyślnie 1** podmiana — rezerwa
+  ruchowa musi zostać pod ręką (R17). Pozostałe stacje: bez limitu liczby (ogranicza je tylko 3 koła).
+  Instruktor może nadpisać ręcznie (`Reserve.maxJobs`).
+- **Maksymalne wykorzystanie:** dodatkowe przerwy (R16) rozdawane są tak, by dobić każdego rezerwowego
+  (poza A1) do **pełnych 3 kół**. Dlatego druga **cała** jest dozwolona zawsze (nie tylko przy nadmiarze)
+  — pokrycie (R9) jest już zapewnione wcześniej, a BRAK = brak rezerwowego na danej stacji (R14), więc
+  dokładanie 2. przerwy gdzie indziej nie odbiera nikomu pokrycia.
 - Pakowanie: najpierw dobijamy najczęściej używanego rezerwowego, świeżych zostawiamy na trudniejsze,
   późniejsze obiegi.
 - Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.
