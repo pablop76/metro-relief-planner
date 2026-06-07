@@ -1,9 +1,12 @@
 import { useState } from "react";
-import { BREAK_STATIONS, reserveFull, TRAIN_TYPES, driverFullName, HHMMSS, hmToSec } from "../lib/types";
+import { BREAK_STATIONS, reserveFull, TRAIN_TYPES, driverFullName, HHMMSS, hmToSec, isCrossTrackBreak } from "../lib/types";
 import type { Reserve, BreakStation, Driver, BreakAssignment, MetroLine, TrainType } from "../lib/types";
+import { DURATION } from "../lib/stations";
 
 // piktogram długości przerwy
 const KIND_GLYPH: Record<string, string> = { "cała": "●", "godzinka": "◕", "połówka": "◐", "szczeniak": "○" };
+// R20: alert „po przeciwnym torze" (powrót w przeciwnym kierunku, bufor ~5 min)
+const XFER_TITLE = "⚠ przeciwny tor — wraca w przeciwnym kierunku, bufor ~5 min; skontaktuj się z pociągiem";
 
 const STATION_NAMES: Record<BreakStation, string> = {
   A1: "Kabaty",
@@ -102,6 +105,7 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
                           <i className="rp-badge rp-b-pin" title={`obiegi: ${r.pins!.join(", ")}`}>📌{r.pins!.length}</i>
                         )}
                         {r.maxJobs != null && <i className="rp-badge" title="limit podmian">≤{r.maxJobs}</i>}
+                        {r.rolling && <i className="rp-badge rp-b-roll" title="rezerwa ruchowa (A1) — domyślnie 1 koło (R17)">⟳1</i>}
                         {r.line && <i className="rp-badge" title="linia">{r.line}</i>}
                         {r.availTo != null && <i className="rp-badge" title="pracuje do">⏲{HHMMSS(r.availTo)}</i>}
                         {((r.auth?.length ?? 0) > 0 || r.authNote) && (
@@ -131,16 +135,20 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
 
                     {jobs.length > 0 && (
                       <div className="rp-jobs">
-                        {jobs.map((a) => (
-                          <span
-                            key={a.obiegId}
-                            className={`rp-job kind-${a.kind}`}
-                            title={`${a.kind} ${a.durationMin}′ o ${HHMMSS(a.startT)} (${a.station})`}
-                          >
-                            <i className="rp-job-g">{KIND_GLYPH[a.kind]}</i>
-                            {a.obiegId}
-                          </span>
-                        ))}
+                        {jobs.map((a) => {
+                          const cross = a.crossTrack ?? isCrossTrackBreak(a.kind); // R20
+                          return (
+                            <span
+                              key={`${a.obiegId}-${a.startT}`}
+                              className={`rp-job kind-${a.kind}${cross ? " is-cross" : ""}`}
+                              title={`${a.kind} ~${DURATION[a.kind]}′ (realnie ${a.durationMin}′) o ${HHMMSS(a.startT)} (${a.station})${cross ? "\n" + XFER_TITLE : ""}`}
+                            >
+                              <i className="rp-job-g">{KIND_GLYPH[a.kind]}</i>
+                              {a.obiegId}
+                              {cross && <i className="rp-job-xfer">⚠</i>}
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
 
@@ -162,6 +170,16 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
                           />
                           Tylko moje obiegi (bez auto)
                         </label>
+                        {r.station === "A1" && (
+                          <label className="rp-cfg-row" title="R17: ten jeden rezerwowy z Kabat zostaje pod ręką — domyślnie 1 koło (pole Max podmian nadpisuje)">
+                            <input
+                              type="checkbox"
+                              checked={!!r.rolling}
+                              onChange={(e) => update(r.id, { rolling: e.target.checked || undefined })}
+                            />
+                            Rezerwa ruchowa (A1 — limit 1 koło)
+                          </label>
+                        )}
                         <label className="rp-cfg-row">
                           Max podmian
                           <input

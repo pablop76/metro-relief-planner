@@ -15,9 +15,10 @@ koła = (zjazd − wjazd) / czas_koła
 
 - **czas_koła** = mediana odstępu między kolejnymi odjazdami A1→Młociny tego obiegu, z pominięciem
   postojów > 3 h (`lapDuration`; fallback 84 min, gdy za mało danych).
-- **wjazd** = realny wjazd z rozkładu — pierwsze zdarzenie po przerwie > 60 min po 12:00
-  (`afternoonEntry`); dla obiegów jadących ciągiem (bez postoju w dzień) start maszynisty z grafiku
-  (`SHIFT2_DRIVER_START`: D17–D20 = 13:00, D22 = 13:30). Domyślnie 14:00.
+- **wjazd** = realny start 2. zmiany (`shift2Start`, zapisany na obiegu jako `entry2nd`): pierwsze
+  zdarzenie po przerwie > 60 min po 12:00 (`afternoonEntry`); dla obiegów jadących ciągiem (bez postoju
+  w dzień) start maszynisty z grafiku (`SHIFT2_DRIVER_START`: D17–D20 = 13:00, D22 = 13:30). Domyślnie 14:00.
+  `entry2nd` jest też podstawą R3 (patrz §3).
 - **zjazd** = ostatnie zdarzenie obiegu (cap na 22:00 = koniec 2. zmiany).
 - Częściowe pierwsze/ostatnie koło wychodzi jako **realny ułamek** — np. S23 (wjazd A11 14:41 →
   zjazd 19:54) = **3,73**, a nie zaokrąglone 4. Zakończenie na A23 (zjazd/sprzątanie) to pół koła,
@@ -53,10 +54,11 @@ zmienia go ktoś na linii.
 
 Decyduje liczba kół (`planBreaks`):
 
-- Obiegi z **≤ 3 koła** (`POL_MAX_LOOPS`) → **połówka zawsze**, niezależnie od liczby rezerwowych (twardy próg).
-- Obiegi **3–4 koła** → **elastycznie**: przy nadwyżce rezerwy dostają **całą**, przy deficycie schodzą na **połówkę**. „Zawsze połówka" powyżej 3 kół to sugestia — decyduje bilans.
-- **Deficyt mocy** (`liczba_obiegów − rezerwowi×3`) zwiększa liczbę połówek o `2 × deficyt`.
-- Połówki trafiają do obiegów z **najmniejszą liczbą kół** (szczyty); reszta → **cała**.
+- Obiegi z **≤ 3 koła** (`POL_HARD_LOOPS`) → **połówka zawsze**, niezależnie od liczby rezerwowych (twardy próg = `hardPol`).
+- Obiegi **3–4 koła** (`POL_ELASTIC_LOOPS`) → **elastycznie**: przy nadwyżce rezerwy dostają **całą**, przy deficycie schodzą na **połówkę**. „Zawsze połówka" powyżej 3 kół to sugestia — decyduje bilans.
+- Obiegi **> 4 koła** oraz `Infinity` (jazda po 21:00 / całodobowe) → **cała ZAWSZE** (deficyt nigdy ich nie spycha na połówkę).
+- **Deficyt mocy** (`liczba_obiegów − Σ min(3, capOf)`) zwiększa liczbę połówek o `2 × deficyt`, ale tylko w obrębie pasma elastycznego: `polCount = min(hardPol + elasticPol, max(hardPol, 2 × deficyt))`.
+- Połówki trafiają do obiegów z **najmniejszą liczbą kół** (szczyty); reszta → **cała**. Kolejność z rozkładu, bez sztywnej listy S (D7).
 - Zasada nadrzędna: **najmniej kół = połówka**, najwięcej kół = cała.
 - Ręczny override rodzaju (`forcedKinds`) ma pierwszeństwo nad auto-bilansem.
 
@@ -68,10 +70,14 @@ Decyduje liczba kół (`planBreaks`):
 - **Preferencja 16:00–17:30** (`PREF_WINDOW`) — najlepsze przerwy startują w tym oknie; slot w oknie
   ma score 0, poza oknem — odległość do najbliższej krawędzi.
 - **Dwa okna:**
-  - **1. (główna) przerwa** — start najpóźniej **18:30** (`LATEST_FIRST`; „19:10 = za późno").
+  - **1. (główna) przerwa** — start najpóźniej **18:30** (`LATEST_FIRST`; „19:10 = za późno"), z dodatkowym
+    ograniczeniem **R3**: `latestFirstOf = min(18:30, entry2nd + 6 h)` (max 6 h ciągłej pracy od realnego startu).
   - **2. (dodatkowa) przerwa** — okno dłuższe, do **20:00** (`LATEST_SECOND`); realnie limituje ją
     zjazd pociągu (musi wrócić, zanim zjedzie — patrz §1).
 - Nie zaczynać przerw od obiegów mających tylko połówki — najpierw całe (kolejność w §5).
+- **§4a krok 4** (`firstWindow`): szczyt z samą połówką (`dk = połówka`) nie dostaje jej jako pierwszej —
+  okno 1. przerwy zawężone do **[entry2nd + 1 koło, 18:15]** (`ONLY_POL_LATEST`). Pokrycie awaryjne
+  (`tryCover`) może to rozluźnić, gdy inaczej byłby BRAK.
 
 ### 3a. Druga (dodatkowa) przerwa — kombinacje
 
@@ -104,7 +110,14 @@ i powrót) > **połówka** (~45 min) > **szczeniak** (~30 min, krótki nawrót d
 A7→Młociny ≈ 58 min, A18→Kabaty ≈ 62–66 min (realnie z rozkładu).
 
 Długość przerwy liczona z **realnego rozkładu** (czas od wejścia w obieg do powrotu pociągu na tę
-stację), nie ze sztywnych 90/45/30 min.
+stację), nie ze sztywnych 90/45/30 min. Wartości 90/60/45/30 (`DURATION`) pokazujemy pomocnikowi jako
+**poglądowe** (D1) — w UI „~45′ (realnie 47′)".
+
+**R20 — przeciwny tor** (`isCrossTrackBreak`, `BreakAssignment.crossTrack`): każda przerwa **inna niż „cała"**
+(połówka/godzinka/szczeniak) wraca w **przeciwnym kierunku** → maszynista/rezerwowy przechodzi na drugi peron
+→ zakładany bufor **~5 min**. Silnik oznacza taką podmianę `crossTrack`, a UI pokazuje **⚠** w planie
+([`ObiegCard`](src/components/ObiegCard.tsx)) i na pasku bocznym ([`ReservePanel`](src/components/ReservePanel.tsx)).
+„cała" wraca tym samym torem (ten sam pociąg) → bez bufora.
 
 ---
 
@@ -114,10 +127,10 @@ stację), nie ze sztywnych 90/45/30 min.
 - Limit obciążenia: **3 całe** liczone w równowartości (cała=1, godzinka=⅔, połówka=0,5, szczeniak=⅓),
   nie w minutach (`MAX_RESERVE_LOAD_EQ`). 3 całe = 6 połówek = 2 całe+2 połówki = 1 cała+4 połówki.
   „Pełny" gdy równowartość ≥ 3.
-- **Limit liczby podmian wg stacji** (`jobCapOf`): na **A1 (Kabaty) tylko JEDEN** rezerwowy z obsady ma
-  **domyślnie 1** podmianę — rezerwa ruchowa musi zostać pod ręką (R17); **pozostali rezerwowi A1
-  pracują normalnie do 3 kół**. Inne stacje: bez limitu liczby (ogranicza je tylko 3 koła).
-  Instruktor może nadpisać ręcznie (`Reserve.maxJobs`).
+- **Limit liczby podmian wg stacji** (`capOf`): na **A1 (Kabaty) tylko JEDEN** rezerwowy (rezerwa ruchowa) ma
+  **domyślnie 1** podmianę i zostaje pod ręką (R17). Wskazanie: jawny flag `Reserve.rolling` (checkbox w panelu) >
+  pierwszy niezablokowany rezerwowy A1. **Pozostali rezerwowi A1 pracują normalnie do 3 kół**. Inne stacje:
+  bez limitu liczby (ogranicza je tylko 3 koła). Ręczny `Reserve.maxJobs` zawsze nadpisuje.
 - **Maksymalne wykorzystanie:** dodatkowe przerwy (R16) rozdawane są tak, by dobić każdego rezerwowego
   (poza A1) do **pełnych 3 kół**. Dlatego druga **cała** jest dozwolona zawsze (nie tylko przy nadmiarze)
   — pokrycie (R9) jest już zapewnione wcześniej, a BRAK = brak rezerwowego na danej stacji (R14), więc

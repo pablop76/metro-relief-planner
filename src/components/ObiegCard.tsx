@@ -1,8 +1,12 @@
 import { useState } from "react";
-import { HHMMSS } from "../lib/types";
+import { HHMMSS, isCrossTrackBreak } from "../lib/types";
 import type { Obieg, StationEvent, BreakAssignment, Reserve, BreakKind } from "../lib/types";
 import { BreakEditor } from "./BreakEditor";
 import { feasibleSlots } from "../lib/engine";
+import { DURATION } from "../lib/stations";
+
+// R20: komunikat przy podmianie „po przeciwnym torze" (powrót w przeciwnym kierunku, bufor ~5 min).
+const XFER_TITLE = "⚠ przeciwny tor — wraca w przeciwnym kierunku, bufor ~5 min; skontaktuj się z pociągiem";
 
 const NOON = 12 * 3600;
 
@@ -117,17 +121,21 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
         {sorted.map((a, i) => {
           const reserve = a.reserveId ? reserves.find((r) => r.id === a.reserveId) : null;
           const brak = !a.reserveId;
+          const cross = a.crossTrack ?? isCrossTrackBreak(a.kind); // R20
+          // D1: czas poglądowy (90/60/45/30) wiodący, realny z rozkładu w nawiasie
+          const durTitle = `${a.kind} ~${DURATION[a.kind]}′ (realnie ${a.durationMin}′)`;
           return (
             <div
               key={i}
-              className={`oc-brk kind-${a.kind}${brak ? " is-brak" : ""}${editIdx === i ? " open" : ""}`}
+              className={`oc-brk kind-${a.kind}${brak ? " is-brak" : ""}${editIdx === i ? " open" : ""}${cross ? " is-cross" : ""}`}
               onClick={() => setEditIdx(editIdx === i ? null : i)}
-              title="kliknij, aby edytować"
+              title={`${durTitle}${cross ? "\n" + XFER_TITLE : ""}\nkliknij, aby edytować`}
             >
               <div className="oc-brk-top">
                 <span className={`oc-kind kind-${a.kind}`}>{KIND_SHORT[a.kind]}</span>
                 <span className="oc-time">{HHMMSS(a.startT)}</span>
                 <span className="oc-stat">{a.station} {DIR_ARROW[a.dir]}</span>
+                {cross && <span className="oc-xfer" title={XFER_TITLE}>⚠</span>}
               </div>
               <span className="oc-res">
                 {reserve ? reserve.name : "⚠ BRAK"}

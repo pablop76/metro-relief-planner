@@ -9,6 +9,7 @@
   --olive: #b6a330;
   --accent: #c8102e;
   --green: #3fb950;
+  --warn: #e3a008;
 }
 
 * { box-sizing: border-box; }
@@ -103,6 +104,9 @@ body {
 .oc-brk.is-brak { box-shadow: inset 3px 0 0 var(--red); }
 .oc-brk.is-brak .oc-res { color: var(--red); }
 .oc-brk-top { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: wrap; }
+/* R20 — podmiana po przeciwnym torze (bufor ~5 min) */
+.oc-xfer { color: var(--warn); font-style: normal; font-size: 11px; line-height: 1; cursor: help; }
+.oc-brk.is-cross { box-shadow: inset 3px 0 0 var(--olive), inset 0 0 0 1px rgba(227,160,8,.35); }
 .oc-add {
   background: none; border: 1px dashed var(--border); color: var(--muted); border-radius: 5px;
   padding: 3px; cursor: pointer; font-size: 12px;
@@ -322,6 +326,9 @@ body {
 .rp-job.kind-godzinka .rp-job-g { color: #a371f7; }
 .rp-job.kind-połówka .rp-job-g { color: var(--olive); }
 .rp-job.kind-szczeniak .rp-job-g { color: #1f6feb; }
+/* R20 — alert „przeciwny tor" na pasku bocznym */
+.rp-job.is-cross { border-color: rgba(227,160,8,.55); }
+.rp-job-xfer { font-style: normal; font-size: 9px; color: var(--warn); margin-left: 1px; cursor: help; }
 
 /* --- ustawienia maszynisty (blokada / limit / pin) --- */
 .rp-cfg, .rp-x { background: none; border: none; cursor: pointer; line-height: 1; }
@@ -331,6 +338,7 @@ body {
 .rp-badge { font-style: normal; font-size: 9px; margin-left: 4px; color: var(--muted); }
 .rp-b-block { color: var(--red); }
 .rp-b-pin { color: var(--accent); }
+.rp-b-roll { color: var(--warn); }
 .rp-cfg-box {
   display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px;
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; font-size: 11px;

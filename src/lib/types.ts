@@ -53,6 +53,9 @@ export interface Obieg {
   /** obieg jedzie ciągiem przez zmianę (brak postoju w środku dnia) — przechodzi z 1. zmiany;
    *  NIE startuje na 2. zmianie, więc kół nie liczymy — z definicji dostaje całą. */
   throughShift: boolean;
+  /** realny start maszynisty 2. zmiany (sekundy od północy) — wjazd z rozkładu albo start z grafiku.
+   *  Podstawa R3 (max 6h ciągłej pracy: 1. przerwa najpóźniej start+6h). */
+  entry2nd: number;
 }
 
 /** Maszynista (stała lista wszystkich) — z pliku maszynisci.json, edytowalny. */
@@ -76,6 +79,9 @@ export interface Reserve {
   driverId?: string;
   /** wykluczony z podmian (nie przydzielać automatycznie) */
   blocked?: boolean;
+  /** rezerwa ruchowa A1 (R17): ten JEDEN rezerwowy z Kabat zostaje pod ręką → domyślny limit 1 koło.
+   *  Bez tej flagi silnik wskazuje pierwszego niezablokowanego rezerwowego A1. `maxJobs` zawsze nadpisuje. */
+  rolling?: boolean;
   /** maksymalna liczba podmian (oprócz limitu 4,5h) */
   maxJobs?: number;
   /** wymuszone obiegi do podmiany przez tego rezerwowego (lista id) — silnik je respektuje */
@@ -125,10 +131,20 @@ export interface BreakAssignment {
   reserveId: string | null;
   /** czy ustawione ręcznie przez dyspozytora (hybryda) */
   manual?: boolean;
+  /** R20: podmiana wymaga przejścia na przeciwny peron (powrót w przeciwnym kierunku) → bufor ~5 min.
+   *  Silnik ustawia to dla przerw innych niż „cała". UI pokazuje przy niej alert ⚠. */
+  crossTrack?: boolean;
 }
 
 /** Maksymalna liczba przerw na jeden obieg (R16). */
 export const MAX_BREAKS_PER_OBIEG = 2;
+
+/** R20: zakładany bufor na przejście między peronami przy podmianie „po przeciwnym torze" (minuty). */
+export const XFER_BUFFER_MIN = 5;
+/** Czy podmiana wymaga przejścia na przeciwny peron (powrót w przeciwnym kierunku) — R20.
+ *  „cała" wraca tym samym torem (ten sam peron, ten sam pociąg) → bez bufora;
+ *  połówka/godzinka/szczeniak wracają w przeciwnym kierunku → bufor ~5 min + alert ⚠. */
+export const isCrossTrackBreak = (kind: BreakKind): boolean => kind !== "cała";
 
 /** Wynik planowania. */
 export interface PlanResult {

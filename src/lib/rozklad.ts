@@ -67,16 +67,21 @@ function lapDuration(ev: StationEvent[]): number {
   return gaps[Math.floor(gaps.length / 2)];
 }
 
+/** Realny start maszynisty 2. zmiany: wjazd z rozkładu (postój w dzień) lub start z grafiku
+ *  (obieg ciągły: SHIFT2_DRIVER_START), w ostateczności 14:00. Podstawa R3 (max 6h ciągłej pracy). */
+function shift2Start(id: string, ev: StationEvent[]): number {
+  const ae = afternoonEntry(ev);
+  return ae ? ae.t : (SHIFT2_DRIVER_START[id] ?? SHIFT2_DEFAULT_START);
+}
+
 /** Koła 2. zmiany — DOKŁADNIE (bez zaokrąglania): czasowo, koła = (zjazd − wjazd) / czas_koła.
- *  Wjazd = realny wjazd z rozkładu (postój w dzień) lub start maszynisty z grafiku (obieg ciągły).
+ *  Wjazd = realny start maszynisty (shift2Start).
  *  Obiegi ze zmiennikiem na linii / 3. zmianą / całodobowe (jazda po 21:00) → Infinity (zawsze cała). */
 function countLoops2nd(id: string, ev: StationEvent[], lapSec: number): number {
   const lastT = ev[ev.length - 1].t;
   if (lastT >= RELIEF_ON_LINE) return Infinity;     // zmiennik na linii / całodobowy → nie liczymy
-  const ae = afternoonEntry(ev);
-  const entryT = ae ? ae.t : (SHIFT2_DRIVER_START[id] ?? SHIFT2_DEFAULT_START);
   const zjazdT = Math.min(lastT, SHIFT2_END);
-  return (zjazdT - entryT) / lapSec;
+  return (zjazdT - shift2Start(id, ev)) / lapSec;
 }
 
 /** Parsuje workbook SheetJS -> lista obiegów dla danego arkusza (typ dnia). */
@@ -141,6 +146,7 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
       loops: countLoops2nd(id, ev, lapSec),
       lapMin: Math.round(lapSec / 60), // czas koła (mediana) w minutach — do wglądu
       throughShift: ev[ev.length - 1].t >= RELIEF_ON_LINE, // zmiennik na linii / całodobowy → cała
+      entry2nd: shift2Start(id, ev), // realny start 2. zmiany — R3 (max 6h)
     });
   }
 

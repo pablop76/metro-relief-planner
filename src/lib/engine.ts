@@ -1,20 +1,23 @@
 import type {
   Obieg, Reserve, BreakAssignment, PlanResult, BreakKind, Dir, BreakStation,
 } from "./types";
-import { CALA_EQ, MAX_BREAKS_PER_OBIEG, MAX_RESERVE_LOAD_EQ, fitsLoad } from "./types";
+import { CALA_EQ, MAX_BREAKS_PER_OBIEG, MAX_RESERVE_LOAD_EQ, fitsLoad, isCrossTrackBreak } from "./types";
 import { STATIONS, DOWNGRADE, stationSupports } from "./stations";
 
 const hms = (h: number, m: number) => h * 3600 + m * 60;
 
-// A1 (Kabaty) = stanowisko rezerwy ruchowej: maszynista musi zostać pod ręką, by wprowadzić pociąg
-// rezerwy za skład, który uległ awarii / wymaga sprzątania. Dlatego DOMYŚLNIE robi tylko 1 koło
-// (jedna cała) — gdyby wyjechał na 3 koła, w razie potrzeby zabrakłoby rezerwowego na Kabatach.
-// Instruktor może świadomie podnieść limit ręcznie (Reserve.maxJobs). Poza A1: limit 3 koła (R13).
-const A1_DEFAULT_MAX_JOBS = 1;
-/** Maks. liczba podmian rezerwowego: ręczny maxJobs > domyślny (A1 = 1, pozostałe stacje = bez limitu
- *  liczby — ogranicza je dopiero limit 3 kół w równowartości całych, fitsLoad). */
-const jobCapOf = (r: Reserve): number =>
-  r.maxJobs ?? (r.station === "A1" ? A1_DEFAULT_MAX_JOBS : Infinity);
+// R17 — rezerwa ruchowa A1 (Kabaty): na A1 stoi pociąg rezerwy ruchowej; JEDEN maszynista z obsady
+// musi zostać pod ręką, by wprowadzić skład za pociąg, który uległ awarii / wymaga sprzątania. Ten
+// JEDEN robi DOMYŚLNIE tylko 1 koło (jedną całą); POZOSTALI rezerwowi z A1 pracują normalnie do 3 kół.
+// Którego dotyczy limit: jawny flag `rolling` > pierwszy niezablokowany rezerwowy A1. `maxJobs` nadpisuje.
+const A1_MOBILE_MAX_JOBS = 1;
+
+// R3 — maksymalnie 6 h ciągłej pracy bez przerwy, liczone od REALNEGO startu maszynisty (entry2nd).
+// 1. (główna) przerwa musi wystartować najpóźniej start+6h (przy starcie 13:00 → 19:00 itd.).
+const MAX_CONTINUOUS = 6 * 3600;
+// §4a krok 4 — szczyt mający TYLKO połówkę: nie dawaj jej jako pierwszej; zaplanuj między 1. pełnym
+// kołem (entry2nd + czas koła) a 18:15 (nie od razu na starcie zmiany).
+const ONLY_POL_LATEST = hms(18, 15);
 
 // Preferowane OKNO startu (R2, poprawione 2026-06-07): najlepsze przerwy startują ~16:00–17:30,
 // NIE „jak najbliżej 14:30". Slot w oknie = score 0; poza oknem = odległość do najbliższej krawędzi.
@@ -104,10 +107,11 @@ interface RState {
   count: number;
   busyUntil: number;
   station: BreakStation;
+  cap: number;      // limit liczby podmian (R17: rezerwa ruchowa A1 = 1; reszta = Infinity / 3 koła)
 }
 
 /** Wybór rezerwowego do slotu: TYLKO z tej samej stacji co slot (rezerwowy podmienia tam, gdzie stoi),
- *  wolny czasowo, w limicie 4,5h (R13) i limicie własnym (maxJobs), nie zablokowany, najmniej obciążony. */
+ *  wolny czasowo, w limicie 4,5h (R13) i limicie własnym (cap/maxJobs), nie zablokowany, najmniej obciążony. */
 function pickReserve(rs: RState[], slot: Slot): RState | null {
   const startSec = slot.startT;
   const eligible = rs.filter(
@@ -119,7 +123,7 @@ function pickReserve(rs: RState[], slot: Slot): RState | null {
       (r.ref.availFrom == null || slot.startT >= r.ref.availFrom) && // R18: okno dostępności rezerwowego
       (r.ref.availTo == null || slot.startT + slot.durationMin * 60 <= r.ref.availTo) &&
       fitsLoad(r.loadEq, slot.kind) && // limit 3 całe (R13) — w równowartości całych, nie minutach
-      r.count < jobCapOf(r.ref) // limit liczby podmian: A1 = 1 (rezerwa ruchowa), reszta = bez limitu
+      r.count < r.cap // limit liczby podmian: rezerwa ruchowa A1 = 1, reszta = bez limitu (R17)
   );
   if (eligible.length === 0) return null;
   // PAKOWANIE: najpierw dobijamy już pracujących (max wykorzystanie, do 6 połówek / limitu 4,5h),
@@ -139,22 +143,61 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const score = (s: Slot) =>
     s.startT < prefLo ? prefLo - s.startT : s.startT > prefHi ? s.startT - prefHi : 0;
   const forced = opts.forcedKinds ?? {};
-  // BILANS MOCY (tok dyspozytora): moc = rezerwowi × 3 koła; deficyt → 2× połówek.
+
+  // R17 — wskazanie rezerwy ruchowej A1 (limit 1 koło): jawny flag `rolling` > pierwszy niezablokowany
+  // rezerwowy A1. Pozostali rezerwowi A1 = bez limitu liczby (ogranicza ich tylko 3 koła, fitsLoad).
+  const rollingA1Id =
+    reserves.find((r) => r.station === "A1" && r.rolling && !r.blocked)?.id ??
+    reserves.find((r) => r.station === "A1" && !r.blocked)?.id;
+  // Limit liczby podmian rezerwowego: ręczny maxJobs > (rezerwa ruchowa A1 = 1) > bez limitu (Infinity).
+  const capOf = (r: Reserve): number =>
+    r.maxJobs ?? (r.id === rollingA1Id ? A1_MOBILE_MAX_JOBS : Infinity);
+
+  // BILANS MOCY (tok pomocnika instruktora, §4a krok1): moc = Σ min(3 koła, cap); deficyt → 2× połówek.
+  // Rezerwa ruchowa A1 wnosi tylko 1 koło → moc ≈ (rezerwowi−1)×3 + 1.
   const capacity = reserves.reduce(
-    (s, r) => s + (r.blocked ? 0 : Math.min(MAX_RESERVE_LOAD_EQ, jobCapOf(r))),
+    (s, r) => s + (r.blocked ? 0 : Math.min(MAX_RESERVE_LOAD_EQ, capOf(r))),
     0
   );
   const deficit = obiegi.length - capacity;
-  // Minimum połówek: obiegi z ≤2,5 kołami zawsze dostają połówkę (krótkie szczyty, np. S31/S34 = 1,5 koła).
-  // To jest niezależne od liczby rez. — zawsze obowiązuje. Deficyt może tylko ZWIĘKSZYĆ polCount.
-  const POL_MAX_LOOPS = 2.5;
-  const minPol = obiegi.filter((o) => !forced[o.id] && o.loops <= POL_MAX_LOOPS).length;
-  const polCount = Math.max(minPol, Math.max(0, deficit * 2));
-  // połówki dostają obiegi z NAJMNIEJSZĄ liczbą kół (szczyty); reszta całe.
+
+  // PRÓG POŁÓWKI (R10/E3) — liczony na realnych kołach 2. zmiany (countLoops2nd), bez sztywnej listy S:
+  //   • ≤ 3 koła  → połówka ZAWSZE (twardy próg), niezależnie od liczby rezerwowych,
+  //   • 3–4 koła  → ELASTYCZNIE: przy nadwyżce rezerwy → cała; przy deficycie schodzą na połówkę,
+  //   • > 4 koła  → cała ZAWSZE (deficyt nigdy nie spycha ich na połówkę),
+  //   • Infinity (jazda po 21:00 / całodobowe) → cała (poza kwalifikacją).
+  const POL_HARD_LOOPS = 3;     // ≤3 koła = połówka bezwarunkowo
+  const POL_ELASTIC_LOOPS = 4;  // 3–4 koła = kandydat na połówkę tylko przy deficycie
+  const polEligible = (o: Obieg) => !forced[o.id] && Number.isFinite(o.loops);
+  const hardPol = obiegi.filter((o) => polEligible(o) && o.loops <= POL_HARD_LOOPS).length;
+  const elasticPol = obiegi.filter(
+    (o) => polEligible(o) && o.loops > POL_HARD_LOOPS && o.loops <= POL_ELASTIC_LOOPS
+  ).length;
+  // deficyt zwiększa liczbę połówek o 2× deficyt, ale tylko w obrębie pasma elastycznego
+  // (cap = hardPol + elasticPol); nadwyżka (deficyt ≤ 0) → polCount = hardPol (same twarde ≤3).
+  const polCount = Math.min(hardPol + elasticPol, Math.max(hardPol, Math.max(0, deficit * 2)));
+  // połówki dostają obiegi z NAJMNIEJSZĄ liczbą kół (szczyty); kolejność z rozkładu, bez sztywnej listy (D7).
   const autoPolowka = new Set(
-    [...obiegi].sort((a, b) => a.loops - b.loops || a.firstT - b.firstT).slice(0, polCount).map((o) => o.id)
+    [...obiegi]
+      .filter(polEligible)
+      .sort((a, b) => a.loops - b.loops || a.firstT - b.firstT)
+      .slice(0, polCount)
+      .map((o) => o.id)
   );
   const dk = (o: Obieg) => forced[o.id] ?? (autoPolowka.has(o.id) ? "połówka" : "cała"); // ręczny mark > auto bilans
+
+  // R3 — okno 1. (głównej) przerwy: najpóźniejszy START = min(18:30, realny_start + 6h).
+  const latestFirstOf = (o: Obieg) => Math.min(LATEST_FIRST, o.entry2nd + MAX_CONTINUOUS);
+  // OKNO 1. przerwy [od, do] dla obiegu. §4a krok4: szczyt z samą połówką (dk = połówka) nie dostaje jej
+  // jako pierwszej — dolna granica = 1. pełne koło (entry2nd + czas koła), górna = 18:15.
+  const firstWindow = (o: Obieg): [number, number] => {
+    if (dk(o) === "połówka") {
+      const lo = Math.max(earliestOf(o), o.entry2nd + o.lapMin * 60);
+      const hi = Math.min(latestFirstOf(o), ONLY_POL_LATEST);
+      return [lo, hi];
+    }
+    return [earliestOf(o), latestFirstOf(o)];
+  };
 
   // Kolejność przetwarzania (R2a): NAJPIERW obiegi z całą, dopiero potem z połówką/szczeniakiem
   // („nie zaczynaj przerw od pociągów z połówkami"). To zgodne z tokiem pomocnika instruktora
@@ -165,8 +208,10 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const kindRank = (o: Obieg) => DOWNGRADE.indexOf(dk(o)); // cała=0, połówka=1, szczeniak=2
   const typeRank = (o: Obieg) => (o.type === "S" ? 0 : o.type === "full" ? 1 : 2);
   const numOf = (id: string) => parseInt(id.replace(/\D/g, ""), 10) || 0;
-  const slotCount = (o: Obieg) =>
-    DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o))).reduce((n, k) => n + candidateSlots(o, k, earliestOf(o), LATEST_FIRST).length, 0);
+  const slotCount = (o: Obieg) => {
+    const [lo, hi] = firstWindow(o);
+    return DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o))).reduce((n, k) => n + candidateSlots(o, k, lo, hi).length, 0);
+  };
   const order = [...obiegi].sort(
     (a, b) =>
       kindRank(a) - kindRank(b) ||
@@ -177,7 +222,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   );
 
   const rs: RState[] = reserves.map((r) => ({
-    ref: r, loadMin: 0, loadEq: 0, count: 0, busyUntil: 0, station: r.station,
+    ref: r, loadMin: 0, loadEq: 0, count: 0, busyUntil: 0, station: r.station, cap: capOf(r),
   }));
 
   const assignments: Record<string, BreakAssignment[]> = {};
@@ -192,16 +237,19 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     (assignments[o.id] ??= []).push({
       obiegId: o.id, station: slot.station, dir: slot.dir, startT: slot.startT,
       kind: slot.kind, durationMin: slot.durationMin, reserveId: r.ref.id, manual,
+      crossTrack: isCrossTrackBreak(slot.kind), // R20: powrót w przeciwnym kierunku → bufor ~5 min
     });
     driverFreeAt[o.id] = slot.startT + slot.durationMin * 60;
   };
 
   // Próba przydzielenia obiegowi PIERWSZEJ przerwy PO powrocie maszynisty, wg preferowanego okna 16:00–17:30 (R2).
-  // Okno 1. przerwy: start do LATEST_FIRST (18:30). Reguła pokrycia: ma sloty, brak rez. → BRAK; NIE schodź niżej.
-  const tryAssign = (o: Obieg, latest = LATEST_FIRST): boolean => {
-    const after = driverFreeAt[o.id] ?? 0;
+  // Okno 1. przerwy = firstWindow(o): górna granica = min(18:30, start+6h) (R3); dla szczytu z samą
+  // połówką dolna = 1. pełne koło, górna = 18:15 (§4a krok4). Pokrycie: ma sloty, brak rez. → BRAK; nie schodź niżej.
+  const tryAssign = (o: Obieg): boolean => {
+    const [lo, hi] = firstWindow(o);
+    const after = Math.max(driverFreeAt[o.id] ?? 0, lo);
     for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
-      const slots = candidateSlots(o, kind, earliestOf(o), latest)
+      const slots = candidateSlots(o, kind, lo, hi)
         .filter((s) => s.startT >= after)
         .sort((a, b) => score(a) - score(b));
       if (slots.length === 0) continue; // brak slotów → prawdziwy downgrade (nie ma fizycznej możliwości)
@@ -244,7 +292,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
           .filter((s) => s.station === r.station && s.startT >= after)
           .sort((a, b) => score(a) - score(b));
         for (const slot of slots) {
-          if (fitsLoad(r.loadEq, slot.kind) && r.count < jobCapOf(r.ref)) {
+          if (fitsLoad(r.loadEq, slot.kind) && r.count < r.cap) {
             commit(o, slot, r, true);
             done = true;
             break;
@@ -261,14 +309,16 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     if (tryAssign(o)) continue;
     if (tryCover(o)) continue; // R9: pokrycie obowiązkowe — downgrade zanim oznaczysz BRAK
     let fb: Slot | null = null;
+    const [flo, fhi] = firstWindow(o);
     for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
-      const s = candidateSlots(o, kind, earliestOf(o), LATEST_FIRST).sort((a, b) => score(a) - score(b))[0];
+      const s = candidateSlots(o, kind, flo, fhi).sort((a, b) => score(a) - score(b))[0];
       if (s) { fb = s; break; }
     }
     if (fb) {
       assignments[o.id] = [{
         obiegId: o.id, station: fb.station, dir: fb.dir, startT: fb.startT,
         kind: fb.kind, durationMin: fb.durationMin, reserveId: null,
+        crossTrack: isCrossTrackBreak(fb.kind),
       }];
     }
     unassigned.push(o.id);
