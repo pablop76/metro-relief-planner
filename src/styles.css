@@ -240,6 +240,7 @@ body {
   width: 48px; background: var(--panel); color: var(--text); border: 1px solid var(--border);
   border-radius: 5px; padding: 4px; text-align: center;
 }
+.delay-ctl input[type="time"] { width: auto; min-width: 96px; text-align: left; }
 
 /* --- lista maszynistów (roster) --- */
 .rp-roster { margin-bottom: 12px; }

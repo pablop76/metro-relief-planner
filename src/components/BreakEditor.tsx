@@ -42,11 +42,7 @@ export function BreakEditor({ obieg, assignment, reserves, byReserve, earliest, 
   const pickSlot = (key: string) => {
     const s = slots.find((x) => `${x.startT}|${x.station}|${x.kind}` === key);
     if (!s) return;
-    // przy zmianie czasu rezerwowy zostaje tylko, jeśli nadal wolny w nowym slocie; inaczej → BRAK
-    const keepRes =
-      assignment?.reserveId && !conflictAt(assignment.reserveId, s.startT, s.durationMin)
-        ? assignment.reserveId
-        : null;
+    // rezerwowy zostaje po zmianie slotu; ewentualny konflikt jest tylko sygnalizowany (nie blokuje)
     onChange({
       obiegId: obieg.id,
       station: s.station,
@@ -54,17 +50,20 @@ export function BreakEditor({ obieg, assignment, reserves, byReserve, earliest, 
       startT: s.startT,
       kind: s.kind,
       durationMin: s.durationMin,
-      reserveId: keepRes,
+      reserveId: assignment?.reserveId ?? null,
       manual: true,
     });
   };
 
   const pickReserve = (rid: string) => {
     if (!assignment) return;
-    // blokada: nie pozwól przypisać rezerwowego zajętego w tym czasie (nie podmienia 2 pociągów naraz)
-    if (rid && conflictAt(rid, assignment.startT, assignment.durationMin)) return;
+    // dozwolone nawet gdy „zajęty" — łańcuch: kończy obieg 6 i bierze S34 jadące tuż za nim; tylko ostrzegamy
     onChange({ ...assignment, reserveId: rid || null, manual: true });
   };
+
+  // konflikt aktualnie wybranego rezerwowego — do OSTRZEŻENIA, nie blokady
+  const currentConflict =
+    assignment?.reserveId ? conflictAt(assignment.reserveId, assignment.startT, assignment.durationMin) : null;
 
   return (
     <div className="break-editor" onClick={(e) => e.stopPropagation()}>
@@ -93,9 +92,8 @@ export function BreakEditor({ obieg, assignment, reserves, byReserve, earliest, 
           <option value="">— BRAK —</option>
           {stationReserves.map((r) => {
             const c = assignment ? conflictAt(r.id, assignment.startT, assignment.durationMin) : null;
-            const isCurrent = r.id === assignment?.reserveId;
             return (
-              <option key={r.id} value={r.id} disabled={!!c && !isCurrent}>
+              <option key={r.id} value={r.id}>
                 {r.name}
                 {c ? ` — zajęty ${HHMMSS(c.startT)}–${HHMMSS(c.startT + c.durationMin * 60)} (${c.obiegId})` : ""}
               </option>
@@ -109,16 +107,13 @@ export function BreakEditor({ obieg, assignment, reserves, byReserve, earliest, 
           ⚠ Brak rezerwowych na stacji {assignment.station} — dodaj ich w panelu po prawej.
         </p>
       )}
-      {assignment &&
-        stationReserves.length > 0 &&
-        stationReserves.every(
-          (r) => r.id !== assignment.reserveId && conflictAt(r.id, assignment.startT, assignment.durationMin)
-        ) && (
-          <p className="be-hint be-warn">
-            ⚠ Wszyscy rezerwowi na {assignment.station} są zajęci o {HHMMSS(assignment.startT)} — zmień godzinę slotu
-            albo dodaj rezerwowego na tej stacji.
-          </p>
-        )}
+      {currentConflict && (
+        <p className="be-hint be-warn">
+          ⚠ Ten rezerwowy ma już przerwę {currentConflict.obiegId} {HHMMSS(currentConflict.startT)}–
+          {HHMMSS(currentConflict.startT + currentConflict.durationMin * 60)} — upewnij się, że zdąży (łańcuch dozwolony,
+          np. kolejny pociąg tuż za poprzednim).
+        </p>
+      )}
 
       {onEarliestChange && (
         <label>
