@@ -265,8 +265,8 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   }
 
   // 2. R16 — DODATKOWA (druga) przerwa: maks. wykorzystanie rezerwowych, do MAX_BREAKS_PER_OBIEG na obieg.
-  // Dozwolone kombinacje 2 przerw: {cała+połówka} (DOWOLNA kolejność) lub {połówka+połówka};
-  // szczeniak dopuszczalny jako dokładka „gdy trzeba". ZAKAZ {cała+cała}.
+  // Dozwolone kombinacje 2 przerw: {cała+połówka} (DOWOLNA kolejność), {cała+godzinka}, {połówka+połówka};
+  // szczeniak dopuszczalny jako dokładka „gdy trzeba". {cała+cała} TYLKO przy nadmiarze (pełne pokrycie).
   // Okno 2. przerwy dłuższe (start do LATEST_SECOND; realnie limituje R7/zjazd). Rozmieszczenie (R2):
   // dwie połówki ~2,5 h od siebie; pozostałe kombinacje — blisko powrotu maszynisty (mały odstęp).
   const SPACING_POLOWKI = hms(2, 30);
@@ -279,13 +279,17 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       if (cur.some((a) => !a.reserveId)) continue; // BRAK — nie dokładaj
       const first = cur[cur.length - 1];
       const after = driverFreeAt[o.id] ?? 0;
-      // Preferuj najlepsze kombinacje. Dla 1.=cała: {cała+połówka} (najlepsza) → {cała+cała}
-      // (dopuszczalna przy NADMIARZE manewrowych — wejdzie, gdy połówka się nie złapie) → szczeniak.
-      // Dla 1.=połówka: {połówka+cała}=cała+połówka (najlepsza) → {połówka+połówka} → szczeniak.
+      // Preferuj najlepsze kombinacje. {cała+cała} TYLKO przy nadmiarze (pełne pokrycie, brak BRAK) —
+      // przy deficycie zamiast 2. całej dajemy godzinkę/połówkę, by nie zjadać mocy potrzebnej gdzie indziej.
+      // Dla 1.=cała: {cała+połówka} (najlepsza) → cała+godzinka → [cała+cała gdy nadmiar] → szczeniak.
+      // Dla 1.=połówka: {cała+połówka} (najlepsza) → +godzinka → {połówka+połówka} → szczeniak.
+      const surplus = unassigned.length === 0; // brak nieobsadzonych = można podwoić do cała+cała
       const secondKinds: BreakKind[] =
         first.kind === "cała"
-          ? ["połówka", "cała", "szczeniak"]
-          : ["cała", "połówka", "szczeniak"];
+          ? (surplus ? ["połówka", "godzinka", "cała", "szczeniak"] : ["połówka", "godzinka", "szczeniak"])
+          : first.kind === "połówka"
+          ? ["cała", "godzinka", "połówka", "szczeniak"]
+          : ["połówka", "godzinka", "szczeniak"]; // 1.=godzinka/szczeniak
       let placed = false;
       for (const kind of secondKinds) {
         // dwie połówki rozsuń ~2,5 h; pozostałe kombinacje kładź blisko powrotu (mały odstęp).

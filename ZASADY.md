@@ -22,6 +22,7 @@ Tryb: aplikacja **proponuje** plan, pomocnik instruktora **zatwierdza/zmienia** 
 | Rodzaj    | Czas       | Gdzie                                                                    |
 | --------- | ---------- | ------------------------------------------------------------------------ |
 | cała      | ~90 min ❓ | Kabaty A1, Młociny A23, Wilanowska A7, Plac Wilsona A18                  |
+| godzinka  | ~1h ✅     | A7 → Młociny, A18 → Kabaty (jazda do dalszego krańca i powrót)           |
 | połówka   | ~45 min ❓ | Politechnika A11, Centrum A13 (uwaga: A14 = Świętokrzyska, INNA stacja)  |
 | szczeniak | ~30 min ❓ | Wilanowska A7, Plac Wilsona A18 (w stronę Kabat) — _ale patrz reguła R6_ |
 

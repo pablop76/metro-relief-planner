@@ -3,8 +3,8 @@
 /** Kierunek jazdy pociągu. Północ = w stronę Młocin (A23), Południe = w stronę Kabat (A1). */
 export type Dir = "Kabaty" | "Młociny";
 
-/** Rodzaje przerw wg ZASADY.md */
-export type BreakKind = "cała" | "połówka" | "szczeniak";
+/** Rodzaje przerw wg ZASADY.md. „godzinka" (~1h) na A7→Młociny i A18→Kabaty (jazda do krańca i powrót). */
+export type BreakKind = "cała" | "godzinka" | "połówka" | "szczeniak";
 
 /** Typ obiegu wg oznaczenia w rozkładzie. */
 export type ObiegType = "full" | "S" | "D";
@@ -45,8 +45,14 @@ export interface Obieg {
   a1North: number;
   /** pociąg idzie na sprzątanie/odstawienie (nie zjazd na STP) — wykryte z UWAGI rozkładu */
   cleaning: boolean;
-  /** liczba kół (okrążeń) w ciągu dnia — mało kół = szczyt, kandydat na połówkę */
+  /** liczba kół 2. zmiany (wjazd→zjazd) — mało kół = szczyt, kandydat na połówkę.
+   *  Infinity dla obiegów przechodzących z 1. zmiany (pracują całą 2. zmianę → zawsze cała). */
   loops: number;
+  /** czas jednego koła tego obiegu (mediana, w minutach) — podstawa liczenia kół */
+  lapMin: number;
+  /** obieg jedzie ciągiem przez zmianę (brak postoju w środku dnia) — przechodzi z 1. zmiany;
+   *  NIE startuje na 2. zmianie, więc kół nie liczymy — z definicji dostaje całą. */
+  throughShift: boolean;
 }
 
 /** Maszynista (stała lista wszystkich) — z pliku maszynisci.json, edytowalny. */
@@ -91,8 +97,20 @@ export interface Reserve {
 /** Pula rezerwowych — lista imienna. */
 export type ReservePool = Reserve[];
 
-/** Maksymalny łączny czas podmian jednego rezerwowego (R13) — ~4,5 h. */
+/** Maksymalny łączny czas podmian jednego rezerwowego (R13) — ~4,5 h. (informacyjnie, do wyświetlania) */
 export const MAX_RESERVE_LOAD_MIN = 270;
+
+/** Limit pracy rezerwowego liczony w RÓWNOWARTOŚCI CAŁYCH (nie w realnych minutach — te są zmienne
+ *  z rozkładu, np. połówka na A11 ≠ 45 min). cała=1, połówka=0,5, szczeniak=⅓.
+ *  „Pełny" = 3 całe: 6 połówek = 2 całe+2 połówki = 1 cała+4 połówki = 3 całe. */
+export const CALA_EQ: Record<BreakKind, number> = { "cała": 1, "godzinka": 2 / 3, "połówka": 0.5, "szczeniak": 1 / 3 };
+export const MAX_RESERVE_LOAD_EQ = 3;
+const LOAD_EPS = 1e-6;
+/** Czy rezerwowy wyrobił limit (≥ 3 całe). */
+export const reserveFull = (loadEq: number) => loadEq >= MAX_RESERVE_LOAD_EQ - LOAD_EPS;
+/** Czy zmieści się jeszcze przerwa danego rodzaju w limicie 3 całych. */
+export const fitsLoad = (loadEq: number, kind: BreakKind) =>
+  loadEq + CALA_EQ[kind] <= MAX_RESERVE_LOAD_EQ + LOAD_EPS;
 
 /** Zaplanowana podmiana na przerwę. */
 export interface BreakAssignment {

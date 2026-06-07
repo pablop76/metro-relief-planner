@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { parseObiegi, readWorkbook } from "./lib/rozklad";
 import { planBreaks } from "./lib/engine";
 import type { Obieg, Reserve, BreakAssignment, Driver, BreakKind } from "./lib/types";
-import { HHMMSS, hmToSec } from "./lib/types";
+import { HHMMSS, hmToSec, CALA_EQ } from "./lib/types";
 import * as XLSX from "xlsx";
 import { ReservePanel } from "./components/ReservePanel";
 import { ObiegCard } from "./components/ObiegCard";
@@ -55,14 +55,16 @@ function defaultOrder(obiegi: Obieg[]): string[] {
 
 function computeLoads(assignments: Record<string, BreakAssignment[]>) {
   const load: Record<string, number> = {};
+  const loadEq: Record<string, number> = {};
   const count: Record<string, number> = {};
   for (const list of Object.values(assignments))
     for (const a of list) {
       if (!a.reserveId) continue;
       load[a.reserveId] = (load[a.reserveId] ?? 0) + a.durationMin;
+      loadEq[a.reserveId] = (loadEq[a.reserveId] ?? 0) + CALA_EQ[a.kind];
       count[a.reserveId] = (count[a.reserveId] ?? 0) + 1;
     }
-  return { load, count };
+  return { load, loadEq, count };
 }
 
 export default function App() {
@@ -275,7 +277,7 @@ export default function App() {
     setError("");
   };
 
-  const { load, count } = useMemo(() => computeLoads(assignments), [assignments]);
+  const { load, loadEq, count } = useMemo(() => computeLoads(assignments), [assignments]);
   const byReserve = useMemo(() => {
     const m: Record<string, BreakAssignment[]> = {};
     for (const list of Object.values(assignments))
@@ -441,6 +443,7 @@ export default function App() {
                 onChange={setReserves}
                 drivers={drivers}
                 load={load}
+                loadEq={loadEq}
                 count={count}
                 byReserve={byReserve}
                 obiegIds={ordered.map((o) => o.id)}
@@ -457,6 +460,7 @@ export default function App() {
             onChange={setReserves}
             drivers={drivers}
             load={load}
+            loadEq={loadEq}
             count={count}
             byReserve={byReserve}
             obiegIds={ordered.map((o) => o.id)}

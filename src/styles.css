@@ -16,7 +16,7 @@ html, body, #root { height: 100%; margin: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.4 "Segoe UI", system-ui, sans-serif;
+  font: 16px/1.45 "Segoe UI", system-ui, sans-serif;
 }
 
 .app { display: flex; flex-direction: column; min-height: 100%; }
@@ -58,34 +58,35 @@ body {
 
 .obiegi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: 10px;
 }
 
 .obieg-card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-  display: flex; flex-direction: column; overflow: hidden; min-height: 150px;
+  display: flex; flex-direction: column; overflow: hidden; min-height: 188px;
 }
 .oc-head {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 8px 6px; border-bottom: 1px solid var(--border);
+  padding: 9px 7px; border-bottom: 1px solid var(--border);
 }
-.oc-entry { font-size: 11px; color: var(--muted); text-align: center; }
+.oc-entry { font-size: 13px; color: var(--muted); text-align: center; }
 
 /* --- liczba kół + kolor szczytów (mało kół = szczyt = kandydat na połówkę) --- */
-.oc-loops { font-size: 9px; margin-left: 4px; padding: 0 4px; border-radius: 6px; font-weight: 700; white-space: nowrap; }
+.oc-loops { font-size: 11px; margin-left: 4px; padding: 0 5px; border-radius: 6px; font-weight: 700; white-space: nowrap; }
+.oc-lap { font-size: 11px; margin-left: 3px; padding: 0 5px; border-radius: 6px; font-weight: 700; white-space: nowrap; background: rgba(255,255,255,.08); color: #9aa3ad; }
 .loops-few .oc-loops { background: rgba(226, 72, 61, .22); color: #ff8b80; }
 .loops-mid .oc-loops { background: rgba(182, 163, 48, .20); color: #d8c24a; }
 .loops-many .oc-loops { background: rgba(63, 185, 80, .16); color: var(--green); }
 .obieg-card.loops-few { box-shadow: inset 0 3px 0 0 var(--red); }
 .obieg-card.loops-mid { box-shadow: inset 0 3px 0 0 var(--olive); }
 .oc-entry em { font-style: normal; color: var(--text); font-weight: 600; }
-.oc-id { font-size: 12px; font-weight: 700; opacity: .85; }
+.oc-id { font-size: 14px; font-weight: 700; opacity: .85; }
 .type-S .oc-id { color: var(--red); }
 .type-D .oc-id { color: var(--olive); }
 
 .oc-body { flex: 1; display: grid; place-items: center; padding: 6px; }
-.oc-placeholder { color: #555b66; font-size: 11px; text-align: center; }
+.oc-placeholder { color: #555b66; font-size: 13px; text-align: center; }
 
 /* --- wiele przerw na karcie (R16) --- */
 .oc-breaks { flex: 1; display: flex; flex-direction: column; gap: 3px; padding: 4px; }
@@ -96,6 +97,7 @@ body {
 .oc-brk:hover { background: #262b35; }
 .oc-brk.open { outline: 1px solid var(--accent); }
 .oc-brk.kind-cała { box-shadow: inset 3px 0 0 var(--green); }
+.oc-brk.kind-godzinka { box-shadow: inset 3px 0 0 #a371f7; }
 .oc-brk.kind-połówka { box-shadow: inset 3px 0 0 var(--olive); }
 .oc-brk.kind-szczeniak { box-shadow: inset 3px 0 0 #1f6feb; }
 .oc-brk.is-brak { box-shadow: inset 3px 0 0 var(--red); }
@@ -103,7 +105,7 @@ body {
 .oc-brk-top { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: wrap; }
 .oc-add {
   background: none; border: 1px dashed var(--border); color: var(--muted); border-radius: 5px;
-  padding: 2px; cursor: pointer; font-size: 10px;
+  padding: 3px; cursor: pointer; font-size: 12px;
 }
 .oc-add:hover { border-color: var(--accent); color: var(--text); }
 .be-actions { display: flex; gap: 6px; }
@@ -164,29 +166,31 @@ body {
 .oc-body:hover { background: var(--panel-2); }
 .oc-id-row { display: flex; align-items: center; justify-content: center; gap: 5px; }
 .oc-train {
-  width: 60px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-  border-radius: 4px; padding: 2px 4px; font-size: 16px; font-weight: 700; text-align: center;
+  width: 68px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 5px; font-size: 18px; font-weight: 700; text-align: center;
 }
 .oc-train:focus { outline: none; border-color: var(--accent); }
 .oc-train::placeholder { color: #565c66; }
 .oc-half {
   background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
-  border-radius: 4px; width: 20px; height: 20px; cursor: pointer; font-size: 12px; line-height: 1; padding: 0;
+  border-radius: 4px; width: 24px; height: 24px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0;
 }
 .oc-half:hover { border-color: var(--accent); color: var(--text); }
 .oc-half.k-auto { color: #565c66; }
 .oc-half.k-połówka { background: var(--olive); color: #1a1a1a; border-color: var(--olive); font-weight: 700; }
 .oc-half.k-cała { background: var(--green); color: #0f1115; border-color: var(--green); font-weight: 700; }
 
-.oc-kind { font-size: 11px; font-weight: 800; letter-spacing: .5px; padding: 1px 7px; border-radius: 4px; }
+.oc-kind { font-size: 12px; font-weight: 800; letter-spacing: .5px; padding: 1px 7px; border-radius: 4px; }
 .oc-kind.kind-cała { background: rgba(63, 185, 80, .18); color: var(--green); }
+.oc-kind.kind-godzinka { background: rgba(163, 113, 247, .20); color: #c4a3ff; }
 .oc-kind.kind-połówka { background: rgba(182, 163, 48, .20); color: #d8c24a; }
 .oc-kind.kind-szczeniak { background: rgba(31, 111, 235, .20); color: #6ba4ff; }
-.oc-time { font-size: 16px; font-weight: 700; }
-.oc-stat { font-size: 10px; color: var(--muted); }
-.oc-res { font-size: 12px; font-weight: 600; margin-top: 2px; }
+.oc-time { font-size: 18px; font-weight: 700; }
+.oc-stat { font-size: 11px; color: var(--muted); }
+.oc-res { font-size: 13px; font-weight: 600; margin-top: 2px; }
 .oc-manual { color: var(--accent); font-style: normal; margin-left: 3px; }
 .oc-body.kind-cała { box-shadow: inset 3px 0 0 var(--green); }
+.oc-body.kind-godzinka { box-shadow: inset 3px 0 0 #a371f7; }
 .oc-body.kind-połówka { box-shadow: inset 3px 0 0 var(--olive); }
 .oc-body.kind-szczeniak { box-shadow: inset 3px 0 0 #1f6feb; }
 .oc-body.is-brak { box-shadow: inset 3px 0 0 var(--red); }
@@ -298,7 +302,7 @@ body {
 /* --- pasek pozycji przerwy (wcześnie ↔ późno) --- */
 .oc-when {
   position: relative; height: 4px; width: 86%; margin: 5px auto 0; border-radius: 2px;
-  background: linear-gradient(90deg, var(--green), var(--olive) 55%, var(--red));
+  background: linear-gradient(90deg, var(--red), var(--olive) 28%, var(--green) 50%, var(--olive) 72%, var(--red));
 }
 .when-dot {
   position: absolute; top: 50%; width: 8px; height: 8px; border-radius: 50%;
@@ -315,6 +319,7 @@ body {
 }
 .rp-job-g { font-style: normal; font-size: 9px; }
 .rp-job.kind-cała .rp-job-g { color: var(--green); }
+.rp-job.kind-godzinka .rp-job-g { color: #a371f7; }
 .rp-job.kind-połówka .rp-job-g { color: var(--olive); }
 .rp-job.kind-szczeniak .rp-job-g { color: #1f6feb; }
 

@@ -1,10 +1,26 @@
 {
   "linia": "M1",
-  "kierunki": ["Kabaty", "Młociny"],
+  "kierunki": [
+    "Kabaty",
+    "Młociny"
+  ],
   "rodzaje_przerw": {
-    "cała":      { "minuty": 90, "opis": "pełna przerwa (~1h30)" },
-    "połówka":   { "minuty": 45, "opis": "połowa przerwy (~45 min)" },
-    "szczeniak": { "minuty": 30, "opis": "krótka przerwa (~30 min)" }
+    "cała": {
+      "minuty": 90,
+      "opis": "pełna przerwa (~1h30)"
+    },
+    "godzinka": {
+      "minuty": 60,
+      "opis": "~1h: jazda do krańca i powrót (A7→Młociny, A18→Kabaty)"
+    },
+    "połówka": {
+      "minuty": 45,
+      "opis": "połowa przerwy (~45 min)"
+    },
+    "szczeniak": {
+      "minuty": 30,
+      "opis": "krótka przerwa (~30 min)"
+    }
   },
   "stacje_przerwowe": [
     {
@@ -12,7 +28,12 @@
       "nazwa": "Kabaty",
       "krancowa": true,
       "mozliwe_przerwy": [
-        { "rodzaj": "cała", "kierunek_podmiany": ["dowolny"] }
+        {
+          "rodzaj": "cała",
+          "kierunek_podmiany": [
+            "dowolny"
+          ]
+        }
       ]
     },
     {
@@ -20,8 +41,25 @@
       "nazwa": "Wilanowska",
       "krancowa": false,
       "mozliwe_przerwy": [
-        { "rodzaj": "cała",      "kierunek_podmiany": ["Kabaty", "Młociny"] },
-        { "rodzaj": "szczeniak", "kierunek_podmiany": ["Kabaty"] }
+        {
+          "rodzaj": "cała",
+          "kierunek_podmiany": [
+            "Kabaty",
+            "Młociny"
+          ]
+        },
+        {
+          "rodzaj": "godzinka",
+          "kierunek_podmiany": [
+            "Młociny"
+          ]
+        },
+        {
+          "rodzaj": "szczeniak",
+          "kierunek_podmiany": [
+            "Kabaty"
+          ]
+        }
       ]
     },
     {
@@ -29,17 +67,45 @@
       "nazwa": "Politechnika",
       "krancowa": false,
       "mozliwe_przerwy": [
-        { "rodzaj": "cała",    "kierunek_podmiany": ["Kabaty", "Młociny"] },
-        { "rodzaj": "połówka", "kierunek_podmiany": ["Kabaty", "Młociny"] }
+        {
+          "rodzaj": "cała",
+          "kierunek_podmiany": [
+            "Kabaty",
+            "Młociny"
+          ]
+        },
+        {
+          "rodzaj": "połówka",
+          "kierunek_podmiany": [
+            "Kabaty",
+            "Młociny"
+          ]
+        }
       ]
     },
     {
       "kod": "A13",
       "nazwa": "Centrum",
       "krancowa": false,
-      "warunek": { "min_rezerwowych": 16, "opis": "tylko gdy ponad 15 maszynistów rezerwowych" },
+      "warunek": {
+        "min_rezerwowych": 16,
+        "opis": "tylko gdy ponad 15 maszynistów rezerwowych"
+      },
       "mozliwe_przerwy": [
-        { "rodzaj": "połówka", "kierunek_podmiany": ["Kabaty", "Młociny"] }
+        {
+          "rodzaj": "cała",
+          "kierunek_podmiany": [
+            "Kabaty",
+            "Młociny"
+          ]
+        },
+        {
+          "rodzaj": "połówka",
+          "kierunek_podmiany": [
+            "Kabaty",
+            "Młociny"
+          ]
+        }
       ]
     },
     {
@@ -47,8 +113,25 @@
       "nazwa": "Plac Wilsona",
       "krancowa": false,
       "mozliwe_przerwy": [
-        { "rodzaj": "cała",      "kierunek_podmiany": ["Kabaty", "Młociny"] },
-        { "rodzaj": "szczeniak", "kierunek_podmiany": ["Młociny"] }
+        {
+          "rodzaj": "cała",
+          "kierunek_podmiany": [
+            "Kabaty",
+            "Młociny"
+          ]
+        },
+        {
+          "rodzaj": "godzinka",
+          "kierunek_podmiany": [
+            "Kabaty"
+          ]
+        },
+        {
+          "rodzaj": "szczeniak",
+          "kierunek_podmiany": [
+            "Młociny"
+          ]
+        }
       ]
     },
     {
@@ -56,13 +139,22 @@
       "nazwa": "Młociny",
       "krancowa": true,
       "mozliwe_przerwy": [
-        { "rodzaj": "cała", "kierunek_podmiany": ["dowolny"] }
+        {
+          "rodzaj": "cała",
+          "kierunek_podmiany": [
+            "dowolny"
+          ]
+        }
       ]
     }
   ],
   "reguly_globalne": {
     "tylko_druga_zmiana": true,
-    "okno_startu_przerwy": { "od": "14:30", "do": "18:30", "preferencja": "jak najbliżej 14:30" },
+    "okno_startu_przerwy": {
+      "od": "14:30",
+      "do": "18:30",
+      "preferencja": "jak najbliżej 14:30"
+    },
     "max_ciagla_praca_h": 6
   }
 }

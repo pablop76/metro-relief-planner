@@ -89,13 +89,18 @@ Pozostałe kombinacje kładzione blisko powrotu maszynisty (mały odstęp).
 
 Konfiguracja w [`src/lib/stations.ts`](src/lib/stations.ts) / `data/stations.json`:
 
-| Stacja          | Rodzaje przerw   | Kierunek          |
-| --------------- | ---------------- | ----------------- |
-| A1 (Kabaty)     | cała             | oba (krańcówka)   |
-| A7 (Wilanowska) | cała, szczeniak  | szczeniak ↓ Kabaty |
-| A11 (Politechnika) | cała, połówka | oba               |
-| A18 (Plac Wilsona) | cała, szczeniak | szczeniak ↑ Młociny |
-| A23 (Młociny)   | cała             | oba (krańcówka)   |
+| Stacja          | Rodzaje przerw          | Kierunek          |
+| --------------- | ----------------------- | ----------------- |
+| A1 (Kabaty)     | cała                    | oba (krańcówka)   |
+| A7 (Wilanowska) | cała, godzinka, szczeniak | godzinka ↑ Młociny, szczeniak ↓ Kabaty |
+| A11 (Politechnika) | cała, połówka        | oba               |
+| A18 (Plac Wilsona) | cała, godzinka, szczeniak | godzinka ↓ Kabaty, szczeniak ↑ Młociny |
+| A23 (Młociny)   | cała                    | oba (krańcówka)   |
+
+Rodzaje wg długości: **cała** (~90 min, pełna pętla) > **godzinka** (~1h, jazda do dalszego krańca
+i powrót) > **połówka** (~45 min) > **szczeniak** (~30 min, krótki nawrót do bliższego krańca).
+„godzinka" liczona jak połówka/szczeniak (powrót w przeciwnym kierunku), ale do dalszego krańca:
+A7→Młociny ≈ 58 min, A18→Kabaty ≈ 62–66 min (realnie z rozkładu).
 
 Długość przerwy liczona z **realnego rozkładu** (czas od wejścia w obieg do powrotu pociągu na tę
 stację), nie ze sztywnych 90/45/30 min.

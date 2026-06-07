@@ -15,7 +15,7 @@ function afternoonEntry(events: StationEvent[]): StationEvent {
   return events[0];
 }
 
-const KIND_SHORT: Record<string, string> = { "cała": "CAŁA", "połówka": "POŁ", "szczeniak": "SZCZ" };
+const KIND_SHORT: Record<string, string> = { "cała": "CAŁA", "godzinka": "1H", "połówka": "POŁ", "szczeniak": "SZCZ" };
 const DIR_ARROW: Record<string, string> = { Kabaty: "↓ Kabaty", Młociny: "↑ Młociny" };
 
 // okno wizualizacji pozycji przerwy: 14:00–20:00
@@ -49,7 +49,9 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
   const isFull = obieg.type === "full";
 
   const sorted = [...breaks].sort((a, b) => a.startT - b.startT);
-  const loopClass = obieg.loops <= 3 ? "loops-few" : obieg.loops <= 4 ? "loops-mid" : "loops-many";
+  const loopClass = obieg.throughShift
+    ? "loops-many"
+    : obieg.loops <= 3 ? "loops-few" : obieg.loops <= 4 ? "loops-mid" : "loops-many";
 
   const updateBreak = (i: number, a: BreakAssignment) => {
     const next = sorted.slice();
@@ -96,7 +98,17 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
         </div>
         <span className="oc-entry">
           {isFull ? <em>całodobowy</em> : <>{HHMMSS(entry.t)} <em>{entry.station}</em></>}
-          <span className="oc-loops" title={`${obieg.loops} kół (okrążeń) w ciągu dnia`}>🔁{obieg.loops}</span>
+          <span
+            className="oc-loops"
+            title={obieg.throughShift
+              ? "zmiennik na linii / całodobowy — pracuje całą 2. zmianę → cała"
+              : `${obieg.loops.toFixed(2)} koła 2. zmiany (dokładnie)`}
+          >
+            🔁{obieg.throughShift ? "cała zm." : obieg.loops.toFixed(1)}
+          </span>
+          <span className="oc-lap" title={`czas jednego koła (mediana z rozkładu): ${obieg.lapMin} min`}>
+            ⏱{obieg.lapMin}′
+          </span>
         </span>
       </div>
 

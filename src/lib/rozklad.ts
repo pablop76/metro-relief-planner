@@ -29,6 +29,56 @@ function classify(id: string): ObiegType {
   return "full";
 }
 
+const SHIFT2_END = 22 * 3600;           // górna granica okna 2. zmiany
+const SHIFT2_DEFAULT_START = 14 * 3600; // domyślny start maszynisty 2. zmiany (gdy brak w grafiku)
+// Zjazd po tej godzinie = zmiennik na linii / 3. zmiana / całodobowy → maszynista NIE dowozi na zjazd
+// sam, pracuje pełną zmianę → zawsze cała (nieliczone). Próg = deklarowana zmiana na linii ~21:00.
+const RELIEF_ON_LINE = 21 * 3600;
+
+// Start maszynisty 2. zmiany wg grafiku (drużyna=obieg) — TYLKO dla obiegów jadących ciągiem
+// (bez postoju w dzień), bo rozkład sam nie mówi, kiedy maszynista wsiada. Źródło: DRUZYNY-GODZINY.md.
+// UWAGA: zależne od grafiku miesiąca — zweryfikuj przy zmianie rozkładu.
+const SHIFT2_DRIVER_START: Record<string, number> = {
+  D17: 13 * 3600, D18: 13 * 3600, D19: 13 * 3600, D20: 13 * 3600, // 13:00
+  D22: 13 * 3600 + 30 * 60,                                       // 13:30 — zjeżdża sam (liczony)
+};
+
+/** Wjazd na linię na 2. zmianę: pierwsze zdarzenie po przerwie >60 min (po 12:00);
+ *  jeśli obieg startuje dopiero po południu (D) — pierwsze zdarzenie; całodobowy bez przerwy → null. */
+function afternoonEntry(ev: StationEvent[]): StationEvent | null {
+  for (let i = 1; i < ev.length; i++) {
+    if (ev[i].t - ev[i - 1].t > 3600 && ev[i].t >= 12 * 3600) return ev[i];
+  }
+  if (ev.length && ev[0].t >= 12 * 3600) return ev[0];
+  return null;
+}
+
+/** Czas jednego koła obiegu = mediana odstępu między kolejnymi odjazdami A1→Młociny
+ *  (pomija postoje/przerwy >3h). Fallback 84 min, gdy za mało danych. */
+function lapDuration(ev: StationEvent[]): number {
+  const a1n = ev.filter((e) => e.station === "A1" && e.dir === "Młociny").map((e) => e.t).sort((a, b) => a - b);
+  const gaps: number[] = [];
+  for (let i = 1; i < a1n.length; i++) {
+    const g = a1n[i] - a1n[i - 1];
+    if (g < 3 * 3600) gaps.push(g);
+  }
+  if (!gaps.length) return 84 * 60;
+  gaps.sort((a, b) => a - b);
+  return gaps[Math.floor(gaps.length / 2)];
+}
+
+/** Koła 2. zmiany — DOKŁADNIE (bez zaokrąglania): czasowo, koła = (zjazd − wjazd) / czas_koła.
+ *  Wjazd = realny wjazd z rozkładu (postój w dzień) lub start maszynisty z grafiku (obieg ciągły).
+ *  Obiegi ze zmiennikiem na linii / 3. zmianą / całodobowe (jazda po 21:00) → Infinity (zawsze cała). */
+function countLoops2nd(id: string, ev: StationEvent[], lapSec: number): number {
+  const lastT = ev[ev.length - 1].t;
+  if (lastT >= RELIEF_ON_LINE) return Infinity;     // zmiennik na linii / całodobowy → nie liczymy
+  const ae = afternoonEntry(ev);
+  const entryT = ae ? ae.t : (SHIFT2_DRIVER_START[id] ?? SHIFT2_DEFAULT_START);
+  const zjazdT = Math.min(lastT, SHIFT2_END);
+  return (zjazdT - entryT) / lapSec;
+}
+
 /** Parsuje workbook SheetJS -> lista obiegów dla danego arkusza (typ dnia). */
 export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
   const ws = wb.Sheets[sheetName];
@@ -75,6 +125,7 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
   for (const [id, ev] of byId) {
     ev.sort((a, b) => a.t - b.t);
     if (ev.length === 0) continue;
+    const lapSec = lapDuration(ev); // mediana czasu jednego koła tego obiegu
     obiegi.push({
       id,
       type: classify(id),
@@ -86,8 +137,10 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
       seqOrder: 0,
       // sprzątanie dotyczy planu tylko dla S/D (7,13 = całodobowe sprzątane PO przerwach)
       cleaning: cleaningSet.has(id) && classify(id) !== "full",
-      // koło = odjazd z A1 na północ (start okrążenia)
-      loops: ev.filter((e) => e.station === "A1" && e.dir === "Młociny").length,
+      // koło = okrążenie 2. zmiany (wjazd→zjazd) — decyduje o połówce/całej (najmniej kół → połówka)
+      loops: countLoops2nd(id, ev, lapSec),
+      lapMin: Math.round(lapSec / 60), // czas koła (mediana) w minutach — do wglądu
+      throughShift: ev[ev.length - 1].t >= RELIEF_ON_LINE, // zmiennik na linii / całodobowy → cała
     });
   }
 

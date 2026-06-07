@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { BREAK_STATIONS, MAX_RESERVE_LOAD_MIN, TRAIN_TYPES, driverFullName, HHMMSS, hmToSec } from "../lib/types";
+import { BREAK_STATIONS, reserveFull, TRAIN_TYPES, driverFullName, HHMMSS, hmToSec } from "../lib/types";
 import type { Reserve, BreakStation, Driver, BreakAssignment, MetroLine, TrainType } from "../lib/types";
 
 // piktogram długości przerwy
-const KIND_GLYPH: Record<string, string> = { "cała": "●", "połówka": "◐", "szczeniak": "○" };
+const KIND_GLYPH: Record<string, string> = { "cała": "●", "godzinka": "◕", "połówka": "◐", "szczeniak": "○" };
 
 const STATION_NAMES: Record<BreakStation, string> = {
   A1: "Kabaty",
@@ -18,6 +18,7 @@ interface Props {
   onChange: (r: Reserve[]) => void;
   drivers: Driver[];
   load?: Record<string, number>;
+  loadEq?: Record<string, number>;
   count?: Record<string, number>;
   byReserve?: Record<string, BreakAssignment[]>;
   obiegIds?: string[];
@@ -29,13 +30,17 @@ const newId = () =>
   (crypto as Crypto & { randomUUID?: () => string }).randomUUID?.() ??
   `r${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
-export function ReservePanel({ reserves, onChange, drivers, load, count, byReserve, obiegIds, horizontal }: Props) {
+export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count, byReserve, obiegIds, horizontal }: Props) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [warn, setWarn] = useState("");
   const [openCfg, setOpenCfg] = useState<string | null>(null);
 
   const update = (id: string, patch: Partial<Reserve>) =>
     onChange(reserves.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
+  // opis autoryzacji generowany z zaznaczonych checkboxów taboru (kolejność jak TRAIN_TYPES)
+  const autoAuthNote = (arr?: TrainType[]) =>
+    TRAIN_TYPES.filter((t) => arr?.includes(t)).join(", ");
 
   // maszyniści już przypisani jako rezerwowi (nie można drugi raz)
   const usedIds = new Set(reserves.map((r) => r.driverId).filter(Boolean) as string[]);
@@ -82,8 +87,9 @@ export function ReservePanel({ reserves, onChange, drivers, load, count, byReser
             <ul className="rp-names">
               {here.map((r) => {
                 const min = load?.[r.id] ?? 0;
+                const eq = loadEq?.[r.id] ?? 0;
                 const c = count?.[r.id] ?? 0;
-                const full = min >= MAX_RESERVE_LOAD_MIN;
+                const full = reserveFull(eq);
                 const jobs = byReserve?.[r.id] ?? [];
                 const cfgOpen = openCfg === r.id;
                 return (
@@ -108,8 +114,8 @@ export function ReservePanel({ reserves, onChange, drivers, load, count, byReser
                           </i>
                         )}
                       </span>
-                      <span className="rp-load" title="podmiany · minuty">
-                        {c}× · {min}′
+                      <span className="rp-load" title={`${c} podmian · ${min} min · limit 3 całe`}>
+                        {c}× · {(Math.round(eq * 10) / 10).toString().replace(".", ",")}/3
                       </span>
                       <button
                         className={`rp-cfg${cfgOpen ? " on" : ""}`}
@@ -211,7 +217,13 @@ export function ReservePanel({ reserves, onChange, drivers, load, count, byReser
                                     const cur = new Set<TrainType>(r.auth ?? []);
                                     if (e.target.checked) cur.add(t);
                                     else cur.delete(t);
-                                    update(r.id, { auth: cur.size ? [...cur] : undefined });
+                                    const next = cur.size ? TRAIN_TYPES.filter((x) => cur.has(x)) : undefined;
+                                    // zachowaj ręczny opis; w przeciwnym razie wypełnij z zaznaczonych inputów
+                                    const manual = r.authNote && r.authNote !== autoAuthNote(r.auth);
+                                    update(r.id, {
+                                      auth: next,
+                                      authNote: manual ? r.authNote : autoAuthNote(next) || undefined,
+                                    });
                                   }}
                                 />
                                 {t}

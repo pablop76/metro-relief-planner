@@ -1,14 +1,15 @@
 import type { BreakKind, BreakStation, Dir } from "./types";
 
-/** Długości przerw w minutach (ZASADY.md §3). */
+/** Długości przerw w minutach (ZASADY.md §3). Realny czas liczy silnik z rozkładu — to wartości nominalne. */
 export const DURATION: Record<BreakKind, number> = {
   "cała": 90,
+  "godzinka": 60,
   "połówka": 45,
   "szczeniak": 30,
 };
 
-/** Kolejność skracania przerwy gdy brakuje rezerwowych. */
-export const DOWNGRADE: BreakKind[] = ["cała", "połówka", "szczeniak"];
+/** Kolejność skracania przerwy gdy brakuje rezerwowych (od najdłuższej do najkrótszej). */
+export const DOWNGRADE: BreakKind[] = ["cała", "godzinka", "połówka", "szczeniak"];
 
 export interface StationBreakOption {
   kind: BreakKind;
@@ -33,6 +34,7 @@ export const STATIONS: Record<BreakStation, StationCfg> = {
     code: "A7", name: "Wilanowska", terminus: false,
     options: [
       { kind: "cała", dirs: ["Kabaty", "Młociny"] },
+      { kind: "godzinka", dirs: ["Młociny"] }, // ~1h: jazda do Młocin (A23) i powrót na A7
       { kind: "szczeniak", dirs: ["Kabaty"] }, // szczeniak na A7 w stronę Kabat
     ],
   },
@@ -47,6 +49,7 @@ export const STATIONS: Record<BreakStation, StationCfg> = {
     code: "A18", name: "Plac Wilsona", terminus: false,
     options: [
       { kind: "cała", dirs: ["Kabaty", "Młociny"] },
+      { kind: "godzinka", dirs: ["Kabaty"] }, // ~1h: jazda do Kabat (A1) i powrót na A18
       { kind: "szczeniak", dirs: ["Młociny"] }, // szczeniak na A18 w stronę Młocin
     ],
   },
