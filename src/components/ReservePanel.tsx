@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { BREAK_STATIONS, reserveFull, TRAIN_TYPES, driverFullName, HHMMSS, hmToSec, isCrossTrackBreak } from "../lib/types";
+import { BREAK_STATIONS, reserveFull, TRAIN_TYPES, driverFullName, HHMMSS, hmToSec } from "../lib/types";
 import type { Reserve, BreakStation, Driver, BreakAssignment, MetroLine, TrainType } from "../lib/types";
 import { DURATION } from "../lib/stations";
 
 // piktogram długości przerwy
 const KIND_GLYPH: Record<string, string> = { "cała": "●", "godzinka": "◕", "połówka": "◐", "szczeniak": "○" };
-// R20: alert „po przeciwnym torze" (powrót w przeciwnym kierunku, bufor ~5 min)
-const XFER_TITLE = "⚠ przeciwny tor — wraca w przeciwnym kierunku, bufor ~5 min; skontaktuj się z pociągiem";
+// R20: szybki przeskok na drugi peron (~5 min) — kolejna podmiana z przeciwnego toru
+const XFER_TITLE = "⚠ szybki przeskok na drugi peron (~5 min) — kolejna podmiana z przeciwnego toru; w razie czego dogadaj się z pociągiem";
 
 const STATION_NAMES: Record<BreakStation, string> = {
   A1: "Kabaty",
@@ -136,7 +136,7 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
                     {jobs.length > 0 && (
                       <div className="rp-jobs">
                         {jobs.map((a) => {
-                          const cross = a.crossTrack ?? isCrossTrackBreak(a.kind); // R20
+                          const cross = !!a.crossTrack; // R20 — auto (kolejna podmiana z przeciwnego toru ≤5 min) lub ręcznie
                           return (
                             <span
                               key={`${a.obiegId}-${a.startT}`}

@@ -104,9 +104,8 @@ body {
 .oc-brk.is-brak { box-shadow: inset 3px 0 0 var(--red); }
 .oc-brk.is-brak .oc-res { color: var(--red); }
 .oc-brk-top { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: wrap; }
-/* R20 — podmiana po przeciwnym torze (bufor ~5 min) */
+/* R20 — szybki przeskok na drugi peron (~5 min); glif amber, bez nadpisywania paska rodzaju */
 .oc-xfer { color: var(--warn); font-style: normal; font-size: 11px; line-height: 1; cursor: help; }
-.oc-brk.is-cross { box-shadow: inset 3px 0 0 var(--olive), inset 0 0 0 1px rgba(227,160,8,.35); }
 .oc-add {
   background: none; border: 1px dashed var(--border); color: var(--muted); border-radius: 5px;
   padding: 3px; cursor: pointer; font-size: 12px;
@@ -206,6 +205,8 @@ body {
   padding: 8px; display: flex; flex-direction: column; gap: 6px;
 }
 .break-editor label { display: flex; flex-direction: column; gap: 2px; font-size: 10px; color: var(--muted); }
+.break-editor label.be-check { flex-direction: row; align-items: center; gap: 6px; color: var(--warn); cursor: pointer; }
+.break-editor label.be-check input { width: auto; }
 .break-editor select {
   background: var(--panel); color: var(--text); border: 1px solid var(--border);
   border-radius: 5px; padding: 4px; font-size: 11px;

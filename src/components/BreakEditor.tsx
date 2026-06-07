@@ -102,6 +102,17 @@ export function BreakEditor({ obieg, assignment, reserves, byReserve, earliest, 
         </select>
       </label>
 
+      {assignment && (
+        <label className="be-check" title="R20: zaznacz, gdy ta podmiana opiera się na złapaniu pociągu z przeciwnego toru (drugi peron) w ciasnym oknie — pokaże alert ⚠">
+          <input
+            type="checkbox"
+            checked={!!assignment.crossTrack}
+            onChange={(e) => onChange({ ...assignment, crossTrack: e.target.checked, manual: true })}
+          />
+          ⚠ Przeciwny tor — łapię pociąg z drugiego peronu (~5 min)
+        </label>
+      )}
+
       {assignment && stationReserves.length === 0 && (
         <p className="be-hint be-warn">
           ⚠ Brak rezerwowych na stacji {assignment.station} — dodaj ich w panelu po prawej.

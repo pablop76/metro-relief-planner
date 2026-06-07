@@ -141,10 +141,12 @@ export const MAX_BREAKS_PER_OBIEG = 2;
 
 /** R20: zakładany bufor na przejście między peronami przy podmianie „po przeciwnym torze" (minuty). */
 export const XFER_BUFFER_MIN = 5;
-/** Czy podmiana wymaga przejścia na przeciwny peron (powrót w przeciwnym kierunku) — R20.
- *  „cała" wraca tym samym torem (ten sam peron, ten sam pociąg) → bez bufora;
- *  połówka/godzinka/szczeniak wracają w przeciwnym kierunku → bufor ~5 min + alert ⚠. */
-export const isCrossTrackBreak = (kind: BreakKind): boolean => kind !== "cała";
+/** Geometria powrotu: czy pociąg wraca na stację PRZECIWNYM torem (peron po drugiej stronie).
+ *  „cała" (pełna pętla) wraca tym samym torem; połówka/godzinka/szczeniak zawracają na krańcu i wracają
+ *  przeciwnym torem. UWAGA: sam powrót drugim torem NIE jest alarmem (maszynista ma całą przerwę na
+ *  przejście). Używane tylko do wykrycia, czy KOLEJNA podmiana rezerwowego wymaga przeskoku na drugi
+ *  peron w ciasnym oknie (R20, patrz engine: wykrywanie crossTrack). */
+export const returnsOppositeTrack = (kind: BreakKind): boolean => kind !== "cała";
 
 /** Wynik planowania. */
 export interface PlanResult {

@@ -1,7 +1,7 @@
 import type {
   Obieg, Reserve, BreakAssignment, PlanResult, BreakKind, Dir, BreakStation,
 } from "./types";
-import { CALA_EQ, MAX_BREAKS_PER_OBIEG, MAX_RESERVE_LOAD_EQ, fitsLoad, isCrossTrackBreak } from "./types";
+import { CALA_EQ, MAX_BREAKS_PER_OBIEG, MAX_RESERVE_LOAD_EQ, fitsLoad, returnsOppositeTrack, XFER_BUFFER_MIN } from "./types";
 import { STATIONS, DOWNGRADE, stationSupports } from "./stations";
 
 const hms = (h: number, m: number) => h * 3600 + m * 60;
@@ -237,7 +237,6 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     (assignments[o.id] ??= []).push({
       obiegId: o.id, station: slot.station, dir: slot.dir, startT: slot.startT,
       kind: slot.kind, durationMin: slot.durationMin, reserveId: r.ref.id, manual,
-      crossTrack: isCrossTrackBreak(slot.kind), // R20: powrót w przeciwnym kierunku → bufor ~5 min
     });
     driverFreeAt[o.id] = slot.startT + slot.durationMin * 60;
   };
@@ -318,7 +317,6 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       assignments[o.id] = [{
         obiegId: o.id, station: fb.station, dir: fb.dir, startT: fb.startT,
         kind: fb.kind, durationMin: fb.durationMin, reserveId: null,
-        crossTrack: isCrossTrackBreak(fb.kind),
       }];
     }
     unassigned.push(o.id);
@@ -366,6 +364,31 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
         if (placed) break; // dokładka położona — nie próbuj mniejszych rodzajów
       }
       if (placed) progress = true;
+    }
+  }
+
+  // R20 — auto-wykrycie „łapania pociągu z drugiej strony peronu na kolejną podmianę".
+  // Liczy się NIE sam powrót pociągu z przerwy, tylko MOMENT MIĘDZY podmianami: rezerwowy oddaje
+  // pociąg (koniec poprzedniej) → musi przejść na drugą stronę toru → zdążyć na wsiadanie do następnej.
+  // Dla każdego rezerwowego sortujemy podmiany po czasie; gdy peron WSIADANIA do kolejnej ≠ peron, na
+  // którym ODDAŁ poprzednią, a ma na przejście ≤ bufor (5 min) → crossTrack (alert ⚠). To częsty,
+  // normalny przypadek (łapanie szybko, bez rozciągania przerw) — informacja dla maszynisty, nie błąd.
+  // Peron oddania poprzedniej: cała wraca tym samym torem; połówka/godzinka/szczeniak — przeciwnym
+  // (ale to tylko po to, by wiedzieć GDZIE STOI po oddaniu — nie jest to samo w sobie alarm).
+  // Pierwsza podmiana nigdy nie jest „ciasna" (rezerwowy ustawił się na peronie wcześniej).
+  // Ręczny crossTrack ustawia planista w edytorze (BreakEditor).
+  const opp = (d: Dir): Dir => (d === "Kabaty" ? "Młociny" : "Kabaty");
+  const XFER = XFER_BUFFER_MIN * 60;
+  const jobsByRes: Record<string, BreakAssignment[]> = {};
+  for (const list of Object.values(assignments))
+    for (const a of list) if (a.reserveId) (jobsByRes[a.reserveId] ??= []).push(a);
+  for (const jobs of Object.values(jobsByRes)) {
+    jobs.sort((x, y) => x.startT - y.startT);
+    for (let i = 1; i < jobs.length; i++) {
+      const prev = jobs[i - 1], cur = jobs[i];
+      const handoverDir = returnsOppositeTrack(prev.kind) ? opp(prev.dir) : prev.dir; // gdzie stoi po oddaniu
+      const gap = cur.startT - (prev.startT + prev.durationMin * 60);               // czas na przejście
+      if (cur.dir !== handoverDir && gap <= XFER) cur.crossTrack = true;            // inny peron + ciasno
     }
   }
 

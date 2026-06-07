@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { HHMMSS, isCrossTrackBreak } from "../lib/types";
+import { HHMMSS } from "../lib/types";
 import type { Obieg, StationEvent, BreakAssignment, Reserve, BreakKind } from "../lib/types";
 import { BreakEditor } from "./BreakEditor";
 import { feasibleSlots } from "../lib/engine";
 import { DURATION } from "../lib/stations";
 
-// R20: komunikat przy podmianie „po przeciwnym torze" (powrót w przeciwnym kierunku, bufor ~5 min).
-const XFER_TITLE = "⚠ przeciwny tor — wraca w przeciwnym kierunku, bufor ~5 min; skontaktuj się z pociągiem";
+// R20: szybki przeskok na drugi peron (~5 min) — rezerwowy łapie kolejny pociąg z przeciwnego toru.
+const XFER_TITLE = "⚠ szybki przeskok na drugi peron (~5 min) — kolejna podmiana z przeciwnego toru; w razie czego dogadaj się z pociągiem";
 
 const NOON = 12 * 3600;
 
@@ -121,7 +121,7 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
         {sorted.map((a, i) => {
           const reserve = a.reserveId ? reserves.find((r) => r.id === a.reserveId) : null;
           const brak = !a.reserveId;
-          const cross = a.crossTrack ?? isCrossTrackBreak(a.kind); // R20
+          const cross = !!a.crossTrack; // R20 — auto (kolejna podmiana z przeciwnego toru ≤5 min) lub ręcznie
           // D1: czas poglądowy (90/60/45/30) wiodący, realny z rozkładu w nawiasie
           const durTitle = `${a.kind} ~${DURATION[a.kind]}′ (realnie ${a.durationMin}′)`;
           return (
