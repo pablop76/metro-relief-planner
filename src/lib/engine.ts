@@ -6,6 +6,11 @@ import { STATIONS, DOWNGRADE, stationSupports } from "./stations";
 
 const hms = (h: number, m: number) => h * 3600 + m * 60;
 
+// Rodzaje brane pod uwagę AUTOMATYCZNIE (cała → godzinka → połówka). SZCZENIAK (~30 min) jest za słabą
+// podmianą — NIGDY nie nadawany automatycznie (ani w pokryciu, ani jako dokładka), tylko ręcznie w edytorze.
+// Lepiej: połówka, ewentualnie godzinka — a gdy się nie da, BRAK (dodać rezerwowego) niż szczeniak.
+const AUTO_KINDS: BreakKind[] = DOWNGRADE.filter((k) => k !== "szczeniak");
+
 // R17 — rezerwa ruchowa A1 (Kabaty): na A1 stoi pociąg rezerwy ruchowej; JEDEN maszynista z obsady
 // musi zostać pod ręką, by wprowadzić skład za pociąg, który uległ awarii / wymaga sprzątania. Ten
 // JEDEN robi DOMYŚLNIE tylko 1 koło (jedną całą); POZOSTALI rezerwowi z A1 pracują normalnie do 3 kół.
@@ -241,7 +246,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const typeRank = (o: Obieg) => (o.type === "S" ? 0 : o.type === "full" ? 1 : 2);
   const numOf = (id: string) => parseInt(id.replace(/\D/g, ""), 10) || 0;
   const slotCount = (o: Obieg) =>
-    DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o))).reduce((n, k) => {
+    AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o))).reduce((n, k) => {
       const { floor, hi } = coverWindow(o, k);
       return n + candidateSlots(o, k, floor, hi).length;
     }, 0);
@@ -279,7 +284,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // połówką dolna = 1. pełne koło, górna = 18:15 (§4a krok4). Pokrycie: ma sloty, brak rez. → BRAK; nie schodź niżej.
   const tryAssign = (o: Obieg): boolean => {
     const after = driverFreeAt[o.id] ?? 0; // próg startu egzekwuje candidateSlots (per stacja/rodzaj)
-    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
+    for (const kind of AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o)))) {
       const { floor, hi } = coverWindow(o, kind);
       const slots = candidateSlots(o, kind, floor, hi)
         .filter((s) => s.startT >= after)
@@ -299,7 +304,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // jedyna przerwa nie może być później), tylko z pełnym downgrade rodzaju. Lepszy krótszy break niż BRAK.
   const tryCover = (o: Obieg): boolean => {
     const after = driverFreeAt[o.id] ?? 0;
-    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
+    for (const kind of AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o)))) {
       const { floor, hi } = coverWindow(o, kind);
       const slots = candidateSlots(o, kind, floor, hi)
         .filter((s) => s.startT >= after)
@@ -320,7 +325,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       if (!o) continue;
       const after = driverFreeAt[o.id] ?? 0;
       let done = false;
-      for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
+      for (const kind of AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o)))) {
         const slots = candidateSlots(o, kind, (s) => floorOf(o, s), LATEST_SECOND)
           .filter((s) => s.station === r.station && s.startT >= after)
           .sort((a, b) => score(a) - score(b));
@@ -342,7 +347,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     if (tryAssign(o)) continue;
     if (tryCover(o)) continue; // R9: pokrycie obowiązkowe — downgrade zanim oznaczysz BRAK
     let fb: Slot | null = null;
-    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
+    for (const kind of AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o)))) {
       const { floor: ffloor, hi: fhi } = coverWindow(o, kind);
       const s = candidateSlots(o, kind, ffloor, fhi).sort((a, b) => score(a) - score(b))[0];
       if (s) { fb = s; break; }
@@ -367,7 +372,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // Przenieś pokrycie obiegu o2 GDZIE INDZIEJ (dowolny rodzaj/stacja/rezerwowy), byle nie na `avoidR` w oknie
   // [aS, aE) (bo to okno ma zwolnić się dla BRAK-obiegu). Zwraca true, gdy o2 dostał nową przerwę.
   const placeElsewhere = (o2: Obieg, avoidR: RState, aS: number, aE: number): boolean => {
-    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o2)))) {
+    for (const kind of AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o2)))) {
       const { floor, hi } = coverWindow(o2, kind);
       const slots = candidateSlots(o2, kind, floor, hi).sort((a, b) => score(a) - score(b));
       for (const slot of slots) {
@@ -379,7 +384,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     return false;
   };
   const repair = (o: Obieg): boolean => {
-    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
+    for (const kind of AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o)))) {
       const { floor, hi } = coverWindow(o, kind);
       for (const so of candidateSlots(o, kind, floor, hi).sort((a, b) => score(a) - score(b))) {
         const soE = so.startT + so.durationMin * 60;
@@ -425,8 +430,8 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   }
 
   // 2. R16 — DODATKOWA (druga) przerwa: maks. wykorzystanie rezerwowych, do MAX_BREAKS_PER_OBIEG na obieg.
-  // Dozwolone kombinacje 2 przerw: {cała+połówka} (DOWOLNA kolejność), {cała+godzinka}, {połówka+połówka};
-  // szczeniak dopuszczalny jako dokładka „gdy trzeba". {cała+cała} TYLKO przy nadmiarze (pełne pokrycie).
+  // Dozwolone kombinacje 2 przerw: {cała+połówka} (DOWOLNA kolejność), {cała+godzinka}, {połówka+połówka},
+  // {cała+cała} (do dopełnienia 3 kół). SZCZENIAK NIE jest dokładany automatycznie (za słaby — patrz AUTO_KINDS).
   // Okno 2. przerwy dłuższe (start do LATEST_SECOND; realnie limituje R7/zjazd). Rozmieszczenie (R2):
   // dwie połówki ~2,5 h od siebie; pozostałe kombinacje — blisko powrotu maszynisty (mały odstęp).
   const SPACING_POLOWKI = hms(2, 30);
@@ -447,10 +452,10 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       // {cała+połówka} najlepsza, ale cała dostępna do dopełnienia 3 kół.
       const secondKinds: BreakKind[] =
         first.kind === "cała"
-          ? ["połówka", "godzinka", "cała", "szczeniak"]
+          ? ["połówka", "godzinka", "cała"]
           : first.kind === "połówka"
-          ? ["cała", "godzinka", "połówka", "szczeniak"]
-          : ["połówka", "godzinka", "cała", "szczeniak"]; // 1.=godzinka/szczeniak
+          ? ["cała", "godzinka", "połówka"]
+          : ["połówka", "godzinka", "cała"]; // 1. = godzinka (szczeniak nie auto)
       let placed = false;
       for (const kind of secondKinds) {
         // dwie połówki rozsuń ~2,5 h; pozostałe kombinacje kładź blisko powrotu (mały odstęp).
