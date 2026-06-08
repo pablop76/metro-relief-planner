@@ -54,13 +54,17 @@ zmienia go ktoś na linii.
 
 Decyduje liczba kół (`planBreaks`):
 
-- Obiegi z **≤ 3 koła** (`POL_HARD_LOOPS`) → **połówka zawsze**, niezależnie od liczby rezerwowych (twardy próg = `hardPol`).
-- Obiegi **3–4 koła** (`POL_ELASTIC_LOOPS`) → **elastycznie**: przy nadwyżce rezerwy dostają **całą**, przy deficycie schodzą na **połówkę**. „Zawsze połówka" powyżej 3 kół to sugestia — decyduje bilans.
-- Obiegi **> 4 koła** oraz `Infinity` (jazda po 21:00 / całodobowe) → **cała ZAWSZE** (deficyt nigdy ich nie spycha na połówkę).
-- **Deficyt mocy** (`liczba_obiegów − Σ min(3, capOf)`) zwiększa liczbę połówek o `2 × deficyt`, ale tylko w obrębie pasma elastycznego: `polCount = min(hardPol + elasticPol, max(hardPol, 2 × deficyt))`.
-- Połówki trafiają do obiegów z **najmniejszą liczbą kół** (szczyty); reszta → **cała**. Kolejność z rozkładu, bez sztywnej listy S (D7).
-- Zasada nadrzędna: **najmniej kół = połówka**, najwięcej kół = cała.
-- Ręczny override rodzaju (`forcedKinds`) ma pierwszeństwo nad auto-bilansem.
+- **REGUŁA BILANSU — liczba połówek = `2 × deficyt`** (`deficyt = liczba_obiegów − Σ min(3, capOf)`).
+  Na jednego rezerwowego mieści się **6 połówek zamiast 3 całych**, więc każda para połówek (zamiast całej)
+  obsługuje **o jeden obieg więcej** → `2 × deficyt` połówek wystarcza, by **przy STAŁEJ liczbie rezerwowych**
+  (stan na dany dzień — nie dodajemy ludzi) wszyscy dostali przerwę. Formuła:
+  `polCount = min(liczba_kwalifikujących_się, max(hardPol, 2 × deficyt))`.
+- **Godzinki** to alternatywa: mieści się ich **4 zamiast 3** całych (też zysk podmiany, krótszy ubytek niż
+  połówka). Silnik sięga po nie w pokryciu awaryjnym (kolejność `cała → godzinka → połówka`).
+- Twardy próg: obiegi **≤ 3 koła** (`POL_HARD_LOOPS`, `hardPol`) → **połówka ZAWSZE** (szczyty), nawet bez deficytu.
+- `Infinity` (jazda po 21:00 / całodobowe) → **cała** (nie kwalifikują się do połówki).
+- Połówki trafiają do obiegów z **najmniejszą liczbą kół** (szczyty); reszta → **cała**.
+- Zasada nadrzędna: **najmniej kół = połówka**, najwięcej kół = cała. Ręczny override (`forcedKinds`) > auto-bilans.
 
 ---
 
@@ -126,6 +130,9 @@ stację), nie ze sztywnych 90/45/30 min. Wartości 90/60/45/30 (`DURATION`) poka
 między podmianami** jednego rezerwowego: po oddaniu pociągu musi czasem **przejść na drugą stronę toru**, by
 zdążyć na kolejną podmianę (częste „łapanie pociągu z drugiej strony peronu na kolejną podmianę", żeby nie
 rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
+- **Krańcówki bez przeskoku:** na **A1 (Kabaty)** i **A23 (Młociny)** oba kierunki odjeżdżają z krańca
+  (pociąg tam zawraca) — nie ma „drugiego toru". `crossTrack` **nie zapala się**, gdy kolejna podmiana wsiada
+  na krańcówce.
 - **Auto** (post-pass w `planBreaks`): `crossTrack = true`, gdy peron **wsiadania** do kolejnej ≠ peron
   **oddania** poprzedniej, a czas na przejście **≤ 5 min** (`XFER_BUFFER_MIN`). `returnsOppositeTrack` ustala
   tylko, gdzie rezerwowy **stoi po oddaniu** (cała wraca tym samym torem; połówka/godzinka/szczeniak —
