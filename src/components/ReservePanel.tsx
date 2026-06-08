@@ -2,7 +2,7 @@ import { useState } from "react";
 import { BREAK_STATIONS, reserveFull, TRAIN_TYPES, driverFullName, HHMMSS, hmToSec } from "../lib/types";
 import type { Reserve, BreakStation, Driver, BreakAssignment, MetroLine, TrainType } from "../lib/types";
 import { DURATION } from "../lib/stations";
-import { SAMPLE_RESERVES } from "../lib/sampleReserves";
+import { sampleReserves, SAMPLE_MAX } from "../lib/sampleReserves";
 
 // piktogram długości przerwy
 const KIND_GLYPH: Record<string, string> = { "cała": "●", "godzinka": "◕", "połówka": "◐", "szczeniak": "○" };
@@ -38,6 +38,9 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [warn, setWarn] = useState("");
   const [openCfg, setOpenCfg] = useState<string | null>(null);
+  const [sampleCount, setSampleCount] = useState(SAMPLE_MAX);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overStation, setOverStation] = useState<BreakStation | null>(null);
 
   const update = (id: string, patch: Partial<Reserve>) =>
     onChange(reserves.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -69,17 +72,29 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
   };
   const remove = (id: string) => onChange(reserves.filter((r) => r.id !== id));
 
-  // wczytaj przykładowych rezerwowych do testów (pomija już obecnych — po id lub nazwie)
-  const loadSamples = () => {
+  // wczytaj N przykładowych rezerwowych do testów (pomija już obecnych — po id lub nazwie)
+  const loadSamples = (count: number) => {
     const haveIds = new Set(reserves.map((r) => r.id));
     const haveNames = new Set(reserves.map((r) => r.name.toLowerCase()));
-    const add = SAMPLE_RESERVES.filter((s) => !haveIds.has(s.id) && !haveNames.has(s.name.toLowerCase()));
+    const add = sampleReserves(count).filter((s) => !haveIds.has(s.id) && !haveNames.has(s.name.toLowerCase()));
     if (!add.length) {
-      setWarn("Przykładowi rezerwowi są już wczytani");
+      setWarn("Ci przykładowi rezerwowi są już wczytani");
       return;
     }
     onChange([...reserves, ...add]);
     setWarn("");
+  };
+
+  // przeciągnięcie rezerwowego na inną stację (drag & drop między stacjami)
+  const moveToStation = (station: BreakStation) => {
+    const id = dragId;
+    setDragId(null);
+    setOverStation(null);
+    if (!id) return;
+    const r = reserves.find((x) => x.id === id);
+    if (!r || r.station === station) return;
+    // flaga „rezerwa ruchowa" dotyczy tylko Kabat (A1) — przy zejściu z A1 ją czyścimy
+    update(id, { station, ...(station !== "A1" && r.rolling ? { rolling: undefined } : {}) });
   };
 
   return (
@@ -92,15 +107,40 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
 
       <div className="rp-head">
         <h2>Rezerwowi na stacjach</h2>
-        <button className="rp-sample" onClick={loadSamples} title="wczytaj 12 przykładowych rezerwowych (A1×3, A7×2, A11×5, A18×1, A23×1) do testów">
-          🧪 Przykładowi
-        </button>
+        <div className="rp-sample-ctl">
+          <input
+            type="number"
+            min={1}
+            max={SAMPLE_MAX}
+            value={sampleCount}
+            title={`ilu przykładowych wczytać (max ${SAMPLE_MAX})`}
+            onChange={(e) =>
+              setSampleCount(Math.max(1, Math.min(SAMPLE_MAX, parseInt(e.target.value, 10) || 1)))
+            }
+          />
+          <button
+            className="rp-sample"
+            onClick={() => loadSamples(sampleCount)}
+            title={`wczytaj ${sampleCount} przykładowych rezerwowych (równomiernie po stacjach) do testów`}
+          >
+            🧪 Wczytaj
+          </button>
+        </div>
       </div>
       {warn && <div className="rp-warn">⚠ {warn}</div>}
       {BREAK_STATIONS.map((st) => {
         const here = reserves.filter((r) => r.station === st);
         return (
-          <div key={st} className="rp-station">
+          <div
+            key={st}
+            className={`rp-station${dragId ? " drop-active" : ""}${overStation === st ? " drop-over" : ""}`}
+            onDragOver={(e) => {
+              if (!dragId) return;
+              e.preventDefault();
+              if (overStation !== st) setOverStation(st);
+            }}
+            onDrop={() => moveToStation(st)}
+          >
             <div className="rp-station-head">
               <span className="rr-code">{st}</span>
               <span className="rr-name">{STATION_NAMES[st]}</span>
@@ -115,8 +155,17 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
                 const jobs = byReserve?.[r.id] ?? [];
                 const cfgOpen = openCfg === r.id;
                 return (
-                  <li key={r.id} className={`${full ? "rp-full" : ""}${r.blocked ? " rp-blocked" : ""}`}>
-                    <div className="rp-row1">
+                  <li key={r.id} className={`${full ? "rp-full" : ""}${r.blocked ? " rp-blocked" : ""}${dragId === r.id ? " rp-dragging" : ""}`}>
+                    <div
+                      className="rp-row1"
+                      draggable
+                      onDragStart={() => setDragId(r.id)}
+                      onDragEnd={() => {
+                        setDragId(null);
+                        setOverStation(null);
+                      }}
+                    >
+                      <i className="rp-drag" title="przeciągnij na inną stację">⠿</i>
                       <span className="rp-nm">
                         {r.name}
                         {r.blocked && <i className="rp-badge rp-b-block" title="wykluczony">⊘</i>}

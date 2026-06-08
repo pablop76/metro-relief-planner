@@ -133,6 +133,11 @@ body {
   border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 11px; white-space: nowrap;
 }
 .rp-sample:hover { border-color: var(--accent); }
+.rp-sample-ctl { display: flex; align-items: center; gap: 4px; }
+.rp-sample-ctl input {
+  width: 44px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 5px; font-size: 11px; text-align: center;
+}
 .reserve-row {
   display: grid; grid-template-columns: 36px 1fr 56px; align-items: center; gap: 8px;
   padding: 5px 0;
@@ -220,7 +225,13 @@ body {
 .be-close { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 5px; padding: 3px; cursor: pointer; font-size: 11px; }
 
 /* --- panel rezerwowych (nazwiska) --- */
-.rp-station { margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+.rp-station { margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 10px; border-radius: 6px; transition: background .12s, box-shadow .12s; }
+/* drag & drop rezerwowych między stacjami */
+.rp-station.drop-active { box-shadow: inset 0 0 0 1px var(--border); }
+.rp-station.drop-over { box-shadow: inset 0 0 0 2px var(--accent); background: rgba(31,111,235,.10); }
+.rp-drag { cursor: grab; color: var(--muted); opacity: .55; font-size: 12px; line-height: 1; user-select: none; }
+.rp-drag:active { cursor: grabbing; }
+.rp-names li.rp-dragging { opacity: .45; }
 .rp-station-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .rp-cnt { margin-left: auto; color: var(--muted); font-size: 12px; }
 .rp-names { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
