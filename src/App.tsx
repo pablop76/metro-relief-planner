@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseObiegi, readWorkbook } from "./lib/rozklad";
 import { planBreaks } from "./lib/engine";
-import type { Obieg, Reserve, BreakAssignment, Driver, BreakKind } from "./lib/types";
-import { HHMMSS, hmToSec, CALA_EQ } from "./lib/types";
+import type { Obieg, Reserve, BreakAssignment, Driver, BreakKind, BreakStation } from "./lib/types";
+import { HHMMSS, hmToSec, CALA_EQ, BREAK_STATIONS } from "./lib/types";
 import * as XLSX from "xlsx";
 import { ReservePanel } from "./components/ReservePanel";
 import { ObiegCard } from "./components/ObiegCard";
@@ -24,6 +24,7 @@ const LS = {
   forceKind: "pm_forcekind",
   rows: "pm_rows",
   earliest: "pm_earliest",
+  earliestStation: "pm_earliest_station",
   earliestObieg: "pm_earliest_obieg",
   layout: "pm_layout",
 };
@@ -86,6 +87,9 @@ export default function App() {
   const [rows, setRows] = useState<number>(() => loadLS<number>(LS.rows, 2));
   const [globalDelay, setGlobalDelay] = useState<number>(() => loadLS<number>(LS.delay, 0));
   const [earliestStart, setEarliestStart] = useState<number>(() => loadLS<number>(LS.earliest, DEFAULT_EARLIEST));
+  const [earliestByStation, setEarliestByStation] = useState<Partial<Record<BreakStation, number>>>(() =>
+    loadLS<Partial<Record<BreakStation, number>>>(LS.earliestStation, {})
+  );
   const [earliestByObieg, setEarliestByObieg] = useState<Record<string, number>>(() =>
     loadLS<Record<string, number>>(LS.earliestObieg, {})
   );
@@ -182,6 +186,7 @@ export default function App() {
     const res = planBreaks(delayed, reserves, {
       forcedKinds: currentForce,
       earliest: earliestStart,
+      earliestByStation,
       earliestByObieg,
     });
     const merged: Record<string, BreakAssignment[]> = { ...res.assignments };
@@ -204,7 +209,7 @@ export default function App() {
 
   // generuj plan automatycznie tylko gdy zmieni się ROZKŁAD/dzień (nie przy zmianie rezerwowych)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => generate(), [delayed, earliestStart, earliestByObieg]);
+  useEffect(() => generate(), [delayed, earliestStart, earliestByStation, earliestByObieg]);
 
   // zmiana rezerwowych NIE przebudowuje planu sama — oznacz go jako nieaktualny (kliknij „Generuj")
   const firstResRef = useRef(true);
@@ -225,6 +230,7 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.forceKind, JSON.stringify(forceKind)), [forceKind]);
   useEffect(() => localStorage.setItem(LS.rows, JSON.stringify(rows)), [rows]);
   useEffect(() => localStorage.setItem(LS.earliest, JSON.stringify(earliestStart)), [earliestStart]);
+  useEffect(() => localStorage.setItem(LS.earliestStation, JSON.stringify(earliestByStation)), [earliestByStation]);
   useEffect(() => localStorage.setItem(LS.earliestObieg, JSON.stringify(earliestByObieg)), [earliestByObieg]);
   useEffect(() => localStorage.setItem(LS.sbW, JSON.stringify(sidebarWidth)), [sidebarWidth]);
   useEffect(() => localStorage.setItem(LS.sbCol, JSON.stringify(sbCollapsed)), [sbCollapsed]);
@@ -247,7 +253,7 @@ export default function App() {
 
   const resetManual = () => {
     setManual({});
-    const res = planBreaks(delayed, reserves, { forcedKinds: forceKind, earliest: earliestStart, earliestByObieg });
+    const res = planBreaks(delayed, reserves, { forcedKinds: forceKind, earliest: earliestStart, earliestByStation, earliestByObieg });
     setAssignments(res.assignments);
   };
 
@@ -332,7 +338,7 @@ export default function App() {
             />
             min
           </label>
-          <label className="delay-ctl" title="nie planuj przerw wcześniej niż ta godzina (próg globalny; override per-obieg w edytorze przerwy)">
+          <label className="delay-ctl" title="nie planuj przerw wcześniej niż ta godzina (próg globalny; per-stacja niżej, override per-obieg w edytorze przerwy)">
             ⏰ nie wcześniej niż
             <input
               type="time"
@@ -340,6 +346,28 @@ export default function App() {
               onChange={(e) => setEarliestStart(hmToSec(e.target.value) ?? earliestStart)}
             />
           </label>
+          <div className="station-earliest" title="próg startu i kotwica rozkładania PER STACJA — puste pole = jak globalny">
+            <span className="se-lbl">per stacja:</span>
+            {BREAK_STATIONS.map((s) => (
+              <label key={s} className="se-item">
+                <span>{s}</span>
+                <input
+                  type="time"
+                  value={earliestByStation[s] != null ? HHMMSS(earliestByStation[s]!) : ""}
+                  placeholder={HHMMSS(earliestStart)}
+                  onChange={(e) => {
+                    const v = hmToSec(e.target.value);
+                    setEarliestByStation((prev) => {
+                      const next = { ...prev };
+                      if (v == null) delete next[s];
+                      else next[s] = v;
+                      return next;
+                    });
+                  }}
+                />
+              </label>
+            ))}
+          </div>
           <button
             className={`btn-gen${planDirty ? " dirty" : ""}`}
             onClick={() => generate()}

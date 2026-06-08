@@ -66,9 +66,14 @@ Decyduje liczba kół (`planBreaks`):
 
 ## 3. Okna startu przerwy
 
-- **Najwcześniej 14:30** (`EARLIEST_DEFAULT`); override per obieg dozwolony (`earliestByObieg`).
-- **Preferencja 16:00–17:30** (`PREF_WINDOW`) — najlepsze przerwy startują w tym oknie; slot w oknie
-  ma score 0, poza oknem — odległość do najbliższej krawędzi.
+- **Najwcześniej 14:30** (`EARLIEST_DEFAULT`), nadpisywalne na trzech poziomach: **globalnie** (`earliest`),
+  **per stacja** (`earliestByStation` — np. wszystkie 14:30, ale A11 14:50) i **per obieg** (`earliestByObieg`).
+  Precedencja progu slotu: **per-obieg > per-stacja > globalny**. Pola w UI: „⏰ nie wcześniej niż" + rząd
+  „per stacja" (puste = jak globalny). Próg stacji jest zarazem **kotwicą rozkładania**.
+- **Rozkładanie zamiast „magnesu" na 16:00** — start liczony od PEŁZNĄCEGO celu per stacja: kotwica = próg
+  startu stacji, cel przesuwa się o `SPREAD_STRIDE` (15 min) po każdej podmianie → przerwy rozłożone równo
+  od progu w górę, bez ścisku i bez spychania nadmiaru na późno. Okno **16:00–17:30** (`PREF_WINDOW`) zostaje
+  MIĘKKĄ preferencją (drobny tie-break `W_CENTER`), nie magnesem.
 - **Dwa okna:**
   - **1. (główna) przerwa** — start najpóźniej **18:30** (`LATEST_FIRST`; „19:10 = za późno"), z dodatkowym
     ograniczeniem **R3**: `latestFirstOf = min(18:30, entry2nd + 6 h)` (max 6 h ciągłej pracy od realnego startu).

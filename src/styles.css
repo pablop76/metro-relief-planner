@@ -251,6 +251,19 @@ body {
 }
 .delay-ctl input[type="time"] { width: auto; min-width: 96px; text-align: left; }
 
+/* próg startu per stacja */
+.station-earliest {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted);
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px;
+}
+.station-earliest .se-lbl { font-weight: 600; }
+.se-item { display: inline-flex; align-items: center; gap: 4px; }
+.se-item span { opacity: 0.85; }
+.se-item input[type="time"] {
+  width: auto; min-width: 84px; background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: 5px; padding: 4px; text-align: left;
+}
+
 /* --- lista maszynistów (roster) --- */
 .rp-roster { margin-bottom: 12px; }
 .rp-roster-toggle {
