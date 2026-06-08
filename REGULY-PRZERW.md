@@ -70,19 +70,18 @@ Decyduje liczba kół (`planBreaks`):
   **per stacja** (`earliestByStation` — np. wszystkie 14:30, ale A11 14:50) i **per obieg** (`earliestByObieg`).
   Precedencja progu slotu: **per-obieg > per-stacja > globalny**. Pola w UI: „⏰ nie wcześniej niż" + rząd
   „per stacja" (puste = jak globalny). Próg stacji jest zarazem **kotwicą rozkładania**.
-- **Rozkładanie zamiast „magnesu" na 16:00** — start liczony od PEŁZNĄCEGO celu per stacja: kotwica = próg
-  startu stacji, cel przesuwa się o `SPREAD_STRIDE` (15 min) po każdej podmianie → przerwy rozłożone równo
-  od progu w górę, bez ścisku i bez spychania nadmiaru na późno. Okno **16:00–17:30** (`PREF_WINDOW`) zostaje
-  MIĘKKĄ preferencją (drobny tie-break `W_CENTER`), nie magnesem.
+- **Rozkładanie od progu w górę** — `score` po `scarcity` (patrz §4/§5) preferuje **najwcześniejszy** slot od
+  progu startu stacji. Moc rezerwowych wypełnia się od dołu, a naturalna serializacja (jeden maszynista = jeden
+  pociąg naraz) i tak rozkłada przerwy po popołudniu. (Wcześniej był „magnes" na 16:00, potem pełznący kursor —
+  kursor przy wąskim gardle A11 „uciekał" przed wolną wczesną mocą i robił BRAK mimo zapasu, więc usunięty.)
 - **Dwa okna:**
-  - **1. (główna) przerwa** — start najpóźniej **18:30** (`LATEST_FIRST`; „19:10 = za późno"), z dodatkowym
-    ograniczeniem **R3**: `latestFirstOf = min(18:30, entry2nd + 6 h)` (max 6 h ciągłej pracy od realnego startu).
+  - **1. (= JEDYNA gwarantowana) przerwa** — start najpóźniej **18:20** (`LATEST_FIRST`). Reguła: **jedyna
+    przerwa NIE może startować po 18:20** (pokrycie = 1 przerwa). Dodatkowo **R3**: `latestFirstOf =
+    min(18:20, entry2nd + 6 h)`. To samo okno obowiązuje w pokryciu awaryjnym (`tryCover`).
   - **2. (dodatkowa) przerwa** — okno dłuższe, do **20:00** (`LATEST_SECOND`); realnie limituje ją
     zjazd pociągu (musi wrócić, zanim zjedzie — patrz §1).
-- Nie zaczynać przerw od obiegów mających tylko połówki — najpierw całe (kolejność w §5).
-- **§4a krok 4** (`firstWindow`): szczyt z samą połówką (`dk = połówka`) nie dostaje jej jako pierwszej —
-  okno 1. przerwy zawężone do **[entry2nd + 1 koło, 18:15]** (`ONLY_POL_LATEST`). Pokrycie awaryjne
-  (`tryCover`) może to rozluźnić, gdy inaczej byłby BRAK.
+- **§4a krok 4** (`coverWindow`): szczyt z samą połówką (`kind = połówka`) nie dostaje jej na 1. kole —
+  dół okna = **entry2nd + 1 koło**, góra = **18:15** (`ONLY_POL_LATEST`). Dotyczy też połówki nadanej awaryjnie.
 
 ### 3a. Druga (dodatkowa) przerwa — kombinacje
 
@@ -135,6 +134,12 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
 ## 5. Rezerwowi i kolejność przetwarzania
 
 - Rezerwowy podmienia **tylko na swojej stacji** (brak „pożyczania" z innej).
+- **Zajętość liczona po INTERWAŁACH** (nie po pojedynczym „busyUntil"): rezerwowy może brać podmiany w
+  **dowolnej kolejności czasowej** (np. wczesną całą po wcześniej zaplanowanej późnej połówce), o ile się
+  nie nakładają (`freeAt`). To odblokowuje wolną wczesną moc przy planowaniu „bottleneck-first".
+- **SCARCITY A11** (`A11_CALA_PENALTY`): połówka/godzinka/szczeniak są możliwe **tylko na A11**, więc moc A11
+  to wąskie gardło. **Całe są odpychane z A11** dużą karą w `score` (mają alternatywne stacje) — wchodzą na
+  A11 tylko, gdy poza nią nie ma już wolnego rezerwowego (nadmiar). Zostawia to A11 dla połówek.
 - Limit obciążenia: **3 całe** liczone w równowartości (cała=1, godzinka=⅔, połówka=0,5, szczeniak=⅓),
   nie w minutach (`MAX_RESERVE_LOAD_EQ`). 3 całe = 6 połówek = 2 całe+2 połówki = 1 cała+4 połówki.
   „Pełny" gdy równowartość ≥ 3.
@@ -149,10 +154,15 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
 - Pakowanie: najpierw dobijamy najczęściej używanego rezerwowego, świeżych zostawiamy na trudniejsze,
   późniejsze obiegi.
 - Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.
-- **Kolejność:** najpierw obiegi z całą, potem z połówką; w grupie — najmniej slotów najpierw, dalej
-  najwcześniejszy zjazd, S przed full przed D.
-- **Pokrycie (R9) jest nadrzędne:** każdy obieg dostaje ≥ 1 przerwę. Najpierw próba w preferowanym
-  rodzaju i oknie (do 18:30). Gdy nie złapie wolnego rezerwowego — **pokrycie awaryjne** (`tryCover`):
-  zejście na krótszy rodzaj (połówka/szczeniak) i/lub szersze okno (do 20:00). Dopiero gdy NIGDZIE
-  nie ma wolnego rezerwowego → **BRAK** (ręczna obsada).
+- **Kolejność — BOTTLENECK FIRST:** najpierw obiegi z **połówką/godzinką/szczeniakiem** (możliwe tylko na
+  A11/A7/A18 — najbardziej ograniczone), potem z **całą** (elastyczne, mają wiele stacji). Dzięki temu
+  połówki zajmują moc A11, zanim całe-nadmiar ją wezmą. W grupie — najmniej slotów najpierw, dalej
+  najwcześniejszy zjazd, S przed full przed D. (Dawniej: całe pierwsze — przy ciasnej mocy A11 robiło BRAK.)
+- **Pokrycie (R9) jest nadrzędne:** każdy obieg dostaje ≥ 1 przerwę. Najpierw `tryAssign` (preferowany rodzaj,
+  okno ≤ 18:20). Gdy nie złapie wolnego rezerwowego — **pokrycie awaryjne** (`tryCover`): zejście na krótszy
+  rodzaj (połówka/szczeniak), **to samo okno ≤ 18:20** (jedyna przerwa nie może być później).
+- **Pass naprawczy (eviction)** — po pokryciu, przed R16: dla każdego BRAK obiegu silnik próbuje **zwolnić
+  rezerwowego**, przenosząc jego dotychczasową (jedyną) podmianę na innego wolnego (`placeElsewhere`), po czym
+  obsadza BRAK. Domyka pokrycie tam, gdzie greedy zostawił BRAK mimo wolnej mocy (elastyczny obieg na końcu).
+  Dopiero gdy i to nie pomoże → **BRAK** (ręczna obsada / dodać rezerwowego na stacji z deficytem).
 - Dodatkowe (drugie) przerwy z R16 rozdawane są **dopiero po** zapewnieniu pokrycia wszystkim obiegom.
