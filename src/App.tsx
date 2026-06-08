@@ -99,6 +99,19 @@ export default function App() {
   const [sbCollapsed, setSbCollapsed] = useState<boolean>(() => loadLS<boolean>(LS.sbCol, false));
   const [layout, setLayout] = useState<"side" | "bottom">(() => loadLS<"side" | "bottom">(LS.layout, "side"));
   const [error, setError] = useState<string>("");
+  const [showReset, setShowReset] = useState(false);
+
+  // pełny reset: usuń WSZYSTKIE dane aplikacji z localStorage i przeładuj do ustawień domyślnych
+  const clearAllMemory = () => {
+    try {
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith("pm_"))
+        .forEach((k) => localStorage.removeItem(k));
+    } catch {
+      /* localStorage niedostępny — i tak przeładuj */
+    }
+    location.reload();
+  };
 
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -401,6 +414,13 @@ export default function App() {
             👤 Maszyniści ({drivers.length})
           </button>
           <button
+            className="btn-clear"
+            onClick={() => setShowReset(true)}
+            title="wyczyść całą pamięć aplikacji (reset do ustawień domyślnych)"
+          >
+            🧹 Wyczyść pamięć
+          </button>
+          <button
             className="btn-layout"
             onClick={() => setLayout((l) => (l === "side" ? "bottom" : "side"))}
             title="panel rezerwowych: z boku / pod tabelą (poziomo)"
@@ -421,6 +441,43 @@ export default function App() {
           onRestore={restoreDrivers}
           onClose={() => setShowDrivers(false)}
         />
+      )}
+
+      {showReset && (
+        <div className="modal-backdrop" onClick={() => setShowReset(false)}>
+          <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>⚠ Wyczyścić całą pamięć?</h2>
+              <button className="modal-x" onClick={() => setShowReset(false)}>
+                ×
+              </button>
+            </div>
+            <div className="confirm-body">
+              <p>
+                To nieodwracalnie usunie z pamięci przeglądarki <strong>wszystkie</strong> dane
+                aplikacji:
+              </p>
+              <ul>
+                <li>rezerwowych i ich ustawienia,</li>
+                <li>maszynistów (wrócą domyślni z pliku),</li>
+                <li>ręczne korekty przerw,</li>
+                <li>kolejność, opóźnienie, progi godzin i układ panelu.</li>
+              </ul>
+              <p className="confirm-note">
+                Rozkład i lista maszynistów zostaną pobrane na nowo z plików domyślnych, a strona się
+                przeładuje.
+              </p>
+            </div>
+            <div className="confirm-actions">
+              <button className="btn-reset" onClick={() => setShowReset(false)}>
+                Anuluj
+              </button>
+              <button className="btn-danger" onClick={clearAllMemory}>
+                🧹 Tak, wyczyść wszystko
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {error && <div className="error">⚠ {error}</div>}

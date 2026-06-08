@@ -133,11 +133,12 @@ body {
   border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 11px; white-space: nowrap;
 }
 .rp-sample:hover { border-color: var(--accent); }
-.rp-sample-ctl { display: flex; align-items: center; gap: 4px; }
+.rp-sample-ctl { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .rp-sample-ctl input {
   width: 44px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
   border-radius: 6px; padding: 4px 5px; font-size: 11px; text-align: center;
 }
+.rp-clear:hover { border-color: var(--red); color: var(--red); }
 .reserve-row {
   display: grid; grid-template-columns: 36px 1fr 56px; align-items: center; gap: 8px;
   padding: 5px 0;
@@ -302,6 +303,11 @@ body {
   border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 13px;
 }
 .btn-drivers:hover { border-color: var(--accent); }
+.btn-clear {
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 13px;
+}
+.btn-clear:hover { border-color: var(--red); color: var(--red); }
 
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(0, 0, 0, .6); z-index: 100;
@@ -314,6 +320,19 @@ body {
 }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
 .modal-head h2 { margin: 0; font-size: 16px; }
+/* --- modal potwierdzenia (reset pamięci, usuwanie demo) --- */
+.modal-confirm { width: min(460px, 100%); }
+.confirm-body { padding: 16px 18px; font-size: 13px; color: var(--text); line-height: 1.5; }
+.confirm-body p { margin: 0 0 8px; }
+.confirm-body ul { margin: 0 0 10px; padding-left: 20px; color: var(--muted); }
+.confirm-body li { margin: 2px 0; }
+.confirm-note { color: var(--muted); font-size: 12px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); }
+.btn-danger {
+  background: var(--red); color: #fff; border: none; border-radius: 8px;
+  padding: 7px 14px; cursor: pointer; font-size: 13px; font-weight: 600;
+}
+.btn-danger:hover { filter: brightness(1.1); }
 .modal-x { background: none; border: none; color: var(--muted); font-size: 24px; cursor: pointer; line-height: 1; }
 .modal-x:hover { color: var(--text); }
 .dm-toolbar { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 18px; border-bottom: 1px solid var(--border); }

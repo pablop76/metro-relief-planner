@@ -39,6 +39,7 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
   const [warn, setWarn] = useState("");
   const [openCfg, setOpenCfg] = useState<string | null>(null);
   const [sampleCount, setSampleCount] = useState(SAMPLE_MAX);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overStation, setOverStation] = useState<BreakStation | null>(null);
 
@@ -85,6 +86,14 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
     setWarn("");
   };
 
+  // usuń TYLKO przykładowych (demo-…), zostaw realnych rezerwowych
+  const demoCount = reserves.filter((r) => r.id.startsWith("demo-")).length;
+  const clearSamples = () => {
+    onChange(reserves.filter((r) => !r.id.startsWith("demo-")));
+    setConfirmClear(false);
+    setWarn("");
+  };
+
   // przeciągnięcie rezerwowego na inną stację (drag & drop między stacjami)
   const moveToStation = (station: BreakStation) => {
     const id = dragId;
@@ -125,8 +134,44 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
           >
             🧪 Wczytaj
           </button>
+          {demoCount > 0 && (
+            <button
+              className="rp-sample rp-clear"
+              onClick={() => setConfirmClear(true)}
+              title={`usuń ${demoCount} przykładowych rezerwowych (demo)`}
+            >
+              🧹 Usuń demo
+            </button>
+          )}
         </div>
       </div>
+
+      {confirmClear && (
+        <div className="modal-backdrop" onClick={() => setConfirmClear(false)}>
+          <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>Usunąć przykładowych?</h2>
+              <button className="modal-x" onClick={() => setConfirmClear(false)}>
+                ×
+              </button>
+            </div>
+            <div className="confirm-body">
+              <p>
+                Usunąć <strong>{demoCount}</strong> przykładowych (demo) rezerwowych? Realni rezerwowi
+                zostaną nietknięci.
+              </p>
+            </div>
+            <div className="confirm-actions">
+              <button className="btn-reset" onClick={() => setConfirmClear(false)}>
+                Anuluj
+              </button>
+              <button className="btn-danger" onClick={clearSamples}>
+                🧹 Usuń demo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {warn && <div className="rp-warn">⚠ {warn}</div>}
       {BREAK_STATIONS.map((st) => {
         const here = reserves.filter((r) => r.station === st);
