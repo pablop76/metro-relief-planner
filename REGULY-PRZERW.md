@@ -52,20 +52,25 @@ zmienia go ktoś na linii.
 
 ## 2. Rodzaj przerwy (połówka vs cała)
 
-Decyduje liczba kół (`planBreaks`):
+Decyduje liczba kół (`planBreaks`) — **SPRAWIEDLIWOŚĆ: przerwa proporcjonalna do pracy** (2026-06-08):
 
-- **STRATEGIA (z doświadczenia, 2026-06-08): całe na wszystkich stacjach OPRÓCZ A11, a na A11 połówki + całe.**
-  Ile obiegów da się obsadzić **całymi poza A11** — tyle dostaje całą; **reszta → połówka na A11** (A11 uciągnie
-  nawet ~30 połówek na 5 maszynistów). Formuła:
-  `polCount = min(liczba_kwalifikujących_się, max(hardPol, liczba_obiegów − pojemność_całych_poza_A11))`,
-  gdzie `pojemność_całych_poza_A11 = Σ_{stacja≠A11} min(3, capOf)`. (Stąd wprost wynika „ile brakuje do całych
-  ÷ na 2 połówki" — przy ciasnej mocy poza A11 nadmiar ląduje na A11 jako połówki.)
-- **TYLKO całe i połówki w automacie** — godzinka i szczeniak **nie** są dobierane automatycznie (godzinka =
-  większy wysiłek planistyczny i większe ryzyko, że awaria rozsypie układ; szczeniak za słaby). Obie tylko ręcznie.
-- Twardy próg: obiegi **≤ 3 koła** (`POL_HARD_LOOPS`, `hardPol`) → **połówka ZAWSZE** (szczyty).
-- `Infinity` (jazda po 21:00 / całodobowe) → **cała** (nie kwalifikują się do połówki).
-- Połówki trafiają do obiegów z **najmniejszą liczbą kół** (szczyty); reszta → **cała**.
-- Zasada nadrzędna: **najmniej kół = połówka**, najwięcej kół = cała. Ręczny override (`forcedKinds`) > auto.
+- **PRÓG SZCZYTU: ≤ 4 koła = POŁÓWKA** (`POL_LOOPS`). Prawdziwy szczyt pracuje krótko → połowa wystarczy.
+- **> 4 koła oraz CAŁODOBOWE (`Infinity`, jazda po 21:00) = PEŁNA PRZERWA** — **cała** (poza A11), a na A11
+  **2 połówki** (= równowartość całej; patrz „rozbicie" niżej). Pracują długo → pojedyncza połówka dla
+  ~5-kołowego/całodobowego byłaby **NIESPRAWIEDLIWA** (nigdy tego nie robimy automatem).
+- **BILANS MOCY:** `moc = Σ min(3, capOf)` po rezerwowych **BEZ rezerwy ruchowej A1** (Kopyt — jego 1 koło to
+  bufor pod ręką, R17, nie planowana moc; tak liczy pomocnik: „10 do pełnej dyspozycji = 30"). Zapotrzebowanie
+  `eq = Σ (połówka 0,5 / pełna 1,0)`. Gdy `eq > moc` → **RACJONOWANIE**.
+- **RACJONOWANIE (cięcie wg kół):** gdy mocy brak, tniemy całe→połówki **NAJMNIEJ KÓŁ NAJPIERW** (rozszerzamy
+  zbiór połówek w górę po kołach), aż `eq ≤ moc`. Najbliższy progu (np. 4,39) cięty przed prawdziwym
+  długodystansowcem. Bilans jest nadrzędny: jeśli matematycznie się mieści — silnik to upakowuje; jeśli nie —
+  cięcie wg kół, a w ostateczności BRAK (sygnał „dodać rezerwowego"), **nie** krzywdząca połówka dla wysokokołowego.
+- **„ROZBICIE" całej na A11:** na A11 **automat nie nadaje całych** — pełną przerwę długodystansowca daje jako
+  **2 połówki** (drobniejsze ~45-min bloki = ciaśniejsze pakowanie i więcej opcji podmian). Cała@A11 dopuszczona
+  tylko jako overflow/ostateczność (faza 3) i ręcznie. Połówka jest możliwa **tylko na A11**.
+- **TYLKO całe i połówki w automacie** — godzinka i szczeniak tylko ręcznie (godzinka = ryzyko przy awarii;
+  szczeniak za słaby).
+- Ręczny override (`forcedKinds`) > auto. (Nawrót racjonowania używa `forcedKinds` wewnętrznie.)
 
 ---
 
@@ -167,15 +172,22 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
 - Pakowanie: najpierw dobijamy najczęściej używanego rezerwowego, świeżych zostawiamy na trudniejsze,
   późniejsze obiegi.
 - Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.
-- **Kolejność — BOTTLENECK FIRST:** najpierw obiegi z **połówką** (możliwe tylko na A11 — najbardziej
-  ograniczone), potem z **całą** (elastyczne, mają wiele stacji). Dzięki temu
-  połówki zajmują moc A11, zanim całe-nadmiar ją wezmą. W grupie — najmniej slotów najpierw, dalej
-  najwcześniejszy zjazd, S przed full przed D. (Dawniej: całe pierwsze — przy ciasnej mocy A11 robiło BRAK.)
+- **Kolejność — CAŁE PIERWSZE (FAZY, jak liczy pomocnik instruktora §4a krok2→3):**
+  - **FAZA 1:** CAŁE **poza A11** (A1/A7/A18/A23). W obrębie całych **CAŁODOBOWE pierwsze** (`criticalRank` —
+    jeżdżą całą dobę, można je obsadzić tylko całą, najmniej alternatyw). Nadmiar, który nie wszedł poza A11,
+    czeka na fazę 3 (NIE zajmuje A11 przed szczytami).
+  - **FAZA 2:** dedykowane **POŁÓWKI szczytów na A11** — zajmują A11, zanim wejdzie tam nadmiar całych.
+  - **FAZA 3:** nadmiar całych → **pełna przerwa na A11** (cała@A11), bo to długodystansowcy; nie dostają
+    pojedynczej połówki. Gdy się nie zmieści → BRAK.
+  - **NAWRÓT (cięcie wg kół):** jeśli mimo to został BRAK, tnij następnego najmniej-kołowego z całych na połówkę
+    (`forcedKinds`) i przelicz od nowa; bierz wynik tylko, gdy zmniejsza BRAK. (Dawniej: bottleneck-first =
+    połówki/szczyty PIERWSZE — przez to całodobowe szły na BRAK, a szczyty dostawały po 2 przerwy.)
 - **Pokrycie (R9) jest nadrzędne:** każdy obieg dostaje ≥ 1 przerwę. Najpierw `tryAssign` (preferowany rodzaj,
   okno ≤ 18:20). Gdy nie złapie wolnego rezerwowego — **pokrycie awaryjne** (`tryCover`): zejście na krótszy
   rodzaj (**połówka** — bez godzinki i szczeniaka), **to samo okno ≤ 18:20** (jedyna przerwa nie później).
 - **Pass naprawczy (eviction)** — po pokryciu, przed R16: dla każdego BRAK obiegu silnik próbuje **zwolnić
   rezerwowego**, przenosząc jego dotychczasową (jedyną) podmianę na innego wolnego (`placeElsewhere`), po czym
-  obsadza BRAK. Domyka pokrycie tam, gdzie greedy zostawił BRAK mimo wolnej mocy (elastyczny obieg na końcu).
-  Dopiero gdy i to nie pomoże → **BRAK** (ręczna obsada / dodać rezerwowego na stacji z deficytem).
-- Dodatkowe (drugie) przerwy z R16 rozdawane są **dopiero po** zapewnieniu pokrycia wszystkim obiegom.
+  obsadza BRAK. **Relokacja ZACHOWUJE wielkość przerwy** (długodystansowiec → cała, szczyt → połówka — eviction
+  nie krzywdzi nikogo połówką). Dopiero gdy i to nie pomoże → **BRAK** (dodać rezerwowego na stacji z deficytem).
+- **Dodatkowe (2.) przerwy z R16 rozdawane są DOPIERO przy 0 BRAK** (bramka `hasBrak`): dopóki ktoś jest bez
+  przerwy, nikt nie dostaje luksusowej dokładki (inaczej szczyt miałby 2 przerwy, a całodobowy 0).
