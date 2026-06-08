@@ -292,8 +292,20 @@ export default function App() {
     return m;
   }, [assignments]);
   const allBreaks = Object.values(assignments).flat();
-  const unassigned = allBreaks.filter((a) => !a.reserveId).length;
-  const planned = allBreaks.filter((a) => a.reserveId).length;
+  // OBIEGI (suma = liczba obiegów): obsadzony = ma ≥1 podmianę z rezerwowym; BRAK = nie ma żadnej.
+  const coveredObiegi = obiegi.filter((o) => (assignments[o.id] ?? []).some((a) => a.reserveId)).length;
+  const brakObiegi = obiegi.length - coveredObiegi;
+  // PODMIANY (sloty, łącznie z 2. przerwami) — inna jednostka niż obiegi (stąd „32 ≠ 36 − 9").
+  const plannedJobs = allBreaks.filter((a) => a.reserveId).length;
+  // rozbicie BRAK wg stacji (ze slotu fallbackowego bez rezerwowego; obieg bez żadnego slotu = „?")
+  const brakByStation: Record<string, number> = {};
+  for (const o of obiegi) {
+    const list = assignments[o.id] ?? [];
+    if (list.some((a) => a.reserveId)) continue;
+    const st = list.find((a) => !a.reserveId)?.station ?? "?";
+    brakByStation[st] = (brakByStation[st] ?? 0) + 1;
+  }
+  const brakBreakdown = Object.entries(brakByStation).map(([s, n]) => `${s}×${n}`).join(", ");
   const def = defaultOrder(obiegi);
   const orderChanged = order.length > 0 && order.some((id, i) => def[i] !== id);
   // liczba kolumn = obiegi / wybrana liczba rzędów
@@ -417,8 +429,13 @@ export default function App() {
         <main className="grid-area">
           <div className="summary">
             <strong>{obiegi.length}</strong> obiegów&nbsp;·&nbsp;
-            <span className="ok">{planned} obsadzonych</span>
-            {unassigned > 0 && <span className="bad">&nbsp;·&nbsp;{unassigned} BRAK</span>}
+            <span className="ok">{coveredObiegi} obsadzonych</span>
+            {brakObiegi > 0 && (
+              <span className="bad" title="obiegi bez rezerwowego, rozbite wg stacji">
+                &nbsp;·&nbsp;{brakObiegi} BRAK{brakBreakdown ? ` (${brakBreakdown})` : ""}
+              </span>
+            )}
+            &nbsp;·&nbsp;{plannedJobs} podmian
             {globalDelay !== 0 && <span className="bad">&nbsp;·&nbsp;linia +{globalDelay} min</span>}
             <span className="hint-drag">&nbsp;·&nbsp;przeciągaj karty, by zmienić kolejność</span>
           </div>
