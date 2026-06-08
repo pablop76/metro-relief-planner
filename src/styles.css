@@ -126,7 +126,13 @@ body {
 .reserve-panel {
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px;
 }
-.reserve-panel h2 { font-size: 14px; margin: 0 0 12px; }
+.reserve-panel h2 { font-size: 14px; margin: 0; }
+.rp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 12px; }
+.rp-sample {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 11px; white-space: nowrap;
+}
+.rp-sample:hover { border-color: var(--accent); }
 .reserve-row {
   display: grid; grid-template-columns: 36px 1fr 56px; align-items: center; gap: 8px;
   padding: 5px 0;
@@ -401,7 +407,7 @@ body {
 /* panel rezerwowych pod tabelą — układ poziomy (stacje obok siebie) */
 .bottom-panel { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
 .reserve-panel.horizontal { display: flex; flex-flow: row wrap; gap: 10px 14px; align-items: flex-start; }
-.reserve-panel.horizontal > h2,
+.reserve-panel.horizontal > .rp-head,
 .reserve-panel.horizontal > .rp-warn,
 .reserve-panel.horizontal > .reserve-total { flex-basis: 100%; }
 .reserve-panel.horizontal > .rp-station { flex: 1 1 220px; min-width: 190px; max-width: 340px; }

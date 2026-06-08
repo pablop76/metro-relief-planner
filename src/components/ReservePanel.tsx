@@ -2,6 +2,7 @@ import { useState } from "react";
 import { BREAK_STATIONS, reserveFull, TRAIN_TYPES, driverFullName, HHMMSS, hmToSec } from "../lib/types";
 import type { Reserve, BreakStation, Driver, BreakAssignment, MetroLine, TrainType } from "../lib/types";
 import { DURATION } from "../lib/stations";
+import { SAMPLE_RESERVES } from "../lib/sampleReserves";
 
 // piktogram długości przerwy
 const KIND_GLYPH: Record<string, string> = { "cała": "●", "godzinka": "◕", "połówka": "◐", "szczeniak": "○" };
@@ -68,6 +69,19 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
   };
   const remove = (id: string) => onChange(reserves.filter((r) => r.id !== id));
 
+  // wczytaj przykładowych rezerwowych do testów (pomija już obecnych — po id lub nazwie)
+  const loadSamples = () => {
+    const haveIds = new Set(reserves.map((r) => r.id));
+    const haveNames = new Set(reserves.map((r) => r.name.toLowerCase()));
+    const add = SAMPLE_RESERVES.filter((s) => !haveIds.has(s.id) && !haveNames.has(s.name.toLowerCase()));
+    if (!add.length) {
+      setWarn("Przykładowi rezerwowi są już wczytani");
+      return;
+    }
+    onChange([...reserves, ...add]);
+    setWarn("");
+  };
+
   return (
     <div className={`reserve-panel${horizontal ? " horizontal" : ""}`}>
       <datalist id="pm-roster">
@@ -76,7 +90,12 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
         ))}
       </datalist>
 
-      <h2>Rezerwowi na stacjach</h2>
+      <div className="rp-head">
+        <h2>Rezerwowi na stacjach</h2>
+        <button className="rp-sample" onClick={loadSamples} title="wczytaj 12 przykładowych rezerwowych (A1×3, A7×2, A11×5, A18×1, A23×1) do testów">
+          🧪 Przykładowi
+        </button>
+      </div>
       {warn && <div className="rp-warn">⚠ {warn}</div>}
       {BREAK_STATIONS.map((st) => {
         const here = reserves.filter((r) => r.station === st);
