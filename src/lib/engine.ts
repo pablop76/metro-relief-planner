@@ -6,10 +6,12 @@ import { STATIONS, DOWNGRADE, stationSupports } from "./stations";
 
 const hms = (h: number, m: number) => h * 3600 + m * 60;
 
-// Rodzaje brane pod uwagę AUTOMATYCZNIE (cała → godzinka → połówka). SZCZENIAK (~30 min) jest za słabą
-// podmianą — NIGDY nie nadawany automatycznie (ani w pokryciu, ani jako dokładka), tylko ręcznie w edytorze.
-// Lepiej: połówka, ewentualnie godzinka — a gdy się nie da, BRAK (dodać rezerwowego) niż szczeniak.
-const AUTO_KINDS: BreakKind[] = DOWNGRADE.filter((k) => k !== "szczeniak");
+// Rodzaje brane pod uwagę AUTOMATYCZNIE: TYLKO **cała → połówka** (potwierdzone 2026-06-08, z doświadczenia).
+// Godzinka i szczeniak NIE są nadawane automatycznie — godzinka to większy wysiłek planistyczny i większe
+// ryzyko, że awaria rozsypie układ (brak pociągu do podmiany); szczeniak (~30 min) jest po prostu za słaby.
+// Strategia: całe na wszystkich stacjach oprócz A11, a na A11 połówki + całe (A11 uciągnie nawet ~30 połówek
+// na 5 maszynistów). Godzinkę/szczeniaka można wybrać tylko ręcznie w edytorze.
+const AUTO_KINDS: BreakKind[] = DOWNGRADE.filter((k) => k === "cała" || k === "połówka");
 
 // R17 — rezerwa ruchowa A1 (Kabaty): na A1 stoi pociąg rezerwy ruchowej; JEDEN maszynista z obsady
 // musi zostać pod ręką, by wprowadzić skład za pociąg, który uległ awarii / wymaga sprzątania. Ten
@@ -189,25 +191,23 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const capOf = (r: Reserve): number =>
     r.maxJobs ?? (r.id === rollingA1Id ? A1_MOBILE_MAX_JOBS : Infinity);
 
-  // BILANS MOCY (tok pomocnika instruktora, §4a krok1): moc = Σ min(3 koła, cap); deficyt → 2× połówek.
-  // Rezerwa ruchowa A1 wnosi tylko 1 koło → moc ≈ (rezerwowi−1)×3 + 1.
-  const capacity = reserves.reduce(
-    (s, r) => s + (r.blocked ? 0 : Math.min(MAX_RESERVE_LOAD_EQ, capOf(r))),
-    0
-  );
-  const deficit = obiegi.length - capacity;
 
-  // LICZBA POŁÓWEK — reguła bilansu (potwierdzona 2026-06-08): **połówek = 2 × DEFICYT**. Na jednego
-  // rezerwowego mieści się 6 połówek zamiast 3 całych, więc każda para połówek (zamiast całej) obsługuje
-  // o JEDEN obieg więcej → 2×deficyt połówek domyka pokrycie dla WSZYSTKICH przy STAŁEJ liczbie rezerwowych
-  // (nie dodajemy ludzi — to stan na dany dzień). Twardy próg: obiegi ≤3 koła = połówka ZAWSZE (szczyty),
-  // nawet bez deficytu. Połówki dostają obiegi z NAJMNIEJSZĄ liczbą kół. Całodobowe / jazda po 21:00
-  // (loops = ∞) nie kwalifikują się (zawsze cała). Godzinki (4 zamiast 3) to alternatywa w pokryciu awaryjnym.
-  const POL_HARD_LOOPS = 3; // ≤3 koła = połówka bezwarunkowo
+  // LICZBA POŁÓWEK — strategia (potwierdzona 2026-06-08): **całe wypełniają stacje POZA A11, a cała reszta
+  // idzie na A11 jako POŁÓWKI** (A11 uciągnie nawet ~30 połówek na 5 maszynistów). Czyli ile się da obsadzić
+  // całymi poza A11 — tyle obiegów dostaje całą; pozostałe → połówka na A11. Dlatego:
+  //   polCount = liczba_obiegów − pojemność_całych_POZA_A11   (a co najmniej twardy próg ≤3 koła = szczyty).
+  // Tylko obiegi o skończonej liczbie kół mogą być połówką (całodobowe / jazda po 21:00 = zawsze cała), więc
+  // capujemy liczbą kwalifikujących się. Połówki dostają obiegi z NAJMNIEJSZĄ liczbą kół. (Stąd wprost wynika
+  // reguła „ile brakuje do całych ÷ na 2 połówki" — przy ciasnej mocy poza A11 deficyt ląduje na A11.)
+  const POL_HARD_LOOPS = 3; // ≤3 koła = połówka bezwarunkowo (szczyty)
   const polEligible = (o: Obieg) => !forced[o.id] && Number.isFinite(o.loops);
   const eligibleCount = obiegi.filter(polEligible).length;
   const hardPol = obiegi.filter((o) => polEligible(o) && o.loops <= POL_HARD_LOOPS).length;
-  const polCount = Math.min(eligibleCount, Math.max(hardPol, Math.max(0, deficit) * 2));
+  const offA11Cap = reserves.reduce(
+    (s, r) => s + (r.blocked || r.station === "A11" ? 0 : Math.min(MAX_RESERVE_LOAD_EQ, capOf(r))),
+    0
+  );
+  const polCount = Math.min(eligibleCount, Math.max(hardPol, obiegi.length - offA11Cap));
   // połówki dostają obiegi z NAJMNIEJSZĄ liczbą kół (szczyty); kolejność z rozkładu, bez sztywnej listy (D7).
   const autoPolowka = new Set(
     [...obiegi]
@@ -447,11 +447,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       // przy nadmiarze), żeby domknąć rezerwowemu limit. Preferencja kombinacji bez zmian:
       // {cała+połówka} najlepsza, ale cała dostępna do dopełnienia 3 kół.
       const secondKinds: BreakKind[] =
-        first.kind === "cała"
-          ? ["połówka", "godzinka", "cała"]
-          : first.kind === "połówka"
-          ? ["cała", "godzinka", "połówka"]
-          : ["połówka", "godzinka", "cała"]; // 1. = godzinka (szczeniak nie auto)
+        first.kind === "cała" ? ["połówka", "cała"] : ["cała", "połówka"]; // tylko cała+połówka (bez godzinki/szczeniaka)
       let placed = false;
       for (const kind of secondKinds) {
         // dwie połówki rozsuń ~2,5 h; pozostałe kombinacje kładź blisko powrotu (mały odstęp).
