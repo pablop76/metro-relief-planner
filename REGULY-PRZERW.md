@@ -54,17 +54,18 @@ zmienia go ktoś na linii.
 
 Decyduje liczba kół (`planBreaks`):
 
-- **REGUŁA BILANSU — liczba połówek = `2 × deficyt`** (`deficyt = liczba_obiegów − Σ min(3, capOf)`).
-  Na jednego rezerwowego mieści się **6 połówek zamiast 3 całych**, więc każda para połówek (zamiast całej)
-  obsługuje **o jeden obieg więcej** → `2 × deficyt` połówek wystarcza, by **przy STAŁEJ liczbie rezerwowych**
-  (stan na dany dzień — nie dodajemy ludzi) wszyscy dostali przerwę. Formuła:
-  `polCount = min(liczba_kwalifikujących_się, max(hardPol, 2 × deficyt))`.
-- **Godzinki** to alternatywa: mieści się ich **4 zamiast 3** całych (też zysk podmiany, krótszy ubytek niż
-  połówka). Silnik sięga po nie w pokryciu awaryjnym (kolejność `cała → godzinka → połówka`).
-- Twardy próg: obiegi **≤ 3 koła** (`POL_HARD_LOOPS`, `hardPol`) → **połówka ZAWSZE** (szczyty), nawet bez deficytu.
+- **STRATEGIA (z doświadczenia, 2026-06-08): całe na wszystkich stacjach OPRÓCZ A11, a na A11 połówki + całe.**
+  Ile obiegów da się obsadzić **całymi poza A11** — tyle dostaje całą; **reszta → połówka na A11** (A11 uciągnie
+  nawet ~30 połówek na 5 maszynistów). Formuła:
+  `polCount = min(liczba_kwalifikujących_się, max(hardPol, liczba_obiegów − pojemność_całych_poza_A11))`,
+  gdzie `pojemność_całych_poza_A11 = Σ_{stacja≠A11} min(3, capOf)`. (Stąd wprost wynika „ile brakuje do całych
+  ÷ na 2 połówki" — przy ciasnej mocy poza A11 nadmiar ląduje na A11 jako połówki.)
+- **TYLKO całe i połówki w automacie** — godzinka i szczeniak **nie** są dobierane automatycznie (godzinka =
+  większy wysiłek planistyczny i większe ryzyko, że awaria rozsypie układ; szczeniak za słaby). Obie tylko ręcznie.
+- Twardy próg: obiegi **≤ 3 koła** (`POL_HARD_LOOPS`, `hardPol`) → **połówka ZAWSZE** (szczyty).
 - `Infinity` (jazda po 21:00 / całodobowe) → **cała** (nie kwalifikują się do połówki).
 - Połówki trafiają do obiegów z **najmniejszą liczbą kół** (szczyty); reszta → **cała**.
-- Zasada nadrzędna: **najmniej kół = połówka**, najwięcej kół = cała. Ręczny override (`forcedKinds`) > auto-bilans.
+- Zasada nadrzędna: **najmniej kół = połówka**, najwięcej kół = cała. Ręczny override (`forcedKinds`) > auto.
 
 ---
 
@@ -94,7 +95,7 @@ Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). Dozwolone kombinacje:
 - **cała + połówka** — dowolna kolejność; **najlepsza** kombinacja.
 - **połówka + połówka** — rozsunięte ~2,5 h (`SPACING_POLOWKI`).
 - **cała + cała** — dozwolona, gdy trzeba dobić rezerwowego do pełnych 3 kół (pokrycie już zapewnione).
-- **godzinka** dopuszczalna jako dokładka. **Szczeniak NIE jest dokładany automatycznie** (patrz niżej).
+- Dokładki tylko **cała / połówka**. **Godzinka i szczeniak NIE są dokładane automatycznie** (patrz niżej).
 
 Pozostałe kombinacje kładzione blisko powrotu maszynisty (mały odstęp).
 
@@ -115,10 +116,10 @@ Konfiguracja w [`src/lib/stations.ts`](src/lib/stations.ts) / `data/stations.jso
 Rodzaje wg długości: **cała** (~90 min, pełna pętla) > **godzinka** (~1h, jazda do dalszego krańca
 i powrót) > **połówka** (~45 min) > **szczeniak** (~30 min, krótki nawrót do bliższego krańca).
 
-> **Szczeniak NIE jest nadawany automatycznie** (`AUTO_KINDS` = cała/godzinka/połówka). Jest za słabą
-> podmianą — silnik woli połówkę, ewentualnie godzinkę; gdy nic nie pasuje → BRAK (dodać rezerwowego),
-> nie szczeniak. Szczeniaka można wybrać **tylko ręcznie** w edytorze przerwy. Cel: przy ~11 rezerwowych
-> ~12 połówek i zero szczeniaków; pełne pokrycie daje np. **6 manewrowych na A11** (lub 5 na A11 + 2 indziej).
+> **Automat nadaje TYLKO całe i połówki** (`AUTO_KINDS` = cała/połówka). Godzinka i szczeniak — **tylko
+> ręcznie** w edytorze. Godzinka: większy wysiłek planistyczny i ryzyko przy awarii; szczeniak: za słaby.
+> Gdy całą/połówką się nie da → BRAK (sygnał do ręcznej obsady), nie godzinka/szczeniak. A11 uciągnie nawet
+> ~30 połówek na 5 maszynistów, więc całe trzymamy poza A11, a połówki na A11.
 „godzinka" liczona jak połówka/szczeniak (powrót w przeciwnym kierunku), ale do dalszego krańca:
 A7→Młociny ≈ 58 min, A18→Kabaty ≈ 62–66 min (realnie z rozkładu).
 
@@ -166,13 +167,13 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
 - Pakowanie: najpierw dobijamy najczęściej używanego rezerwowego, świeżych zostawiamy na trudniejsze,
   późniejsze obiegi.
 - Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.
-- **Kolejność — BOTTLENECK FIRST:** najpierw obiegi z **połówką/godzinką/szczeniakiem** (możliwe tylko na
-  A11/A7/A18 — najbardziej ograniczone), potem z **całą** (elastyczne, mają wiele stacji). Dzięki temu
+- **Kolejność — BOTTLENECK FIRST:** najpierw obiegi z **połówką** (możliwe tylko na A11 — najbardziej
+  ograniczone), potem z **całą** (elastyczne, mają wiele stacji). Dzięki temu
   połówki zajmują moc A11, zanim całe-nadmiar ją wezmą. W grupie — najmniej slotów najpierw, dalej
   najwcześniejszy zjazd, S przed full przed D. (Dawniej: całe pierwsze — przy ciasnej mocy A11 robiło BRAK.)
 - **Pokrycie (R9) jest nadrzędne:** każdy obieg dostaje ≥ 1 przerwę. Najpierw `tryAssign` (preferowany rodzaj,
   okno ≤ 18:20). Gdy nie złapie wolnego rezerwowego — **pokrycie awaryjne** (`tryCover`): zejście na krótszy
-  rodzaj (godzinka/połówka — **bez szczeniaka**), **to samo okno ≤ 18:20** (jedyna przerwa nie później).
+  rodzaj (**połówka** — bez godzinki i szczeniaka), **to samo okno ≤ 18:20** (jedyna przerwa nie później).
 - **Pass naprawczy (eviction)** — po pokryciu, przed R16: dla każdego BRAK obiegu silnik próbuje **zwolnić
   rezerwowego**, przenosząc jego dotychczasową (jedyną) podmianę na innego wolnego (`placeElsewhere`), po czym
   obsadza BRAK. Domyka pokrycie tam, gdzie greedy zostawił BRAK mimo wolnej mocy (elastyczny obieg na końcu).
