@@ -197,21 +197,17 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   );
   const deficit = obiegi.length - capacity;
 
-  // PRÓG POŁÓWKI (R10/E3) — liczony na realnych kołach 2. zmiany (countLoops2nd), bez sztywnej listy S:
-  //   • ≤ 3 koła  → połówka ZAWSZE (twardy próg), niezależnie od liczby rezerwowych,
-  //   • 3–4 koła  → ELASTYCZNIE: przy nadwyżce rezerwy → cała; przy deficycie schodzą na połówkę,
-  //   • > 4 koła  → cała ZAWSZE (deficyt nigdy nie spycha ich na połówkę),
-  //   • Infinity (jazda po 21:00 / całodobowe) → cała (poza kwalifikacją).
-  const POL_HARD_LOOPS = 3;     // ≤3 koła = połówka bezwarunkowo
-  const POL_ELASTIC_LOOPS = 4;  // 3–4 koła = kandydat na połówkę tylko przy deficycie
+  // LICZBA POŁÓWEK — reguła bilansu (potwierdzona 2026-06-08): **połówek = 2 × DEFICYT**. Na jednego
+  // rezerwowego mieści się 6 połówek zamiast 3 całych, więc każda para połówek (zamiast całej) obsługuje
+  // o JEDEN obieg więcej → 2×deficyt połówek domyka pokrycie dla WSZYSTKICH przy STAŁEJ liczbie rezerwowych
+  // (nie dodajemy ludzi — to stan na dany dzień). Twardy próg: obiegi ≤3 koła = połówka ZAWSZE (szczyty),
+  // nawet bez deficytu. Połówki dostają obiegi z NAJMNIEJSZĄ liczbą kół. Całodobowe / jazda po 21:00
+  // (loops = ∞) nie kwalifikują się (zawsze cała). Godzinki (4 zamiast 3) to alternatywa w pokryciu awaryjnym.
+  const POL_HARD_LOOPS = 3; // ≤3 koła = połówka bezwarunkowo
   const polEligible = (o: Obieg) => !forced[o.id] && Number.isFinite(o.loops);
+  const eligibleCount = obiegi.filter(polEligible).length;
   const hardPol = obiegi.filter((o) => polEligible(o) && o.loops <= POL_HARD_LOOPS).length;
-  const elasticPol = obiegi.filter(
-    (o) => polEligible(o) && o.loops > POL_HARD_LOOPS && o.loops <= POL_ELASTIC_LOOPS
-  ).length;
-  // deficyt zwiększa liczbę połówek o 2× deficyt, ale tylko w obrębie pasma elastycznego
-  // (cap = hardPol + elasticPol); nadwyżka (deficyt ≤ 0) → polCount = hardPol (same twarde ≤3).
-  const polCount = Math.min(hardPol + elasticPol, Math.max(hardPol, Math.max(0, deficit * 2)));
+  const polCount = Math.min(eligibleCount, Math.max(hardPol, Math.max(0, deficit) * 2));
   // połówki dostają obiegi z NAJMNIEJSZĄ liczbą kół (szczyty); kolejność z rozkładu, bez sztywnej listy (D7).
   const autoPolowka = new Set(
     [...obiegi]
@@ -493,6 +489,9 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     jobs.sort((x, y) => x.startT - y.startT);
     for (let i = 1; i < jobs.length; i++) {
       const prev = jobs[i - 1], cur = jobs[i];
+      // KRAŃCÓWKI (A1 Kabaty, A23 Młociny): oba kierunki odjeżdżają z krańca, pociąg i tak tam zawraca —
+      // nie ma „przeskoku na drugi tor". Dlatego nie oznaczamy crossTrack, gdy kolejną wsiada na krańcówce.
+      if (cur.station === "A1" || cur.station === "A23") continue;
       const handoverDir = returnsOppositeTrack(prev.kind) ? opp(prev.dir) : prev.dir; // gdzie stoi po oddaniu
       const gap = cur.startT - (prev.startT + prev.durationMin * 60);               // czas na przejście
       if (cur.dir !== handoverDir && gap <= XFER) cur.crossTrack = true;            // inny peron + ciasno
