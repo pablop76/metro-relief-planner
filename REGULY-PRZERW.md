@@ -90,7 +90,7 @@ Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). Dozwolone kombinacje:
 - **cała + połówka** — dowolna kolejność; **najlepsza** kombinacja.
 - **połówka + połówka** — rozsunięte ~2,5 h (`SPACING_POLOWKI`).
 - **cała + cała** — dozwolona, gdy trzeba dobić rezerwowego do pełnych 3 kół (pokrycie już zapewnione).
-- **szczeniak** jako dokładka — ostateczność.
+- **godzinka** dopuszczalna jako dokładka. **Szczeniak NIE jest dokładany automatycznie** (patrz niżej).
 
 Pozostałe kombinacje kładzione blisko powrotu maszynisty (mały odstęp).
 
@@ -110,6 +110,11 @@ Konfiguracja w [`src/lib/stations.ts`](src/lib/stations.ts) / `data/stations.jso
 
 Rodzaje wg długości: **cała** (~90 min, pełna pętla) > **godzinka** (~1h, jazda do dalszego krańca
 i powrót) > **połówka** (~45 min) > **szczeniak** (~30 min, krótki nawrót do bliższego krańca).
+
+> **Szczeniak NIE jest nadawany automatycznie** (`AUTO_KINDS` = cała/godzinka/połówka). Jest za słabą
+> podmianą — silnik woli połówkę, ewentualnie godzinkę; gdy nic nie pasuje → BRAK (dodać rezerwowego),
+> nie szczeniak. Szczeniaka można wybrać **tylko ręcznie** w edytorze przerwy. Cel: przy ~11 rezerwowych
+> ~12 połówek i zero szczeniaków; pełne pokrycie daje np. **6 manewrowych na A11** (lub 5 na A11 + 2 indziej).
 „godzinka" liczona jak połówka/szczeniak (powrót w przeciwnym kierunku), ale do dalszego krańca:
 A7→Młociny ≈ 58 min, A18→Kabaty ≈ 62–66 min (realnie z rozkładu).
 
@@ -137,9 +142,9 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
 - **Zajętość liczona po INTERWAŁACH** (nie po pojedynczym „busyUntil"): rezerwowy może brać podmiany w
   **dowolnej kolejności czasowej** (np. wczesną całą po wcześniej zaplanowanej późnej połówce), o ile się
   nie nakładają (`freeAt`). To odblokowuje wolną wczesną moc przy planowaniu „bottleneck-first".
-- **SCARCITY A11** (`A11_CALA_PENALTY`): połówka/godzinka/szczeniak są możliwe **tylko na A11**, więc moc A11
-  to wąskie gardło. **Całe są odpychane z A11** dużą karą w `score` (mają alternatywne stacje) — wchodzą na
-  A11 tylko, gdy poza nią nie ma już wolnego rezerwowego (nadmiar). Zostawia to A11 dla połówek.
+- **SCARCITY A11** (`A11_CALA_PENALTY`): **połówka jest możliwa tylko na A11**, więc moc A11 to wąskie gardło.
+  **Całe są odpychane z A11** dużą karą w `score` (mają alternatywne stacje) — wchodzą na A11 tylko, gdy poza
+  nią nie ma już wolnego rezerwowego (nadmiar). Zostawia to A11 dla połówek.
 - Limit obciążenia: **3 całe** liczone w równowartości (cała=1, godzinka=⅔, połówka=0,5, szczeniak=⅓),
   nie w minutach (`MAX_RESERVE_LOAD_EQ`). 3 całe = 6 połówek = 2 całe+2 połówki = 1 cała+4 połówki.
   „Pełny" gdy równowartość ≥ 3.
@@ -160,7 +165,7 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
   najwcześniejszy zjazd, S przed full przed D. (Dawniej: całe pierwsze — przy ciasnej mocy A11 robiło BRAK.)
 - **Pokrycie (R9) jest nadrzędne:** każdy obieg dostaje ≥ 1 przerwę. Najpierw `tryAssign` (preferowany rodzaj,
   okno ≤ 18:20). Gdy nie złapie wolnego rezerwowego — **pokrycie awaryjne** (`tryCover`): zejście na krótszy
-  rodzaj (połówka/szczeniak), **to samo okno ≤ 18:20** (jedyna przerwa nie może być później).
+  rodzaj (godzinka/połówka — **bez szczeniaka**), **to samo okno ≤ 18:20** (jedyna przerwa nie później).
 - **Pass naprawczy (eviction)** — po pokryciu, przed R16: dla każdego BRAK obiegu silnik próbuje **zwolnić
   rezerwowego**, przenosząc jego dotychczasową (jedyną) podmianę na innego wolnego (`placeElsewhere`), po czym
   obsadza BRAK. Domyka pokrycie tam, gdzie greedy zostawił BRAK mimo wolnej mocy (elastyczny obieg na końcu).
