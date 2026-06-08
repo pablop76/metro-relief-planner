@@ -125,10 +125,10 @@ interface RState {
   loadMin: number;  // realne minuty (informacyjnie / do wyświetlania)
   loadEq: number;   // równowartość całych (limit pracy = 3) — cała=1, połówka=0,5, szczeniak=⅓
   count: number;
-  jobs: Array<{ s: number; e: number }>; // zajęte interwały — sprawdzamy realne NAKŁADANIE, nie pojedynczy
-                                         // „busyUntil"; dzięki temu rezerwowy może brać podmiany w DOWOLNEJ
-                                         // kolejności czasowej (np. wczesną CAŁĄ po późnej POŁÓWCE) — kluczowe
-                                         // dla wykorzystania wolnej mocy przy planowaniu bottleneck-first.
+  jobs: Array<{ s: number; e: number; obiegId: string }>; // zajęte interwały (+id obiegu) — sprawdzamy realne
+                                         // NAKŁADANIE, nie pojedynczy „busyUntil"; dzięki temu rezerwowy może brać
+                                         // podmiany w DOWOLNEJ kolejności czasowej (np. wczesną CAŁĄ po późnej
+                                         // POŁÓWCE) — kluczowe dla wolnej mocy przy bottleneck-first. obiegId → pass naprawczy.
   station: BreakStation;
   cap: number;      // limit liczby podmian (R17: rezerwa ruchowa A1 = 1; reszta = Infinity / 3 koła)
 }
@@ -263,7 +263,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const unassigned: string[] = [];
 
   const commit = (o: Obieg, slot: Slot, r: RState, manual = false) => {
-    r.jobs.push({ s: slot.startT, e: slot.startT + slot.durationMin * 60 });
+    r.jobs.push({ s: slot.startT, e: slot.startT + slot.durationMin * 60, obiegId: o.id });
     r.loadMin += slot.durationMin;
     r.loadEq += CALA_EQ[slot.kind];
     r.count += 1;
@@ -354,6 +354,74 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       }];
     }
     unassigned.push(o.id);
+  }
+
+  // 1b. PASS NAPRAWCZY (eviction 1-poziomowy): dla każdego BRAK obiegu spróbuj ZWOLNIĆ rezerwowego,
+  // przenosząc jego dotychczasową (jedyną) podmianę na innego wolnego rezerwowego / inny slot. Greedy bywa
+  // zachłanny i zostawia BRAK mimo istnienia wolnej mocy (elastyczny obieg obsłużony na końcu trafia w czasowo
+  // zapełnione okno ≤18:20). Pass działa PRZED R16, więc każdy obsadzony obieg ma dokładnie 1 przerwę.
+  const removeJob = (r: RState, a: BreakAssignment) => {
+    r.jobs = r.jobs.filter((j) => !(j.s === a.startT && j.e === a.startT + a.durationMin * 60 && j.obiegId === a.obiegId));
+    r.loadMin -= a.durationMin; r.loadEq -= CALA_EQ[a.kind]; r.count -= 1;
+  };
+  // Przenieś pokrycie obiegu o2 GDZIE INDZIEJ (dowolny rodzaj/stacja/rezerwowy), byle nie na `avoidR` w oknie
+  // [aS, aE) (bo to okno ma zwolnić się dla BRAK-obiegu). Zwraca true, gdy o2 dostał nową przerwę.
+  const placeElsewhere = (o2: Obieg, avoidR: RState, aS: number, aE: number): boolean => {
+    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o2)))) {
+      const { floor, hi } = coverWindow(o2, kind);
+      const slots = candidateSlots(o2, kind, floor, hi).sort((a, b) => score(a) - score(b));
+      for (const slot of slots) {
+        const sE = slot.startT + slot.durationMin * 60;
+        const r = pickReserve(rs, slot);
+        if (r && !(r === avoidR && slot.startT < aE && aS < sE)) { commit(o2, slot, r); return true; }
+      }
+    }
+    return false;
+  };
+  const repair = (o: Obieg): boolean => {
+    for (const kind of DOWNGRADE.slice(DOWNGRADE.indexOf(dk(o)))) {
+      const { floor, hi } = coverWindow(o, kind);
+      for (const so of candidateSlots(o, kind, floor, hi).sort((a, b) => score(a) - score(b))) {
+        const soE = so.startT + so.durationMin * 60;
+        for (const r of rs) {
+          if (r.station !== so.station || r.ref.blocked || r.ref.manualOnly) continue;
+          if (r.ref.availFrom != null && so.startT < r.ref.availFrom) continue;
+          if (r.ref.availTo != null && soE > r.ref.availTo) continue;
+          if (!fitsLoad(r.loadEq, so.kind) || r.count >= r.cap) continue; // moc/limit muszą się zgadzać
+          const overlap = r.jobs.filter((j) => so.startT < j.e && j.s < soE);
+          if (overlap.length !== 1) continue; // tylko prosta kolizja: jedna podmiana do przeniesienia
+          const o2 = obiegi.find((x) => x.id === overlap[0].obiegId);
+          const a2 = o2 && (assignments[o2.id] ?? []).find((a) => a.startT === overlap[0].s && a.reserveId === r.ref.id);
+          if (!o2 || !a2 || a2.manual || (assignments[o2.id]?.length ?? 0) !== 1) continue; // nie ruszaj pinów / 2-przerwowych
+          // spróbuj przenieść podmianę o2 — najpierw wycofaj ją, potem szukaj nowego miejsca
+          removeJob(r, a2);
+          assignments[o2.id] = [];
+          const prevFree = driverFreeAt[o2.id]; delete driverFreeAt[o2.id];
+          if (placeElsewhere(o2, r, so.startT, soE)) {
+            const rr = pickReserve(rs, so); // r (lub inny) powinien być teraz wolny na so
+            if (rr) { commit(o, so, rr); return true; }
+            return false; // o2 przeniesiony, ale o i tak się nie zmieścił — zostaw (o2 ok)
+          }
+          // przywróć stan o2
+          assignments[o2.id] = [a2];
+          r.jobs.push({ s: a2.startT, e: a2.startT + a2.durationMin * 60, obiegId: a2.obiegId });
+          r.loadMin += a2.durationMin; r.loadEq += CALA_EQ[a2.kind]; r.count += 1;
+          if (prevFree !== undefined) driverFreeAt[o2.id] = prevFree;
+        }
+      }
+    }
+    return false;
+  };
+  for (const id of [...unassigned]) {
+    const o = obiegi.find((x) => x.id === id);
+    if (!o || (assignments[id] ?? []).some((a) => a.reserveId)) continue;
+    const fallback = assignments[id];
+    assignments[id] = []; // wyczyść slot BRAK, by commit() dodał czysto
+    if (repair(o)) {
+      const i = unassigned.indexOf(id); if (i >= 0) unassigned.splice(i, 1);
+    } else {
+      assignments[id] = fallback ?? []; // przywróć slot BRAK do wyświetlenia
+    }
   }
 
   // 2. R16 — DODATKOWA (druga) przerwa: maks. wykorzystanie rezerwowych, do MAX_BREAKS_PER_OBIEG na obieg.
