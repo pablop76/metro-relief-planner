@@ -6,5 +6,6 @@ dev-dist/
 tools/_extracted/
 tools/_devserver.log
 tools/_verify_engine.ts
+tools/cover_check.ts
 data/_debug_rows.json
 .DS_Store
