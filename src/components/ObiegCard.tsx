@@ -39,6 +39,9 @@ interface Props {
   onTrainChange?: (v: string) => void;
   forceKind?: BreakKind;
   onCycleKind?: () => void;
+  /** ręczne oznaczenie całozmianowy: true/false = override pomocnika, undefined = auto z rozkładu */
+  throughShiftOverride?: boolean;
+  onToggleThroughShift?: () => void;
   /** efektywny próg „nie wcześniej niż" dla tego obiegu (override ?? globalny) */
   earliest: number;
   /** override progu per-obieg (undefined = używa globalnego) */
@@ -46,14 +49,16 @@ interface Props {
   onEarliestChange?: (sec?: number) => void;
 }
 
-export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, trainNo, onTrainChange, forceKind, onCycleKind, earliest, earliestOverride, onEarliestChange }: Props) {
+export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, trainNo, onTrainChange, forceKind, onCycleKind, throughShiftOverride, onToggleThroughShift, earliest, earliestOverride, onEarliestChange }: Props) {
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const entry = afternoonEntry(obieg.events);
   const exit = obieg.events[obieg.events.length - 1];
   const isFull = obieg.type === "full";
 
+  // efektywny „całozmianowy": ręczny override pomocnika ma pierwszeństwo nad auto-wykryciem (zjazd ≥21:00)
+  const effThrough = throughShiftOverride ?? obieg.throughShift;
   const sorted = [...breaks].sort((a, b) => a.startT - b.startT);
-  const loopClass = obieg.throughShift
+  const loopClass = effThrough
     ? "loops-many"
     : obieg.loops <= 3 ? "loops-few" : obieg.loops <= 4 ? "loops-mid" : "loops-many";
 
@@ -103,12 +108,20 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
         <span className="oc-entry">
           {isFull ? <em>całodobowy</em> : <>{HHMMSS(entry.t)} <em>{entry.station}</em></>}
           <span
-            className="oc-loops"
-            title={obieg.throughShift
-              ? "zmiennik na linii / całodobowy — pracuje całą 2. zmianę → cała"
-              : `${obieg.loops.toFixed(2)} koła 2. zmiany (dokładnie)`}
+            className={`oc-loops${effThrough ? " is-through" : ""}${throughShiftOverride != null ? " is-ovr" : ""}`}
+            style={{ cursor: onToggleThroughShift ? "pointer" : undefined }}
+            onClick={(e) => { e.stopPropagation(); onToggleThroughShift?.(); }}
+            title={
+              throughShiftOverride === true
+                ? "RĘCZNIE: całozmianowy → zawsze cała (priorytet). Klik: wymuś zwykły"
+                : throughShiftOverride === false
+                ? "RĘCZNIE: zwykły (mimo auto-wykrycia). Klik: wróć do auto"
+                : obieg.throughShift
+                ? "AUTO: całozmianowy (zjazd ≥21:00) → cała. Klik: wymuś zwykły"
+                : `AUTO: ${obieg.loops.toFixed(2)} koła 2. zmiany. Klik: oznacz jako całozmianowy`
+            }
           >
-            🔁{obieg.throughShift ? "cała zm." : obieg.loops.toFixed(1)}
+            🔁{effThrough ? "cała zm." : obieg.loops.toFixed(1)}{throughShiftOverride != null ? "✋" : ""}
           </span>
           <span className="oc-lap" title={`czas jednego koła (mediana z rozkładu): ${obieg.lapMin} min`}>
             ⏱{obieg.lapMin}′

@@ -22,6 +22,7 @@ const LS = {
   sbCol: "pm_sb_col",
   trains: "pm_trains",
   forceKind: "pm_forcekind",
+  throughShift: "pm_throughshift",
   rows: "pm_rows",
   earliest: "pm_earliest",
   earliestStation: "pm_earliest_station",
@@ -83,6 +84,10 @@ export default function App() {
   );
   const [forceKind, setForceKind] = useState<Record<string, BreakKind>>(() =>
     loadLS<Record<string, BreakKind>>(LS.forceKind, {})
+  );
+  // ręczne oznaczenie obiegu jako całozmianowy (ustawia pomocnik): true/false = override, brak = auto
+  const [throughShiftBy, setThroughShiftBy] = useState<Record<string, boolean>>(() =>
+    loadLS<Record<string, boolean>>(LS.throughShift, {})
   );
   const [rows, setRows] = useState<number>(() => loadLS<number>(LS.rows, 2));
   const [globalDelay, setGlobalDelay] = useState<number>(() => loadLS<number>(LS.delay, 0));
@@ -194,10 +199,11 @@ export default function App() {
 
   const [planDirty, setPlanDirty] = useState(false);
 
-  const generate = (currentManual = manual, currentForce = forceKind) => {
+  const generate = (currentManual = manual, currentForce = forceKind, currentThrough = throughShiftBy) => {
     if (!delayed.length) return;
     const res = planBreaks(delayed, reserves, {
       forcedKinds: currentForce,
+      throughShiftOverride: currentThrough,
       earliest: earliestStart,
       earliestByStation,
       earliestByObieg,
@@ -218,6 +224,17 @@ export default function App() {
     else delete next[id];
     setForceKind(next);
     generate(manual, next);
+  };
+
+  // ręczny mark całozmianowy: auto → wymuś całozmianowy (true) → wymuś zwykły (false) → auto; przelicza
+  const cycleThroughShift = (id: string) => {
+    const cur = throughShiftBy[id];
+    const next = { ...throughShiftBy };
+    if (cur === undefined) next[id] = true;
+    else if (cur === true) next[id] = false;
+    else delete next[id];
+    setThroughShiftBy(next);
+    generate(manual, forceKind, next);
   };
 
   // generuj plan automatycznie tylko gdy zmieni się ROZKŁAD/dzień (nie przy zmianie rezerwowych)
@@ -241,6 +258,7 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.order, JSON.stringify(order)), [order]);
   useEffect(() => localStorage.setItem(LS.trains, JSON.stringify(trainNumbers)), [trainNumbers]);
   useEffect(() => localStorage.setItem(LS.forceKind, JSON.stringify(forceKind)), [forceKind]);
+  useEffect(() => localStorage.setItem(LS.throughShift, JSON.stringify(throughShiftBy)), [throughShiftBy]);
   useEffect(() => localStorage.setItem(LS.rows, JSON.stringify(rows)), [rows]);
   useEffect(() => localStorage.setItem(LS.earliest, JSON.stringify(earliestStart)), [earliestStart]);
   useEffect(() => localStorage.setItem(LS.earliestStation, JSON.stringify(earliestByStation)), [earliestByStation]);
@@ -266,7 +284,7 @@ export default function App() {
 
   const resetManual = () => {
     setManual({});
-    const res = planBreaks(delayed, reserves, { forcedKinds: forceKind, earliest: earliestStart, earliestByStation, earliestByObieg });
+    const res = planBreaks(delayed, reserves, { forcedKinds: forceKind, throughShiftOverride: throughShiftBy, earliest: earliestStart, earliestByStation, earliestByObieg });
     setAssignments(res.assignments);
   };
 
@@ -520,6 +538,8 @@ export default function App() {
                   onTrainChange={(v) => setTrainNumbers((t) => ({ ...t, [o.id]: v }))}
                   forceKind={forceKind[o.id]}
                   onCycleKind={() => cycleKind(o.id)}
+                  throughShiftOverride={throughShiftBy[o.id]}
+                  onToggleThroughShift={() => cycleThroughShift(o.id)}
                   earliest={earliestByObieg[o.id] ?? earliestStart}
                   earliestOverride={earliestByObieg[o.id]}
                   onEarliestChange={(sec) => setObiegEarliest(o.id, sec)}

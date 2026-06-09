@@ -52,17 +52,21 @@ zmienia go ktoś na linii.
 
 ## 2. Rodzaj przerwy (połówka vs cała)
 
-Decyduje liczba kół (`planBreaks`) — **SPRAWIEDLIWOŚĆ: przerwa proporcjonalna do pracy** (2026-06-08):
+Decyduje liczba kół (`planBreaks`) — **BILANS NADRZĘDNY + sprawiedliwość** (2026-06-08/09):
 
-- **PRÓG SZCZYTU: ≤ 4 koła = POŁÓWKA** (`POL_LOOPS`). Prawdziwy szczyt pracuje krótko → połowa wystarczy.
-- **> 4 koła oraz CAŁODOBOWE (`Infinity`, jazda po 21:00) = PEŁNA PRZERWA** — **cała** (poza A11), a na A11
-  **2 połówki** (= równowartość całej; patrz „rozbicie" niżej). Pracują długo → pojedyncza połówka dla
-  ~5-kołowego/całodobowego byłaby **NIESPRAWIEDLIWA** (nigdy tego nie robimy automatem).
+- **DOMYŚLNIE każdy obieg = PEŁNA PRZERWA (cała).** „Daj jak najwięcej całych." Przy nadwyżce mocy nawet
+  szczyt 3–4 koła dostaje całą (niekoniecznie na A11 — patrz uwaga niżej).
+- **TWARDY próg: ≤ 3 koła = POŁÓWKA ZAWSZE** (`HARD_POL_LOOPS`, R10 E3). To JEDYNE wymuszone połówki przy
+  nadwyżce (w realnych danych zbiór bywa pusty — najniższy szczyt ≈ 3,4 koła → przy nadwyżce wszyscy = cała).
+- **CAŁOZMIANOWY = jak całodobowy** (`isThrough`): auto (`throughShift`, zjazd ≥ 21:00, `Infinity`) **lub
+  ręczne wskazanie pomocnika** (`throughShiftOverride`, znaczek 🔁 w `ObiegCard`). ZAWSZE cała (wykluczony
+  z racjonowania), priorytet pokrycia, kosztem szczytów (uwaga użytkownika: „nie może mieć pół, gdy jest
+  możliwość na całą kosztem szczytów").
 - **BILANS MOCY:** `moc = Σ min(3, capOf)` po rezerwowych **BEZ rezerwy ruchowej A1** (Kopyt — jego 1 koło to
   bufor pod ręką, R17, nie planowana moc; tak liczy pomocnik: „10 do pełnej dyspozycji = 30"). Zapotrzebowanie
   `eq = Σ (połówka 0,5 / pełna 1,0)`. Gdy `eq > moc` → **RACJONOWANIE**.
 - **RACJONOWANIE (cięcie wg kół):** gdy mocy brak, tniemy całe→połówki **NAJMNIEJ KÓŁ NAJPIERW** (rozszerzamy
-  zbiór połówek w górę po kołach), aż `eq ≤ moc`. Najbliższy progu (np. 4,39) cięty przed prawdziwym
+  zbiór połówek w górę po kołach od >3), aż `eq ≤ moc`. Najbliższy progu cięty przed prawdziwym
   długodystansowcem. Bilans jest nadrzędny: jeśli matematycznie się mieści — silnik to upakowuje; jeśli nie —
   cięcie wg kół, a w ostateczności BRAK (sygnał „dodać rezerwowego"), **nie** krzywdząca połówka dla wysokokołowego.
 - **„ROZBICIE" całej na A11:** na A11 **automat nie nadaje całych** — pełną przerwę długodystansowca daje jako
@@ -90,19 +94,23 @@ Decyduje liczba kół (`planBreaks`) — **SPRAWIEDLIWOŚĆ: przerwa proporcjona
     min(18:20, entry2nd + 6 h)`. To samo okno obowiązuje w pokryciu awaryjnym (`tryCover`).
   - **2. (dodatkowa) przerwa** — okno dłuższe, do **20:00** (`LATEST_SECOND`); realnie limituje ją
     zjazd pociągu (musi wrócić, zanim zjedzie — patrz §1).
-- **§4a krok 4** (`coverWindow`): szczyt z samą połówką (`kind = połówka`) nie dostaje jej na 1. kole —
-  dół okna = **entry2nd + 1 koło**, góra = **18:15** (`ONLY_POL_LATEST`). Dotyczy też połówki nadanej awaryjnie.
+- **§4a krok 4** (`coverWindow`, próg `POL_LATE_LOOPS = 3,5`): **samotna połówka obiegu ≥ 3,5 koła NIE może
+  być pierwszą podmianą** — dół okna = **entry2nd + 1 koło**, góra = **18:15** (`ONLY_POL_LATEST`). Obieg
+  **< 3,5 koła** (drobny szczyt) MOŻE mieć połówkę wcześnie (od progu z ustawień). Decyzja użytkownika 2026-06-09.
 
 ### 3a. Druga (dodatkowa) przerwa — kombinacje
 
-Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). Dozwolone kombinacje:
+Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). R16 = DWIE FAZY (bramka: **brak realnego BRAK**),
+**NIGDY 2×cała** (decyzja użytkownika 2026-06-09):
 
-- **cała + połówka** — dowolna kolejność; **najlepsza** kombinacja.
-- **połówka + połówka** — rozsunięte ~2,5 h (`SPACING_POLOWKI`).
-- **cała + cała** — dozwolona, gdy trzeba dobić rezerwowego do pełnych 3 kół (pokrycie już zapewnione).
+- **PASS A — „dobij WSZYSTKIM do całej":** obieg, któremu należy się pełna przerwa (`dk = cała`), a ma dopiero
+  JEDNĄ połówkę@A11 (overflow z fazy 3) → dostaje **2. połówkę → 2×½ = pełna** (rozsunięte ~2,5 h,
+  `SPACING_POLOWKI`). Eliminuje to „obiegi z połówką".
+- **PASS B — „leftover → PÓŁTOREJ":** gdy po Pass A moc jeszcze została **i nikt nie jest bez pełnej przerwy**
+  (`lacksFull`), obiegowi z **jedną CAŁĄ** dokładamy **połówkę** (= 1,5), w kolejności **malejąco po kołach**
+  (całozmianowe/najdłuższe pierwsze — pracują najdłużej, R3). **2×cała się NIE robi** (uwaga 4), a 1,5 nie
+  rusza, dopóki ktokolwiek nie ma choć jednej całej.
 - Dokładki tylko **cała / połówka**. **Godzinka i szczeniak NIE są dokładane automatycznie** (patrz niżej).
-
-Pozostałe kombinacje kładzione blisko powrotu maszynisty (mały odstęp).
 
 ---
 
@@ -165,20 +173,20 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
   **domyślnie 1** podmianę i zostaje pod ręką (R17). Wskazanie: jawny flag `Reserve.rolling` (checkbox w panelu) >
   pierwszy niezablokowany rezerwowy A1. **Pozostali rezerwowi A1 pracują normalnie do 3 kół**. Inne stacje:
   bez limitu liczby (ogranicza je tylko 3 koła). Ręczny `Reserve.maxJobs` zawsze nadpisuje.
-- **Maksymalne wykorzystanie:** dodatkowe przerwy (R16) rozdawane są tak, by dobić każdego rezerwowego
-  (poza A1) do **pełnych 3 kół**. Dlatego druga **cała** jest dozwolona zawsze (nie tylko przy nadmiarze)
-  — pokrycie (R9) jest już zapewnione wcześniej, a BRAK = brak rezerwowego na danej stacji (R14), więc
-  dokładanie 2. przerwy gdzie indziej nie odbiera nikomu pokrycia.
+- **Wykorzystanie nadmiaru (R16):** najpierw Pass A dobija WSZYSTKICH do pełnej przerwy (samotne połówki →
+  2×½), a leftover idzie na **półtorej** (cała+połówka) dla najdłuższych — **nigdy 2×cała** i nigdy 1,5,
+  póki ktoś nie ma choć jednej całej (patrz §3a).
 - Pakowanie: najpierw dobijamy najczęściej używanego rezerwowego, świeżych zostawiamy na trudniejsze,
   późniejsze obiegi.
 - Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.
 - **Kolejność — CAŁE PIERWSZE (FAZY, jak liczy pomocnik instruktora §4a krok2→3):**
-  - **FAZA 1:** CAŁE **poza A11** (A1/A7/A18/A23). W obrębie całych **CAŁODOBOWE pierwsze** (`criticalRank` —
-    jeżdżą całą dobę, można je obsadzić tylko całą, najmniej alternatyw). Nadmiar, który nie wszedł poza A11,
-    czeka na fazę 3 (NIE zajmuje A11 przed szczytami).
+  - **FAZA 1:** CAŁE **poza A11** (A1/A7/A18/A23). W obrębie całych: **CAŁOZMIANOWE/całodobowe pierwsze**
+    (`criticalRank`, `isThrough`), potem **MALEJĄCO PO KOŁACH** (`loopKey`) — długodystansowce zajmują całe
+    off-A11 przed szczytami (uwaga 5). Nadmiar, który nie wszedł poza A11, czeka na fazę 3.
   - **FAZA 2:** dedykowane **POŁÓWKI szczytów na A11** — zajmują A11, zanim wejdzie tam nadmiar całych.
-  - **FAZA 3:** nadmiar całych → **pełna przerwa na A11** (cała@A11), bo to długodystansowcy; nie dostają
-    pojedynczej połówki. Gdy się nie zmieści → BRAK.
+  - **FAZA 3:** nadmiar całych → cała na **dowolnej wolnej stacji off-A11**; gdy brak → **połówka@A11**
+    (1. połowa; R16/Pass A dopełnia do 2×½ = pełna). **Automat NIE stawia cała@A11** (A11 = rozbicie na 2×½,
+    uwaga 3). Gdy nic nie wchodzi → BRAK.
   - **NAWRÓT (cięcie wg kół):** jeśli mimo to został BRAK, tnij następnego najmniej-kołowego z całych na połówkę
     (`forcedKinds`) i przelicz od nowa; bierz wynik tylko, gdy zmniejsza BRAK. (Dawniej: bottleneck-first =
     połówki/szczyty PIERWSZE — przez to całodobowe szły na BRAK, a szczyty dostawały po 2 przerwy.)
@@ -189,5 +197,6 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
   rezerwowego**, przenosząc jego dotychczasową (jedyną) podmianę na innego wolnego (`placeElsewhere`), po czym
   obsadza BRAK. **Relokacja ZACHOWUJE wielkość przerwy** (długodystansowiec → cała, szczyt → połówka — eviction
   nie krzywdzi nikogo połówką). Dopiero gdy i to nie pomoże → **BRAK** (dodać rezerwowego na stacji z deficytem).
-- **Dodatkowe (2.) przerwy z R16 rozdawane są DOPIERO przy 0 BRAK** (bramka `hasBrak`): dopóki ktoś jest bez
-  przerwy, nikt nie dostaje luksusowej dokładki (inaczej szczyt miałby 2 przerwy, a całodobowy 0).
+- **R16 DOPIERO przy 0 BRAK** (bramka `hasBrak`); dodatkowo **półtorej (Pass B) DOPIERO przy 0 „braku pełnej
+  przerwy"** (`lacksFull`) — dopóki ktoś nie ma całej (samotna połówka obiegu `dk=cała`), nikt nie dostaje
+  luksusu 1,5 (uwaga 4). Najpierw wszyscy do pełnej, dopiero potem 1,5 dla najdłuższych.

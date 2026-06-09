@@ -63,6 +63,9 @@ export interface PlanOptions {
   centrumEnabled?: boolean;
   /** ręcznie wymuszony rodzaj przerwy dla obiegu (klucz = id); brak = auto */
   forcedKinds?: Record<string, BreakKind>;
+  /** ręczne oznaczenie obiegu jako CAŁOZMIANOWY (ustawia pomocnik): true = wymuś (jak całodobowy →
+   *  zawsze cała, priorytet), false = wymuś zwykły (mimo auto-wykrycia), brak klucza = auto z rozkładu. */
+  throughShiftOverride?: Record<string, boolean>;
 }
 
 /** Wjazd na linię po południu: pierwsze zdarzenie po przerwie >60 min (po 12:00), inaczej pierwsze. */
@@ -174,16 +177,22 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const floorOf = (o: Obieg, s: BreakStation) => opts.earliestByObieg?.[o.id] ?? stationEarliest(s);
   // scarcity: odepchnij CAŁE z A11 (A11 zostawiamy na połówki — jedyne miejsce, gdzie są możliwe)
   const scarcity = (s: Slot) => (s.kind === "cała" && s.station === "A11" ? A11_CALA_PENALTY : 0);
-  // SCORE (mniejszy = lepszy): po scarcity preferuj OKNO PREFERENCJI 16:00–17:30 (R2, decyzja użytkownika
-  // 2026-06-09: „zacznij przerwy według preferencji"). Slot w oknie = 0; poza oknem = odległość do najbliższej
-  // krawędzi okna. Dzięki temu przerwy klastrują się ~16:00–17:30, a do wczesnych godzin (14:30/15:xx) silnik
-  // schodzi DOPIERO gdy serializacja rezerwowego (jeden maszynista = jeden pociąg naraz) i pokrycie tego
-  // wymagają — nie „dla zasady". (Dawniej: najwcześniej-od-progu → 8 przerw startowało o 14:30 wbrew R2.)
-  const distWindow = (t: number) =>
-    t < PREF_WINDOW[0] ? PREF_WINDOW[0] - t : t > PREF_WINDOW[1] ? t - PREF_WINDOW[1] : 0;
+  // SCORE (mniejszy = lepszy): po scarcity preferuj NAJWCZEŚNIEJSZY slot OD PROGU STARTU stacji w górę.
+  // Próg = USTAWIENIE „najwcześniej" (opts.earliest / per-stacja) — to ono steruje, kiedy ruszają przerwy
+  // (decyzja użytkownika 2026-06-09: „start przerw określony w ustawieniach"). NIE narzucamy sztywnego okna
+  // 16–17:30 — pomocnik sam ustawia próg. Wczesne starty (np. 14:30) to świadomy wybór ustawienia, a osobny
+  // próg 3,5 koła (patrz coverWindow) pilnuje, by SAMOTNA połówka długodystansowca nie była pierwszą podmianą.
+  // opts.pref = stary „magnes" na konkretną godzinę (back-compat, nieużywany przez UI).
   const score = (s: Slot) =>
-    opts.pref != null ? Math.abs(s.startT - opts.pref) : scarcity(s) + distWindow(s.startT);
+    opts.pref != null ? Math.abs(s.startT - opts.pref) : scarcity(s) + (s.startT - stationEarliest(s.station));
   const forced = opts.forcedKinds ?? {};
+  // CAŁOZMIANOWY (throughShift) — auto z rozkładu (zjazd ≥ 21:00 → loops=∞) LUB ręczne wskazanie pomocnika
+  // (override). Taki obieg traktujemy jak całodobowy: ZAWSZE cała (wykluczony z racjonowania), priorytet
+  // pokrycia (criticalRank), a do sortowania „najdłuższe pierwsze" jego efektywne koła = ∞.
+  const isThrough = (o: Obieg) => opts.throughShiftOverride?.[o.id] ?? o.throughShift;
+  const effLoops = (o: Obieg) => (isThrough(o) ? Infinity : o.loops);
+  // klucz sortowania malejąco po kołach (∞ → największy); dwa ∞ = remis (rozstrzyga dalszy tie-break)
+  const loopKey = (o: Obieg) => (Number.isFinite(effLoops(o)) ? effLoops(o) : 1e9);
 
   // R17 — wskazanie rezerwy ruchowej A1 (limit 1 koło): jawny flag `rolling` > pierwszy niezablokowany
   // rezerwowy A1. Pozostali rezerwowi A1 = bez limitu liczby (ogranicza ich tylko 3 koła, fitsLoad).
@@ -195,17 +204,19 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     r.maxJobs ?? (r.id === rollingA1Id ? A1_MOBILE_MAX_JOBS : Infinity);
 
 
-  // RODZAJ PRZERWY — SPRAWIEDLIWOŚĆ wg liczby kół (decyzja użytkownika 2026-06-08):
-  // • ≤ 4 koła = PRAWDZIWY SZCZYT → POŁÓWKA (pracuje krótko, połowa wystarczy).
-  // • > 4 koła oraz CAŁODOBOWE (loops = ∞) → PEŁNA PRZERWA (cała, a na A11 — 2 połówki). Pracują długo,
-  //   należy im się całość; pojedyncza połówka dla ~5-kołowego byłaby NIESPRAWIEDLIWA.
-  // RACJONOWANIE przy deficycie: gdy mocy nie starcza na pełne przerwy dla wszystkich >4 kół, TNIEMY całe
-  // na połówki kierując się „NAJMNIEJ kół najpierw" — rozszerzamy zbiór połówek W GÓRĘ po kołach, aż
-  // zapotrzebowanie (eq) zejdzie do dostępnej mocy. (Bilans nadrzędny: jeśli matematycznie się mieści —
-  // silnik musi to upakować; jeśli nie — cięcie wg kół, nie losowo.) Każde cięcie cała→połówka = −0,5 eq.
-  const POL_LOOPS = 4; // ≤ 4 koła = szczyt (połówka)
+  // RODZAJ PRZERWY — BILANS NADRZĘDNY + sprawiedliwość wg kół (decyzja użytkownika 2026-06-08/09):
+  // • Domyślnie KAŻDY obieg dostaje PEŁNĄ przerwę (cała; na A11 — 2 połówki). „Daj jak najwięcej całych."
+  // • TWARDY próg (R10 E3): ≤ 3 koła = POŁÓWKA ZAWSZE (pracuje krótko, pełna by się nie zmieściła / byłaby
+  //   marnotrawstwem). To JEDYNE połówki przy NADWYŻCE mocy — reszta (w tym szczyty 3–4 koła) dostaje pełną.
+  // RACJONOWANIE przy DEFICYCIE: gdy mocy nie starcza na pełne przerwy dla wszystkich >3 kół, TNIEMY całe na
+  // połówki „NAJMNIEJ kół najpierw" — rozszerzamy zbiór połówek W GÓRĘ po kołach (najpierw 4-kołowe szczyty,
+  // potem wyżej), aż zapotrzebowanie (eq) zejdzie do dostępnej mocy. (Bilans nadrzędny: jeśli matematycznie
+  // się mieści — silnik musi upakować; jeśli nie — cięcie wg kół, nie losowo.) Każde cięcie cała→połówka = −0,5 eq.
+  // KLUCZOWE: próg jest BILANSOWY, nie sztywny — przy nadwyżce rezerwowych 4-kołowy szczyt dostaje CAŁĄ
+  // (eliminuje to „obiegi z połówką", gdy moc pozwala na pełne), a dopiero deficyt schodzi na połówki od dołu.
+  const HARD_POL_LOOPS = 3; // ≤ 3 koła = połówka ZAWSZE (twardy próg R10 E3)
   const eligible = [...obiegi]
-    .filter((o) => !forced[o.id] && Number.isFinite(o.loops))
+    .filter((o) => !forced[o.id] && !isThrough(o) && Number.isFinite(o.loops)) // całozmianowe poza racjonowaniem
     .sort((a, b) => a.loops - b.loops || a.firstT - b.firstT);
   // MOC do bilansu = rezerwowi „do pełnej dyspozycji" × 3 koła. Rezerwa ruchowa A1 (Kopyt, rollingA1Id) NIE
   // wchodzi do mocy — jej 1 koło to bufor pod ręką (R17), nie planowana moc. Dzięki temu bilans = 10×3 = 30
@@ -213,13 +224,13 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const capacity = reserves.reduce(
     (s, r) => s + (r.blocked || r.id === rollingA1Id ? 0 : Math.min(MAX_RESERVE_LOAD_EQ, capOf(r))), 0
   );
-  const autoPolowka = new Set(eligible.filter((o) => o.loops <= POL_LOOPS).map((o) => o.id));
+  const autoPolowka = new Set(eligible.filter((o) => o.loops <= HARD_POL_LOOPS).map((o) => o.id));
   // eqDemand respektuje też RĘCZNE/NAWROTOWE cięcia (forced=połówka) — patrz RETRY niżej
   const eqDemand = () => obiegi.reduce((s, o) => s + (forced[o.id] === "połówka" || autoPolowka.has(o.id) ? 0.5 : 1), 0);
   for (const o of eligible) {
-    if (o.loops <= POL_LOOPS) continue;        // szczyty już są połówkami
-    if (eqDemand() <= capacity) break;          // bilans się spina → nie tnij więcej
-    autoPolowka.add(o.id);                       // deficyt: utnij temu (najmniej kół z pozostałych) → połówka
+    if (o.loops <= HARD_POL_LOOPS) continue;     // ≤3 koła już są połówkami (twardy próg)
+    if (eqDemand() <= capacity) break;            // bilans się spina (nadwyżka) → nie tnij więcej, reszta = całe
+    autoPolowka.add(o.id);                         // deficyt: utnij temu (najmniej kół z pozostałych) → połówka
   }
   const dk = (o: Obieg) => forced[o.id] ?? (autoPolowka.has(o.id) ? "połówka" : "cała"); // ręczny mark > auto
 
@@ -229,9 +240,13 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // dodatkowo ≥ 1. pełne koło (§4a krok4: „tylko połówka NIE na 1. kole"). Góra = min(18:20, start+6h)
   // (reguła „jedyna przerwa ≤ 18:20"); połówka jako jedyna też ≤ 18:15 (ONLY_POL_LATEST). 2. (dodatkowa)
   // przerwa NIE używa tego okna — ma własne, szersze (R16, do LATEST_SECOND).
+  // Próg „samotna połówka nie pierwsza" (decyzja użytkownika 2026-06-09): obieg robiący ≥ 3,5 koła nie może
+  // dostać połówki jako PIERWSZEJ podmiany — dopiero po 1. pełnym kole (entry2nd + koło). Obieg < 3,5 koła
+  // (drobny szczyt) może mieć połówkę wcześnie, od progu z ustawień.
+  const POL_LATE_LOOPS = 3.5;
   const coverWindow = (o: Obieg, kind: BreakKind): { floor: (s: BreakStation) => number; hi: number } => {
     if (kind === "połówka") {
-      const polLo = o.entry2nd + o.lapMin * 60;
+      const polLo = effLoops(o) >= POL_LATE_LOOPS ? o.entry2nd + o.lapMin * 60 : 0; // <3,5 → bez opóźnienia
       return { floor: (s) => Math.max(floorOf(o, s), polLo), hi: Math.min(latestFirstOf(o), ONLY_POL_LATEST) };
     }
     return { floor: (s) => floorOf(o, s), hi: latestFirstOf(o) };
@@ -256,7 +271,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // przez to całodobowe trafiały na sam koniec i szły na BRAK, a szczyty dostawały po 2 przerwy.)
   // Połówki na A11 i tak pilnuje scarcity (A11_CALA_PENALTY odpycha całe) + coverWindow (§4a krok4).
   const kindRank = (o: Obieg) => (dk(o) === "cała" ? 0 : 1); // CAŁA przed połówką (krok2 przed krok3)
-  const criticalRank = (o: Obieg) => (!Number.isFinite(o.loops) || o.throughShift ? 0 : 1); // całodobowe najpierw
+  const criticalRank = (o: Obieg) => (isThrough(o) || !Number.isFinite(o.loops) ? 0 : 1); // całozmianowe najpierw
   const typeRank = (o: Obieg) => (o.type === "S" ? 0 : o.type === "full" ? 1 : 2);
   const numOf = (id: string) => parseInt(id.replace(/\D/g, ""), 10) || 0;
   const slotCount = (o: Obieg) =>
@@ -264,10 +279,14 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       const { floor, hi } = coverWindow(o, k);
       return n + autoSlots(o, k, floor, hi).length;
     }, 0);
+  // Wśród CAŁYCH (po criticalRank) — NAJDŁUŻSZE pierwsze (malejąco po kołach): długodystansowce zajmują
+  // całe off-A11 przed szczytami (uwaga 5: całozmianowy/wysoko-kołowy ma pierwszeństwo do całej, kosztem
+  // szczytów). slotCount pozostaje dalszym tie-breakiem (obiegi z mniejszą liczbą opcji wcześniej).
   const order = [...obiegi].sort(
     (a, b) =>
       kindRank(a) - kindRank(b) ||
       criticalRank(a) - criticalRank(b) ||
+      loopKey(b) - loopKey(a) ||
       slotCount(a) - slotCount(b) ||
       a.lastT - b.lastT ||
       typeRank(a) - typeRank(b) ||
@@ -392,14 +411,15 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     if (tryCover(o)) continue;
     fallbackBrak(o);
   }
-  // FAZA 3 — NADMIAR całych (niezmieszczonych poza A11): dostają PEŁNĄ przerwę na A11 (cała@A11), bo to
-  // długodystansowcy/całodobowe — pojedyncza połówka byłaby niesprawiedliwa. Wchodzą na A11 DOPIERO teraz,
-  // po tym jak szczyty (faza 2) zajęły swoje połówki. Kolejność: cała off-A11 (gdyby coś się zwolniło) →
-  // cała@A11. Gdy PEŁNA przerwa się nie mieści → BRAK (sygnał „dodać rezerwowego"), nie krzywdząca połówka.
+  // FAZA 3 — NADMIAR całych (niezmieszczonych poza A11): NA A11 NIE dajemy cała@A11 (zajmuje rezerwowego na
+  // ~90 min, mało elastyczne). Zamiast tego dostają PIERWSZĄ POŁÓWKĘ@A11 (po 1. kole, w oknie preferencji),
+  // a R16 dokłada DRUGĄ POŁÓWKĘ → 2×½ = pełna przerwa („rozbicie całej na dwie połówki — więcej opcji
+  // podmian", decyzja użytkownika 2026-06-09). Drobniejsze bloki = ciaśniejsze pakowanie. Kolejność: cała
+  // off-A11 (gdyby się zwolniło) → połówka@A11. Gdy nic nie wchodzi → BRAK (sygnał „dodać rezerwowego").
   for (const o of pendingCala) {
     if (assignments[o.id]?.length) continue;
-    if (tryAssign(o)) continue;        // cała poza A11
-    if (tryAssign(o, true)) continue;  // cała@A11 — pełna przerwa overflow (sprawiedliwie)
+    if (tryAssign(o)) continue;   // cała poza A11 (preferowane — to jest „cała")
+    if (tryCover(o)) continue;    // overflow → połówka@A11 (1. połowa; R16 dopełni do 2×½ = pełna przerwa)
     fallbackBrak(o);
   }
 
@@ -488,50 +508,64 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     }
   }
 
-  // 2. R16 — DODATKOWA (druga) przerwa: maks. wykorzystanie rezerwowych, do MAX_BREAKS_PER_OBIEG na obieg.
-  // Dozwolone kombinacje 2 przerw: {cała+połówka} (DOWOLNA kolejność), {cała+godzinka}, {połówka+połówka},
-  // {cała+cała} (do dopełnienia 3 kół). SZCZENIAK NIE jest dokładany automatycznie (za słaby — patrz AUTO_KINDS).
-  // Okno 2. przerwy dłuższe (start do LATEST_SECOND; realnie limituje R7/zjazd). Rozmieszczenie (R2):
-  // dwie połówki ~2,5 h od siebie; pozostałe kombinacje — blisko powrotu maszynisty (mały odstęp).
+  // 2. R16 — wykorzystanie pozostałej mocy (decyzja użytkownika 2026-06-09). DWIE FAZY, NIGDY 2×cała:
+  //  • PASS A — „dobij WSZYSTKIM do całej": obieg z dk="cała", który ma dopiero JEDNĄ POŁÓWKĘ@A11 (overflow
+  //    z fazy 3), dostaje DRUGĄ POŁÓWKĘ → 2×½ = pełna przerwa. Dzięki temu znikają „obiegi z połówką".
+  //  • PASS B — „leftover → PÓŁTOREJ": gdy po Pass A moc jeszcze została, obiegowi z jedną CAŁĄ dokładamy
+  //    POŁÓWKĘ (= 1,5), w kolejności MALEJĄCO PO KOŁACH — najpierw całozmianowe/najdłuższe (pracują najdłużej,
+  //    R3). NIE robimy 2×cała (uwaga 4) i NIE dajemy 1,5 nikomu, póki ktokolwiek nie ma choć jednej całej
+  //    (gwarantuje to bramka „brak BRAK" + wcześniejszy Pass A). Szczyt (dk="połówka") 2. przerwy nie dostaje.
+  // Okno 2. przerwy dłuższe (start do LATEST_SECOND; realnie limituje R7/zjazd). Dwie połówki rozsuwamy ~2,5 h.
   const SPACING_POLOWKI = hms(2, 30);
-  // BRAMKA R16 (R9 > R16): dodatkowe przerwy rozdajemy DOPIERO po zapewnieniu pokrycia WSZYSTKIM obiegom.
-  // Dopóki istnieje obieg bez obsadzonego rezerwowego (realny BRAK), NIE dokładamy nikomu 2. przerwy —
-  // inaczej szczyt dostawał 2 przerwy, gdy całodobowy miał 0. BRAK sygnalizuje brak rezerwowego na danej
-  // stacji (R14) → ręczna obsada / dodać rezerwowego, a nie luksusowe dokładki gdzie indziej.
+  // BRAMKA R16 (R9 > R16): dokładki DOPIERO po zapewnieniu pokrycia WSZYSTKIM. Dopóki jest realny BRAK —
+  // nie dokładamy nikomu (BRAK to brak rezerwowego na stacji → ręczna obsada / +rezerwowy, nie luksus gdzie indziej).
   const hasBrak = () => obiegi.some((o) => !(assignments[o.id] ?? []).some((a) => a.reserveId));
-  let progress = !hasBrak();
-  while (progress) {
-    progress = false;
-    for (const o of order) {
-      const cur = assignments[o.id];
-      if (!cur || cur.length === 0 || cur.length >= MAX_BREAKS_PER_OBIEG) continue;
-      if (cur.some((a) => !a.reserveId)) continue; // BRAK — nie dokładaj
-      const first = cur[cur.length - 1];
-      const after = driverFreeAt[o.id] ?? 0;
-      // CEL (potwierdzone 2026-06-07): poza A1 dobić każdego rezerwowego do PEŁNYCH 3 kół, sumując
-      // wszystkie rodzaje przerw. Pokrycie (R9) jest już zapewnione wyżej (bramka hasBrak), a ewentualny
-      // BRAK to brak rezerwowego NA KONKRETNEJ stacji (innych stacji nie zasila — R14), więc dokładanie
-      // 2. przerwy gdzie indziej nikomu nie odbiera pokrycia. Dlatego {cała+cała} jest dozwolona zawsze
-      // (nie tylko przy nadmiarze), żeby domknąć rezerwowemu limit. Preferencja: {cała+połówka} najlepsza.
-      // UWAGA: dokładka idzie przez autoSlots — na A11 NIE ma całej, więc obieg z połówką@A11 dostaje
-      // 2. POŁÓWKĘ@A11 (rozbicie całej na 2×½: drobniejsze bloki, więcej opcji podmian — decyzja użytkownika).
-      const secondKinds: BreakKind[] =
-        first.kind === "cała" ? ["połówka", "cała"] : ["cała", "połówka"]; // tylko cała+połówka (bez godzinki/szczeniaka)
-      let placed = false;
-      for (const kind of secondKinds) {
-        // dwie połówki rozsuń ~2,5 h; pozostałe kombinacje kładź blisko powrotu (mały odstęp).
-        const target =
-          first.kind === "połówka" && kind === "połówka" ? first.startT + SPACING_POLOWKI : after;
-        const slots = autoSlots(o, kind, (s) => floorOf(o, s), LATEST_SECOND)
-          .filter((s) => s.startT >= after)
-          .sort((a, b) => Math.abs(a.startT - target) - Math.abs(b.startT - target));
-        for (const slot of slots) {
-          const r = pickReserve(rs, slot);
-          if (r) { commit(o, slot, r); placed = true; break; }
-        }
-        if (placed) break; // dokładka położona — nie próbuj mniejszych rodzajów
+  // Dołożenie 2. przerwy danego rodzaju do obiegu o (rozsuw `target`). Zwraca true, gdy dołożono.
+  const addSecond = (o: Obieg, kind: BreakKind, target: number): boolean => {
+    const cur = assignments[o.id];
+    if (!cur || cur.length === 0 || cur.length >= MAX_BREAKS_PER_OBIEG) return false;
+    if (cur.some((a) => !a.reserveId)) return false; // BRAK — nie dokładaj
+    const after = driverFreeAt[o.id] ?? 0;
+    const slots = autoSlots(o, kind, (s) => floorOf(o, s), LATEST_SECOND)
+      .filter((s) => s.startT >= after)
+      .sort((a, b) => Math.abs(a.startT - target) - Math.abs(b.startT - target));
+    for (const slot of slots) {
+      const r = pickReserve(rs, slot);
+      if (r) { commit(o, slot, r); return true; }
+    }
+    return false;
+  };
+  // obieg, któremu NALEŻY się pełna przerwa (dk="cała"), a ma dopiero samotną POŁÓWKĘ — czyli „nie ma całej".
+  const lacksFull = () => obiegi.some((o) => {
+    const a = (assignments[o.id] ?? []).filter((x) => x.reserveId);
+    return dk(o) === "cała" && a.length === 1 && a[0].kind === "połówka";
+  });
+  if (!hasBrak()) {
+    // PASS A — dopełnij każdą samotną połówkę (dk="cała") do 2×½ = pełna przerwa. Iteruj do nasycenia.
+    let progressA = true;
+    while (progressA) {
+      progressA = false;
+      for (const o of order) {
+        const cur = assignments[o.id];
+        if (!cur || cur.length !== 1 || dk(o) !== "cała" || cur[0].kind !== "połówka") continue;
+        if (addSecond(o, "połówka", cur[0].startT + SPACING_POLOWKI)) progressA = true;
       }
-      if (placed) progress = true;
+    }
+    // PASS B — leftover → 1,5 (cała + połówka) dla NAJDŁUŻSZYCH najpierw (całozmianowe/∞ → wysokie koła).
+    // GATE (uwaga 4): NIE dajemy nikomu 1,5, dopóki KTOKOLWIEK nie ma pełnej przerwy (lacksFull) — wtedy
+    // wolną moc trzymamy, nie rozdajemy luksusu. (Pass A nie zawsze dopcha 2×½ na nasyconym A11 — wtedy
+    // samotna połówka zostaje „w ostateczności", a 1,5 nie rusza.)
+    if (!lacksFull()) {
+      const byLoopsDesc = [...obiegi].sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id));
+      let progressB = true;
+      while (progressB) {
+        progressB = false;
+        for (const o of byLoopsDesc) {
+          const cur = assignments[o.id];
+          if (!cur || cur.length !== 1 || dk(o) !== "cała" || cur[0].kind !== "cała") continue; // tylko 1×cała
+          if (addSecond(o, "połówka", driverFreeAt[o.id] ?? 0)) progressB = true; // dołóż połówkę → 1,5
+        }
+      }
     }
   }
 
