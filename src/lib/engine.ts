@@ -181,6 +181,12 @@ function pickReserve(rs: RState[], slot: Slot): RState | null {
 
 /** Główny algorytm planowania przerw. */
 export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptions = {}): PlanResult {
+  // PRZY BRAKU OBSADY (zero niezablokowanych rezerwowych) NIE pokazujemy nic — żadnych slotów BRAK ani
+  // podglądu rodzaju. Karty zostają puste („— brak —"). Połówka/cała też wymaga maszynisty, więc bez obsady
+  // jakikolwiek podgląd jest tylko mylący (decyzja użytkownika 2026-06-09: „przy braku obsady zostaw puste").
+  if (reserves.every((r) => r.blocked)) {
+    return { assignments: {}, unassigned: obiegi.map((o) => o.id), reserveLoadMin: {}, reserveCount: {} };
+  }
   const earliest = opts.earliest ?? EARLIEST_DEFAULT;
   // próg „nie wcześniej niż": per-stacja nadpisuje globalny (jest też kotwicą rozkładania)
   const stationEarliest = (s: BreakStation) => opts.earliestByStation?.[s] ?? earliest;
@@ -243,12 +249,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const autoPolowka = new Set(eligible.filter((o) => o.loops <= HARD_POL_LOOPS).map((o) => o.id));
   // eqDemand respektuje też RĘCZNE/NAWROTOWE cięcia (forced=połówka) — patrz RETRY niżej
   const eqDemand = () => obiegi.reduce((s, o) => s + (forced[o.id] === "połówka" || autoPolowka.has(o.id) ? 0.5 : 1), 0);
-  // PRZY ZEROWEJ MOCY (brak obsady, capacity = 0) NIE racjonujemy: bilans nie ma o co się oprzeć (połówka też
-  // wymaga rezerwowego — przy 0 obsady i tak wszystko = BRAK). Podgląd ma pokazywać CEL („daj jak najwięcej
-  // całych"): każdy obieg = CAŁA, połówka tylko z twardego progu ≤3 koła. Dopiero realna moc „dociska" rodzaje
-  // w dół, od najmniej kół (decyzja użytkownika 2026-06-09).
   for (const o of eligible) {
-    if (capacity <= 0) break;                     // 0 obsady → pokaż cel, nie najgorszy przypadek
     if (o.loops <= HARD_POL_LOOPS) continue;     // ≤3 koła już są połówkami (twardy próg)
     if (eqDemand() <= capacity) break;            // bilans się spina (nadwyżka) → nie tnij więcej, reszta = całe
     autoPolowka.add(o.id);                         // deficyt: utnij temu (najmniej kół z pozostałych) → połówka

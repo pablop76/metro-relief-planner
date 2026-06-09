@@ -339,7 +339,8 @@ export default function App() {
     const st = list.find((a) => !a.reserveId)?.station ?? "?";
     brakByStation[st] = (brakByStation[st] ?? 0) + 1;
   }
-  const brakBreakdown = Object.entries(brakByStation).map(([s, n]) => `${s}×${n}`).join(", ");
+  // pomijamy „?" (obieg bez żadnego slotu, np. przy braku obsady) — liczy się w sumie BRAK, ale nie zaśmieca rozbicia
+  const brakBreakdown = Object.entries(brakByStation).filter(([s]) => s !== "?").map(([s, n]) => `${s}×${n}`).join(", ");
   const def = defaultOrder(obiegi);
   const orderChanged = order.length > 0 && order.some((id, i) => def[i] !== id);
   // liczba kolumn = obiegi / wybrana liczba rzędów
