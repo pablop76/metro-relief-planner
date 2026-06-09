@@ -5,10 +5,11 @@ import type { Obieg, ObiegType, StationEvent, Dir, BreakStation } from "./types"
 const COL = {
   typ: 2,
   obieg: 4,
-  // kierunek północ A1->A23 (w stronę Młocin)
+  // kierunek północ A1->A23 (w stronę Młocin); A23 = PRZYJAZD na kraniec północny (kol 12)
   n_A1: 5, n_A7: 8, n_A11: 9, n_A18: 11, n_A23: 12,
-  // kierunek południe A23->A1 (w stronę Kabat)
-  s_A18: 16, s_A11: 18, s_A7: 19, s_A1: 20,
+  // kierunek południe A23->A1 (w stronę Kabat); A23 = ODJAZD z krańca północnego na południe (kol 14 = „odjazd")
+  // — bez tego pierwszym złapanym zdarzeniem po postoju na Młocinach było A18, nie A23 (np. start 2. zm. S33).
+  s_A23: 14, s_A18: 16, s_A11: 18, s_A7: 19, s_A1: 20,
 };
 
 const VALID_OBIEG = /^(\d{1,2}|S\d+|D\d+)$/;
@@ -126,7 +127,7 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
     [COL.n_A1, "A1"], [COL.n_A7, "A7"], [COL.n_A11, "A11"], [COL.n_A18, "A18"], [COL.n_A23, "A23"],
   ];
   const southCols: [number, BreakStation][] = [
-    [COL.s_A18, "A18"], [COL.s_A11, "A11"], [COL.s_A7, "A7"], [COL.s_A1, "A1"],
+    [COL.s_A23, "A23"], [COL.s_A18, "A18"], [COL.s_A11, "A11"], [COL.s_A7, "A7"], [COL.s_A1, "A1"],
   ];
 
   for (let i = 5; i < rows.length; i++) {
