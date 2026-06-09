@@ -131,6 +131,11 @@ Konfiguracja w [`src/lib/stations.ts`](src/lib/stations.ts) / `data/stations.jso
 Rodzaje wg długości: **cała** (~90 min, pełna pętla) > **godzinka** (~1h, jazda do dalszego krańca
 i powrót) > **połówka** (~45 min) > **szczeniak** (~30 min, krótki nawrót do bliższego krańca).
 
+**Preferowany KIERUNEK (tor) podmiany — MIĘKKO** (`DIR_PREF`, decyzja użytkownika 2026-06-09; tor 1 = Młociny,
+tor 2 = Kabaty): **A1, A7 → Kabaty** (tor 2); **A18, A23 → Młociny** (tor 1); **A11 → oba** (bez preferencji).
+To preferencja w `score` (`DIR_PENALTY` ~6 min), nie twarda reguła — silnik miesza kierunki, gdy wymaga tego
+pokrycie lub znacząco lepszy czas startu.
+
 > **Automat nadaje TYLKO całe i połówki** (`AUTO_KINDS` = cała/połówka). Godzinka i szczeniak — **tylko
 > ręcznie** w edytorze. Godzinka: większy wysiłek planistyczny i ryzyko przy awarii; szczeniak: za słaby.
 > Gdy całą/połówką się nie da → BRAK (sygnał do ręcznej obsady), nie godzinka/szczeniak. A11 uciągnie nawet

@@ -35,6 +35,13 @@ const EARLIEST_DEFAULT = hms(14, 30);    // „zacznij od" — domyślny start p
 // startu, nie tylko twardą granicą. Sloty w oknie [próg, próg + 15 min] są równie dobre (score 0); dopiero
 // powyżej tolerancji score rośnie. Daje to 15-min luz na lepsze upakowanie rezerwowych blisko docelowego startu.
 const START_TOLERANCE = 15 * 60;
+// PREFEROWANY KIERUNEK (tor) podmiany na stacji — MIĘKKO (decyzja użytkownika 2026-06-09: „to nie jest
+// sztywna zasada, można mieszać jeśli potrzeba"). Tor 1 = Młociny, tor 2 = Kabaty.
+// A1 i A7 → Kabaty (tor 2); A18 i A23 → Młociny (tor 1); A11 → OBA tory (bez preferencji).
+const DIR_PREF: Partial<Record<BreakStation, Dir>> = { A1: "Kabaty", A7: "Kabaty", A18: "Młociny", A23: "Młociny" };
+// Kara za niepreferowany tor: na tyle mała, że ustępuje pokryciu i znacząco lepszemu czasowi startu,
+// ale rozstrzyga remisy (np. w oknie tolerancji) na korzyść preferowanego toru.
+const DIR_PENALTY = 6 * 60;
 // DWA OKNA startu (R2, model potwierdzony 2026-06-07): okno PIERWSZEJ (= jedynej gwarantowanej) przerwy
 // jest krótsze — start najpóźniej 18:20. Okno DRUGIEJ (dodatkowej) przerwy jest dłuższe (może startować
 // później); i tak ogranicza je fizycznie R7 (pociąg musi wrócić przed zjazdem). Druga = zawsze połówka.
@@ -187,10 +194,12 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // upakowanie); powyżej tolerancji score rośnie liniowo, więc dalsze starty są tym gorsze. Osobny próg 3,5
   // koła (coverWindow) pilnuje, by SAMOTNA połówka długodystansowca nie była pierwszą podmianą.
   // opts.pref = stary „magnes" na konkretną godzinę (back-compat, nieużywany przez UI).
+  // miękka kara za niepreferowany tor na danej stacji (A11 = oba tory, bez preferencji)
+  const dirPenalty = (s: Slot) => (DIR_PREF[s.station] && s.dir !== DIR_PREF[s.station] ? DIR_PENALTY : 0);
   const score = (s: Slot) => {
     if (opts.pref != null) return Math.abs(s.startT - opts.pref);
     const over = s.startT - stationEarliest(s.station) - START_TOLERANCE; // > 0 dopiero poza tolerancją
-    return scarcity(s) + (over > 0 ? over : 0);
+    return scarcity(s) + dirPenalty(s) + (over > 0 ? over : 0);
   };
   const forced = opts.forcedKinds ?? {};
   // CAŁOZMIANOWY (throughShift) — auto z rozkładu (zjazd ≥ 21:00 → loops=∞) LUB ręczne wskazanie pomocnika
