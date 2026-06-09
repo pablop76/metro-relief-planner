@@ -77,7 +77,8 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
   const loadSamples = (count: number) => {
     const haveIds = new Set(reserves.map((r) => r.id));
     const haveNames = new Set(reserves.map((r) => r.name.toLowerCase()));
-    const add = sampleReserves(count).filter((s) => !haveIds.has(s.id) && !haveNames.has(s.name.toLowerCase()));
+    // nazwiska z listy realnych maszynistów (pomijając już wykorzystanych jako rezerwowi)
+    const add = sampleReserves(count, available).filter((s) => !haveIds.has(s.id) && !haveNames.has(s.name.toLowerCase()));
     if (!add.length) {
       setWarn("Ci przykładowi rezerwowi są już wczytani");
       return;
