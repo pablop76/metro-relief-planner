@@ -108,7 +108,7 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
           </button>
         </div>
         <span className="oc-entry">
-          {isFull ? <em>całodobowy</em> : <>{HHMMSS(entry.t)} <em>{entry.station}</em></>}
+          {isFull ? <em>cała zm.</em> : <>{HHMMSS(entry.t)} <em>{entry.station}</em></>}
           <span
             className={`oc-loops${effThrough ? " is-through" : ""}${throughShiftOverride != null ? " is-ovr" : ""}`}
             style={{ cursor: onToggleThroughShift ? "pointer" : undefined }}
