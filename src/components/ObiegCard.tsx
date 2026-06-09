@@ -58,9 +58,11 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
   // efektywny „całozmianowy": ręczny override pomocnika ma pierwszeństwo nad auto-wykryciem (zjazd ≥21:00)
   const effThrough = throughShiftOverride ?? obieg.throughShift;
   const sorted = [...breaks].sort((a, b) => a.startT - b.startT);
+  // KOLOR wg kół: całozmianowy/całodobowy = osobny (niebieski); < 4 koła = szczyt/kandydat na połówkę
+  // (czerwony); ≥ 4 koła = zielony. (decyzja użytkownika 2026-06-09)
   const loopClass = effThrough
-    ? "loops-many"
-    : obieg.loops <= 3 ? "loops-few" : obieg.loops <= 4 ? "loops-mid" : "loops-many";
+    ? "loops-through"
+    : obieg.loops < 4 ? "loops-few" : "loops-many";
 
   const updateBreak = (i: number, a: BreakAssignment) => {
     const next = sorted.slice();
