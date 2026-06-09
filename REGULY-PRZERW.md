@@ -96,7 +96,9 @@ Decyduje liczba kół (`planBreaks`) — **BILANS NADRZĘDNY + sprawiedliwość*
     zjazd pociągu (musi wrócić, zanim zjedzie — patrz §1).
 - **§4a krok 4** (`coverWindow`, próg `POL_LATE_LOOPS = 3,5`): **samotna połówka obiegu ≥ 3,5 koła NIE może
   być pierwszą podmianą** — dół okna = **entry2nd + 1 koło**, góra = **18:15** (`ONLY_POL_LATEST`). Obieg
-  **< 3,5 koła** (drobny szczyt) MOŻE mieć połówkę wcześnie (od progu z ustawień). Decyzja użytkownika 2026-06-09.
+  **< 3,5 koła** (drobny szczyt) MOŻE mieć połówkę wcześnie (od progu z ustawień). **WYJĄTEK: gdy rezerwowych
+  jest < 10** (`enoughReserves`) reguła znika — przy ciasnej obsadzie pakujemy wszystko najwcześniej, by się
+  zmieściło. Decyzja użytkownika 2026-06-09.
 
 ### 3a. Druga (dodatkowa) przerwa — kombinacje
 

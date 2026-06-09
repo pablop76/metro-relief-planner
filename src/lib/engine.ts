@@ -259,10 +259,14 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // Próg „samotna połówka nie pierwsza" (decyzja użytkownika 2026-06-09): obieg robiący ≥ 3,5 koła nie może
   // dostać połówki jako PIERWSZEJ podmiany — dopiero po 1. pełnym kole (entry2nd + koło). Obieg < 3,5 koła
   // (drobny szczyt) może mieć połówkę wcześnie, od progu z ustawień.
+  // WYJĄTEK: gdy rezerwowych jest MNIEJ NIŻ 10, reguła znika — przy ciasnej obsadzie pakujemy wszystko jak
+  // najwcześniej, by się zmieściło (decyzja użytkownika 2026-06-09: „zostaw, chyba że < 10 rezerwowych").
   const POL_LATE_LOOPS = 3.5;
+  const enoughReserves = reserves.filter((r) => !r.blocked).length >= 10;
   const coverWindow = (o: Obieg, kind: BreakKind): { floor: (s: BreakStation) => number; hi: number } => {
     if (kind === "połówka") {
-      const polLo = effLoops(o) >= POL_LATE_LOOPS ? o.entry2nd + o.lapMin * 60 : 0; // <3,5 → bez opóźnienia
+      // po 1. kole tylko gdy: dość rezerwowych (≥10) ORAZ obieg ≥ 3,5 koła; inaczej połówka może startować wcześnie
+      const polLo = enoughReserves && effLoops(o) >= POL_LATE_LOOPS ? o.entry2nd + o.lapMin * 60 : 0;
       return { floor: (s) => Math.max(floorOf(o, s), polLo), hi: Math.min(latestFirstOf(o), ONLY_POL_LATEST) };
     }
     return { floor: (s) => floorOf(o, s), hi: latestFirstOf(o) };
