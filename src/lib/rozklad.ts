@@ -108,6 +108,12 @@ function shift2Start(id: string, ev: StationEvent[]): number {
 function countLoops2nd(id: string, ev: StationEvent[], lapSec: number): number {
   const lastT = ev[ev.length - 1].t;
   if (lastT >= RELIEF_ON_LINE) return Infinity;     // zmiennik na linii / całodobowy → nie liczymy
+  // PRZEJĘCIE NA LINII vs START PO POSTOJU: obieg CIĄGŁY (brak postoju >60 min → afternoonEntry == null, np.
+  // D17–D20) ma 2. zmianę PRZEJMOWANĄ od 1. zmiany na linii — punkt przejęcia jest przypadkowy (D20 łapie się
+  // na A7), więc NIE doliczamy ułamka dojazdu/zjazdu: liczą się PEŁNE półpętle i bliźniacze obiegi wychodzą
+  // równo (D17–D20 = 5,0). Obieg z POSTOJEM (afternoonEntry ≠ null, np. S33 z Młocin, S28 z A7, S23 z A11) ma
+  // ŚWIEŻY start ze stacji re-wjazdu → ułamek za odcinek doliczamy („dolicz te odcinki"; decyzja 2026-06-09).
+  const reliefOnLine = afternoonEntry(ev) == null;
   const start = shift2Start(id, ev);
   const zjazd = Math.min(lastT, SHIFT2_END);
   const seg = ev.filter((e) => e.t >= start - 60 && e.t <= zjazd);
@@ -122,8 +128,9 @@ function countLoops2nd(id: string, ev: StationEvent[], lapSec: number): number {
   }
   if (visits.length < 2) return (zjazd - start) / lapSec; // brak dwóch krańców → fallback czasowy
   const full = 0.5 * (visits.length - 1);                 // każda półpętla kraniec↔kraniec = 0,5
-  const lead = (visits[0] - seg[0].t) / lapSec;           // odcinek startu (mid-line → kraniec)
-  const tail = (seg[seg.length - 1].t - visits[visits.length - 1]) / lapSec; // odcinek zjazdu (kraniec → mid-line)
+  // ułamki za odcinki start/koniec poza krańcem — TYLKO przy starcie po postoju (przy przejęciu na linii = 0)
+  const lead = reliefOnLine ? 0 : (visits[0] - seg[0].t) / lapSec;
+  const tail = reliefOnLine ? 0 : (seg[seg.length - 1].t - visits[visits.length - 1]) / lapSec;
   return full + lead + tail;
 }
 

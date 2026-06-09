@@ -251,6 +251,12 @@ body {
 .obiegi-grid.two-rows { grid-auto-flow: row; overflow-x: auto; padding-bottom: 10px; }
 .obiegi-grid.two-rows .drag-wrap { min-width: 0; }
 
+/* wąskie kafelki w wielu rzędach: obieg / pociąg / wymuś rodzaj w pionie */
+.obiegi-grid.two-rows .oc-id-row { flex-direction: column; gap: 4px; }
+/* a także całodobowy + cała zmiana (oraz ⏱ koła) w pionie — nie mieszczą się w jednej linii */
+.obiegi-grid.two-rows .oc-loops,
+.obiegi-grid.two-rows .oc-lap { display: block; width: fit-content; margin: 2px auto 0; }
+
 /* --- drag & drop --- */
 .drag-wrap { cursor: grab; }
 .drag-wrap:active { cursor: grabbing; }
