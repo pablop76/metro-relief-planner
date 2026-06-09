@@ -96,14 +96,19 @@ function shift2Start(id: string, ev: StationEvent[]): number {
   return ae ? ae.t : (SHIFT2_DRIVER_START[id] ?? SHIFT2_DEFAULT_START);
 }
 
-/** Koła 2. zmiany — DOKŁADNIE (bez zaokrąglania): czasowo, koła = (zjazd − wjazd) / czas_koła.
- *  Wjazd = realny start maszynisty (shift2Start).
- *  Obiegi ze zmiennikiem na linii / 3. zmianą / całodobowe (jazda po 21:00) → Infinity (zawsze cała). */
-function countLoops2nd(id: string, ev: StationEvent[], lapSec: number): number {
+/** Koła 2. zmiany = LICZBA pełnych okrążeń = liczba odjazdów A1→Młociny (kraniec Kabaty) w oknie pracy
+ *  [start 2. zmiany, zjazd]. Każdy odjazd A1→Młociny rozpoczyna jedno okrążenie, więc to wartość CAŁKOWITA —
+ *  okrążenie albo zrobione, albo nie. (Dawna metryka ciągła czas/koło dawała 5,07–5,21 dla bliźniaczych obiegów
+ *  jadących jeden za drugim, bo łapała różnicę w godzinie zjazdu wynikającą TYLKO z przesunięcia w sekwencji —
+ *  choć wszyscy robią tyle samo okrążeń; decyzja użytkownika 2026-06-09.) Zmiennik na linii / całodobowy
+ *  (jazda po 21:00) → Infinity (zawsze cała). */
+function countLoops2nd(id: string, ev: StationEvent[]): number {
   const lastT = ev[ev.length - 1].t;
   if (lastT >= RELIEF_ON_LINE) return Infinity;     // zmiennik na linii / całodobowy → nie liczymy
-  const zjazdT = Math.min(lastT, SHIFT2_END);
-  return (zjazdT - shift2Start(id, ev)) / lapSec;
+  const start = shift2Start(id, ev);
+  const zjazd = Math.min(lastT, SHIFT2_END);
+  // tolerancja 60 s na start: pierwszy odjazd dokładnie o godzinie startu też liczymy jako okrążenie
+  return ev.filter((e) => e.station === "A1" && e.dir === "Młociny" && e.t >= start - 60 && e.t <= zjazd).length;
 }
 
 /** Parsuje workbook SheetJS -> lista obiegów dla danego arkusza (typ dnia). */
@@ -165,7 +170,7 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
       // sprzątanie dotyczy planu tylko dla S/D (7,13 = całodobowe sprzątane PO przerwach)
       cleaning: cleaningSet.has(id) && classify(id) !== "full",
       // koło = okrążenie 2. zmiany (wjazd→zjazd) — decyduje o połówce/całej (najmniej kół → połówka)
-      loops: countLoops2nd(id, ev, lapSec),
+      loops: countLoops2nd(id, ev),
       lapMin: Math.round(lapSec / 60), // czas koła (mediana) w minutach — do wglądu
       throughShift: ev[ev.length - 1].t >= RELIEF_ON_LINE, // zmiennik na linii / całodobowy → cała
       entry2nd: shift2Start(id, ev), // realny start 2. zmiany — R3 (max 6h)
