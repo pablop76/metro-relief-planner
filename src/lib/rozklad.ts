@@ -53,18 +53,40 @@ function afternoonEntry(ev: StationEvent[]): StationEvent | null {
   return null;
 }
 
-/** Czas jednego koła obiegu = mediana odstępu między kolejnymi odjazdami A1→Młociny
- *  (pomija postoje/przerwy >3h). Fallback 84 min, gdy za mało danych. */
+// Pełny ruch popołudniowy zaczyna się ~15:00 — wtedy wszystkie pociągi są na linii. Koło w SZCZYCIE (16–18)
+// jest ustalone (~84'), ale koła BRZEGOWE — rozruchowe (rano 88–94'), przejście ~14:30 i wieczorne (~19:xx,
+// gdy ruch rzednie) — bywają wydłużone (86–88'). Mediana z całej doby (a nawet z całego okna PM) potrafi
+// utknąć na takiej brzegowej wartości, przez co bliźniacze obiegi jadące jeden za drugim (D17–D20) wychodziły
+// 84/86/88/85', mimo identycznego koła w szczycie. Dlatego bierzemy WARTOŚĆ DOMINUJĄCĄ (modalną) koła z pełnego
+// ruchu popołudniowego — to faktyczne, najczęstsze koło, odporne na rzadsze koła rozruchowe/wieczorne
+// (decyzja użytkownika 2026-06-09). [[project_metro_grafik]]
+const FULL_SERVICE_FROM = 15 * 3600;
+
+/** Najczęstsza (modalna) wartość — w minutach; remis rozstrzyga MNIEJSZA (szczyt = ciaśniejszy cykl). */
+function modeMin(secs: number[]): number | null {
+  if (!secs.length) return null;
+  const cnt = new Map<number, number>();
+  for (const s of secs) { const m = Math.round(s / 60); cnt.set(m, (cnt.get(m) ?? 0) + 1); }
+  let best = Infinity, bestN = -1;
+  for (const [v, n] of cnt) if (n > bestN || (n === bestN && v < best)) { best = v; bestN = n; }
+  return best;
+}
+
+/** Czas jednego koła obiegu = DOMINUJĄCE koło (odstęp między kolejnymi odjazdami A1→Młociny) w PEŁNYM RUCHU
+ *  popołudniowym (późniejszy odjazd ≥ 15:00; pomija postoje/przerwy >3h). Fallback: dominanta całodobowa,
+ *  a gdy brak danych — 84 min. */
 function lapDuration(ev: StationEvent[]): number {
   const a1n = ev.filter((e) => e.station === "A1" && e.dir === "Młociny").map((e) => e.t).sort((a, b) => a - b);
-  const gaps: number[] = [];
+  const all: number[] = [];
+  const pm: number[] = [];
   for (let i = 1; i < a1n.length; i++) {
     const g = a1n[i] - a1n[i - 1];
-    if (g < 3 * 3600) gaps.push(g);
+    if (g >= 3 * 3600) continue;                  // postój/przerwa — nie koło
+    all.push(g);
+    if (a1n[i] >= FULL_SERVICE_FROM) pm.push(g);  // koło w pełnym ruchu popołudniowym
   }
-  if (!gaps.length) return 84 * 60;
-  gaps.sort((a, b) => a - b);
-  return gaps[Math.floor(gaps.length / 2)];
+  const m = modeMin(pm) ?? modeMin(all) ?? 84;    // dominanta PM → dominanta całodobowa → 84'
+  return m * 60;
 }
 
 /** Realny start maszynisty 2. zmiany: wjazd z rozkładu (postój w dzień) lub start z grafiku
