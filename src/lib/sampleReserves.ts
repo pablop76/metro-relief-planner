@@ -1,7 +1,8 @@
 import type { Reserve, BreakStation } from "./types";
 
 /** Pula przykładowych nazwisk per stacja (do testów). Kolejność = priorytet doboru.
- *  Pełna pula daje docelowy rozkład A1×3, A7×2, A11×5, A18×1, A23×1 (razem 12). */
+ *  Pełna pula daje docelowy rozkład A1×3, A7×2, A11×5, A18×1, A23×1 (razem 12).
+ *  Po wyczerpaniu puli generujemy syntetyczne nazwiska, więc `count` jest bez limitu. */
 const POOL: Record<BreakStation, string[]> = {
   A1: ["Nowak", "Wiśniewski", "Wójcik"],
   A7: ["Kowalczyk", "Kamiński"],
@@ -10,30 +11,22 @@ const POOL: Record<BreakStation, string[]> = {
   A23: ["Mazur"],
 };
 
-/** Stała kolejność doboru: round-robin po stacjach — przy małym `count` rezerwowi
- *  rozkładają się równomiernie po wszystkich stacjach, a pełne 12 daje rozkład z puli. */
-const ORDER: Reserve[] = (() => {
-  const stations = Object.keys(POOL) as BreakStation[];
+const STATIONS = Object.keys(POOL) as BreakStation[];
+
+/** Domyślna liczba przykładowych rezerwowych (pełna pula = 12). */
+export const SAMPLE_DEFAULT = STATIONS.reduce((n, st) => n + POOL[st].length, 0);
+
+/** Zwraca `count` przykładowych rezerwowych — round-robin po stacjach, bez górnego limitu.
+ *  Najpierw nazwiska z puli, a po jej wyczerpaniu syntetyczne („Rezerwowy N"). */
+export function sampleReserves(count: number = SAMPLE_DEFAULT): Reserve[] {
+  const n = Math.max(0, Math.floor(count) || 0);
   const out: Reserve[] = [];
-  for (let i = 0; ; i++) {
-    let added = false;
-    for (const st of stations) {
-      const name = POOL[st][i];
-      if (name) {
-        out.push({ id: `demo-${st.toLowerCase()}-${i + 1}`, name, station: st });
-        added = true;
-      }
+  for (let i = 0; out.length < n; i++) {
+    for (const st of STATIONS) {
+      if (out.length >= n) break;
+      const name = POOL[st][i] ?? `Rezerwowy ${st} ${i + 1}`;
+      out.push({ id: `demo-${st.toLowerCase()}-${i + 1}`, name, station: st });
     }
-    if (!added) break;
   }
   return out;
-})();
-
-/** Maksymalna liczba przykładowych rezerwowych (suma puli = 12). */
-export const SAMPLE_MAX = ORDER.length;
-
-/** Zwraca pierwszych `count` przykładowych rezerwowych (równomiernie po stacjach). */
-export function sampleReserves(count: number = SAMPLE_MAX): Reserve[] {
-  const n = Math.max(0, Math.min(Math.floor(count) || 0, SAMPLE_MAX));
-  return ORDER.slice(0, n).map((r) => ({ ...r }));
 }

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { BREAK_STATIONS, reserveFull, TRAIN_TYPES, driverFullName, HHMMSS, hmToSec } from "../lib/types";
 import type { Reserve, BreakStation, Driver, BreakAssignment, MetroLine, TrainType } from "../lib/types";
 import { DURATION } from "../lib/stations";
-import { sampleReserves, SAMPLE_MAX } from "../lib/sampleReserves";
+import { sampleReserves, SAMPLE_DEFAULT } from "../lib/sampleReserves";
 
 // piktogram długości przerwy
 const KIND_GLYPH: Record<string, string> = { "cała": "●", "godzinka": "◕", "połówka": "◐", "szczeniak": "○" };
@@ -38,7 +38,7 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [warn, setWarn] = useState("");
   const [openCfg, setOpenCfg] = useState<string | null>(null);
-  const [sampleCount, setSampleCount] = useState(SAMPLE_MAX);
+  const [sampleCount, setSampleCount] = useState(SAMPLE_DEFAULT);
   const [confirmClear, setConfirmClear] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overStation, setOverStation] = useState<BreakStation | null>(null);
@@ -120,11 +120,10 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
           <input
             type="number"
             min={1}
-            max={SAMPLE_MAX}
             value={sampleCount}
-            title={`ilu przykładowych wczytać (max ${SAMPLE_MAX})`}
+            title="ilu przykładowych rezerwowych wczytać (bez limitu)"
             onChange={(e) =>
-              setSampleCount(Math.max(1, Math.min(SAMPLE_MAX, parseInt(e.target.value, 10) || 1)))
+              setSampleCount(Math.max(1, parseInt(e.target.value, 10) || 1))
             }
           />
           <button

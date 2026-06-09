@@ -174,12 +174,15 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const floorOf = (o: Obieg, s: BreakStation) => opts.earliestByObieg?.[o.id] ?? stationEarliest(s);
   // scarcity: odepchnij CAŁE z A11 (A11 zostawiamy na połówki — jedyne miejsce, gdzie są możliwe)
   const scarcity = (s: Slot) => (s.kind === "cała" && s.station === "A11" ? A11_CALA_PENALTY : 0);
-  // SCORE (mniejszy = lepszy): po scarcity preferuj NAJWCZEŚNIEJSZY slot od progu stacji w górę. Wypełnia
-  // wolną moc rezerwowych od dołu (14:30→), a naturalna serializacja (jeden maszynista = jeden pociąg naraz)
-  // i tak rozkłada przerwy po popołudniu. Punkt odniesienia jest STAŁY (próg stacji) — dawny pełznący kursor
-  // przy bottlenecku „uciekał" przed wolną wczesną mocą i robił BRAK mimo zapasu. opts.pref = stary magnes (back-compat).
+  // SCORE (mniejszy = lepszy): po scarcity preferuj OKNO PREFERENCJI 16:00–17:30 (R2, decyzja użytkownika
+  // 2026-06-09: „zacznij przerwy według preferencji"). Slot w oknie = 0; poza oknem = odległość do najbliższej
+  // krawędzi okna. Dzięki temu przerwy klastrują się ~16:00–17:30, a do wczesnych godzin (14:30/15:xx) silnik
+  // schodzi DOPIERO gdy serializacja rezerwowego (jeden maszynista = jeden pociąg naraz) i pokrycie tego
+  // wymagają — nie „dla zasady". (Dawniej: najwcześniej-od-progu → 8 przerw startowało o 14:30 wbrew R2.)
+  const distWindow = (t: number) =>
+    t < PREF_WINDOW[0] ? PREF_WINDOW[0] - t : t > PREF_WINDOW[1] ? t - PREF_WINDOW[1] : 0;
   const score = (s: Slot) =>
-    opts.pref != null ? Math.abs(s.startT - opts.pref) : scarcity(s) + (s.startT - stationEarliest(s.station));
+    opts.pref != null ? Math.abs(s.startT - opts.pref) : scarcity(s) + distWindow(s.startT);
   const forced = opts.forcedKinds ?? {};
 
   // R17 — wskazanie rezerwy ruchowej A1 (limit 1 koło): jawny flag `rolling` > pierwszy niezablokowany
