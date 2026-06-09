@@ -97,19 +97,34 @@ function shift2Start(id: string, ev: StationEvent[]): number {
   return ae ? ae.t : (SHIFT2_DRIVER_START[id] ?? SHIFT2_DEFAULT_START);
 }
 
-/** Koła 2. zmiany = LICZBA pełnych okrążeń = liczba odjazdów A1→Młociny (kraniec Kabaty) w oknie pracy
- *  [start 2. zmiany, zjazd]. Każdy odjazd A1→Młociny rozpoczyna jedno okrążenie, więc to wartość CAŁKOWITA —
- *  okrążenie albo zrobione, albo nie. (Dawna metryka ciągła czas/koło dawała 5,07–5,21 dla bliźniaczych obiegów
- *  jadących jeden za drugim, bo łapała różnicę w godzinie zjazdu wynikającą TYLKO z przesunięcia w sekwencji —
- *  choć wszyscy robią tyle samo okrążeń; decyzja użytkownika 2026-06-09.) Zmiennik na linii / całodobowy
- *  (jazda po 21:00) → Infinity (zawsze cała). */
-function countLoops2nd(id: string, ev: StationEvent[]): number {
+/** Koła 2. zmiany = PRZEJECHANY ODCINEK LINII w jednostkach pełnej pętli. Każda PÓŁPĘTLA kraniec↔kraniec
+ *  (A1 Kabaty ↔ A23 Młociny) = 0,5 koła; liczymy je scalając przyjazd+odjazd na tym samym krańcu w jedną
+ *  wizytę (zawrót), więc postój na krańcu NIE zawyża wyniku. Obiegi startujące/kończące NIE na krańcu dostają
+ *  PROPORCJONALNY ułamek za odcinek dojazdu/zjazdu (czas odcinka / czas_koła) — „dolicz te odcinki" (decyzja
+ *  użytkownika 2026-06-09). Przykłady: S33 rusza z Młocin (A23), kończy na Kabatach (A1) → 9 półpętli = 4,5;
+ *  D17 rusza i kończy na A1 → 10 półpętli = 5,0; S28 rusza z A7 → +0,3 za odcinek A7→kraniec.
+ *  (Dawna metryka czas/koło dawała 5,07–5,21 dla bliźniaczych D17–D20, bo zliczała postoje/przesunięcie w
+ *  sekwencji, choć przejeżdżają tyle samo.) Zmiennik na linii / całodobowy (jazda po 21:00) → Infinity. */
+function countLoops2nd(id: string, ev: StationEvent[], lapSec: number): number {
   const lastT = ev[ev.length - 1].t;
   if (lastT >= RELIEF_ON_LINE) return Infinity;     // zmiennik na linii / całodobowy → nie liczymy
   const start = shift2Start(id, ev);
   const zjazd = Math.min(lastT, SHIFT2_END);
-  // tolerancja 60 s na start: pierwszy odjazd dokładnie o godzinie startu też liczymy jako okrążenie
-  return ev.filter((e) => e.station === "A1" && e.dir === "Młociny" && e.t >= start - 60 && e.t <= zjazd).length;
+  const seg = ev.filter((e) => e.t >= start - 60 && e.t <= zjazd);
+  if (seg.length < 2) return 0;
+  const isTerm = (s: BreakStation) => s === "A1" || s === "A23";
+  // wizyty na krańcach (scalone): nowa wizyta tylko gdy zmienia się kraniec — A1↔A23↔A1…
+  const visits: number[] = [];
+  let prevTerm: BreakStation | null = null;
+  for (const e of seg) {
+    if (!isTerm(e.station)) continue;
+    if (e.station !== prevTerm) { visits.push(e.t); prevTerm = e.station; }
+  }
+  if (visits.length < 2) return (zjazd - start) / lapSec; // brak dwóch krańców → fallback czasowy
+  const full = 0.5 * (visits.length - 1);                 // każda półpętla kraniec↔kraniec = 0,5
+  const lead = (visits[0] - seg[0].t) / lapSec;           // odcinek startu (mid-line → kraniec)
+  const tail = (seg[seg.length - 1].t - visits[visits.length - 1]) / lapSec; // odcinek zjazdu (kraniec → mid-line)
+  return full + lead + tail;
 }
 
 /** Parsuje workbook SheetJS -> lista obiegów dla danego arkusza (typ dnia). */
@@ -171,7 +186,7 @@ export function parseObiegi(wb: XLSX.WorkBook, sheetName: string): Obieg[] {
       // sprzątanie dotyczy planu tylko dla S/D (7,13 = całodobowe sprzątane PO przerwach)
       cleaning: cleaningSet.has(id) && classify(id) !== "full",
       // koło = okrążenie 2. zmiany (wjazd→zjazd) — decyduje o połówce/całej (najmniej kół → połówka)
-      loops: countLoops2nd(id, ev),
+      loops: countLoops2nd(id, ev, lapSec),
       lapMin: Math.round(lapSec / 60), // czas koła (mediana) w minutach — do wglądu
       throughShift: ev[ev.length - 1].t >= RELIEF_ON_LINE, // zmiennik na linii / całodobowy → cała
       entry2nd: shift2Start(id, ev), // realny start 2. zmiany — R3 (max 6h)
