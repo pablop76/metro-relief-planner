@@ -105,6 +105,7 @@ export default function App() {
   const [layout, setLayout] = useState<"side" | "bottom">(() => loadLS<"side" | "bottom">(LS.layout, "side"));
   const [error, setError] = useState<string>("");
   const [showReset, setShowReset] = useState(false);
+  const [showGenConfirm, setShowGenConfirm] = useState(false); // twarde potwierdzenie „Generuj plan"
 
   // pełny reset: usuń WSZYSTKIE dane aplikacji z localStorage i przeładuj do ustawień domyślnych
   const clearAllMemory = () => {
@@ -413,8 +414,8 @@ export default function App() {
           </div>
           <button
             className={`btn-gen${planDirty ? " dirty" : ""}`}
-            onClick={() => generate()}
-            title={planDirty ? "Zmieniłeś rezerwowych — kliknij, by przeliczyć plan" : "Przelicz plan"}
+            onClick={() => setShowGenConfirm(true)}
+            title={planDirty ? "Zmieniłeś rezerwowych — kliknij, by przeliczyć plan (z potwierdzeniem)" : "Przelicz plan (z potwierdzeniem)"}
           >
             ⟳ Generuj plan{planDirty ? " •" : ""}
           </button>
@@ -492,6 +493,43 @@ export default function App() {
               </button>
               <button className="btn-danger" onClick={clearAllMemory}>
                 🧹 Tak, wyczyść wszystko
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGenConfirm && (
+        <div className="modal-backdrop" onClick={() => setShowGenConfirm(false)}>
+          <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>⟳ Przeliczyć plan od nowa?</h2>
+              <button className="modal-x" onClick={() => setShowGenConfirm(false)}>
+                ×
+              </button>
+            </div>
+            <div className="confirm-body">
+              <p>
+                Automatyczny przydział przerw zostanie <strong>wygenerowany ponownie</strong> wg
+                aktualnego rozkładu, rezerwowych i ustawień — nadpisze obecny układ.
+              </p>
+              <p className="confirm-note">
+                Ręczne korekty (✎) <strong>zostają</strong> zachowane. Operacji nie cofniesz inaczej
+                niż kolejnym przeliczeniem.
+              </p>
+            </div>
+            <div className="confirm-actions">
+              <button className="btn-reset" onClick={() => setShowGenConfirm(false)}>
+                Anuluj
+              </button>
+              <button
+                className="btn-danger"
+                onClick={() => {
+                  generate();
+                  setShowGenConfirm(false);
+                }}
+              >
+                ⟳ Tak, przelicz plan
               </button>
             </div>
           </div>
