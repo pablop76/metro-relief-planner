@@ -24,6 +24,7 @@ const LS = {
   forceKind: "pm_forcekind",
   throughShift: "pm_throughshift",
   rows: "pm_rows",
+  fontScale: "pm_fontscale",
   earliest: "pm_earliest",
   earliestStation: "pm_earliest_station",
   earliestObieg: "pm_earliest_obieg",
@@ -90,6 +91,7 @@ export default function App() {
     loadLS<Record<string, boolean>>(LS.throughShift, {})
   );
   const [rows, setRows] = useState<number>(() => loadLS<number>(LS.rows, 2));
+  const [fontScale, setFontScale] = useState<number>(() => loadLS<number>(LS.fontScale, 1));
   const [globalDelay, setGlobalDelay] = useState<number>(() => loadLS<number>(LS.delay, 0));
   const [earliestStart, setEarliestStart] = useState<number>(() => loadLS<number>(LS.earliest, DEFAULT_EARLIEST));
   const [earliestByStation, setEarliestByStation] = useState<Partial<Record<BreakStation, number>>>(() =>
@@ -263,6 +265,7 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.forceKind, JSON.stringify(forceKind)), [forceKind]);
   useEffect(() => localStorage.setItem(LS.throughShift, JSON.stringify(throughShiftBy)), [throughShiftBy]);
   useEffect(() => localStorage.setItem(LS.rows, JSON.stringify(rows)), [rows]);
+  useEffect(() => localStorage.setItem(LS.fontScale, JSON.stringify(fontScale)), [fontScale]);
   useEffect(() => localStorage.setItem(LS.earliest, JSON.stringify(earliestStart)), [earliestStart]);
   useEffect(() => localStorage.setItem(LS.earliestStation, JSON.stringify(earliestByStation)), [earliestByStation]);
   useEffect(() => localStorage.setItem(LS.earliestObieg, JSON.stringify(earliestByObieg)), [earliestByObieg]);
@@ -374,6 +377,17 @@ export default function App() {
               <option value={4}>4</option>
               <option value={5}>5</option>
               <option value={6}>6</option>
+            </select>
+          </label>
+          <label className="delay-ctl" title="powiększenie czcionek / kafelków">
+            🔍 font
+            <select value={fontScale} onChange={(e) => setFontScale(parseFloat(e.target.value))}>
+              <option value={1}>100%</option>
+              <option value={1.15}>115%</option>
+              <option value={1.3}>130%</option>
+              <option value={1.5}>150%</option>
+              <option value={1.75}>175%</option>
+              <option value={2}>200%</option>
             </select>
           </label>
           <label className="delay-ctl" title="opóźnienie całej linii w minutach">
@@ -547,7 +561,7 @@ export default function App() {
       {error && <div className="error">⚠ {error}</div>}
 
       <div className={`layout layout-${layout}`}>
-        <main className="grid-area">
+        <main className="grid-area" style={{ zoom: fontScale }}>
           <div className="summary">
             <strong>{obiegi.length}</strong> obiegów&nbsp;·&nbsp;
             <span className="ok">{coveredObiegi} obsadzonych</span>
