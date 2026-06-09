@@ -80,14 +80,14 @@ Decyduje liczba kół (`planBreaks`) — **BILANS NADRZĘDNY + sprawiedliwość*
 
 ## 3. Okna startu przerwy
 
-- **Najwcześniej 14:30** (`EARLIEST_DEFAULT`), nadpisywalne na trzech poziomach: **globalnie** (`earliest`),
-  **per stacja** (`earliestByStation` — np. wszystkie 14:30, ale A11 14:50) i **per obieg** (`earliestByObieg`).
-  Precedencja progu slotu: **per-obieg > per-stacja > globalny**. Pola w UI: „⏰ nie wcześniej niż" + rząd
-  „per stacja" (puste = jak globalny). Próg stacji jest zarazem **kotwicą rozkładania**.
-- **Rozkładanie od progu w górę** — `score` po `scarcity` (patrz §4/§5) preferuje **najwcześniejszy** slot od
-  progu startu stacji. Moc rezerwowych wypełnia się od dołu, a naturalna serializacja (jeden maszynista = jeden
-  pociąg naraz) i tak rozkłada przerwy po popołudniu. (Wcześniej był „magnes" na 16:00, potem pełznący kursor —
-  kursor przy wąskim gardle A11 „uciekał" przed wolną wczesną mocą i robił BRAK mimo zapasu, więc usunięty.)
+- **„ZACZNIJ OD" (domyślnie 14:30, `EARLIEST_DEFAULT`)** — CEL startu przerw, nadpisywalny na trzech poziomach:
+  **globalnie** (`earliest`), **per stacja** (`earliestByStation`) i **per obieg** (`earliestByObieg`).
+  Precedencja: **per-obieg > per-stacja > globalny**. Pola w UI: „⏰ zacznij od (+15′)" + rząd „per stacja".
+  To zarazem **twarda granica** (slotów wcześniej nie ma) i **kotwica rozkładania**.
+- **Rozkładanie od „zacznij od" + TOLERANCJA 15 min** (`START_TOLERANCE`, decyzja użytkownika 2026-06-09):
+  `score` po `scarcity` (patrz §4/§5) traktuje sloty w oknie **[próg, próg + 15 min] jako równie dobre**
+  (score 0 → luz na lepsze upakowanie rezerwowych), a powyżej tolerancji score rośnie liniowo. Moc rezerwowych
+  wypełnia się blisko docelowego startu, a naturalna serializacja rozkłada przerwy po popołudniu.
 - **Dwa okna:**
   - **1. (= JEDYNA gwarantowana) przerwa** — start najpóźniej **18:20** (`LATEST_FIRST`). Reguła: **jedyna
     przerwa NIE może startować po 18:20** (pokrycie = 1 przerwa). Dodatkowo **R3**: `latestFirstOf =
@@ -100,16 +100,18 @@ Decyduje liczba kół (`planBreaks`) — **BILANS NADRZĘDNY + sprawiedliwość*
 
 ### 3a. Druga (dodatkowa) przerwa — kombinacje
 
-Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). R16 = DWIE FAZY (bramka: **brak realnego BRAK**),
-**NIGDY 2×cała** (decyzja użytkownika 2026-06-09):
+Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). R16 = pokrycie + **MAKSYMALNE WYKORZYSTANIE MOCY**
+(~4,5 h = 3 koła/rezerwowego, R13; decyzja użytkownika 2026-06-09: „rezerwowi wykorzystani na maxa"). Bramka:
+**brak realnego BRAK**. Dwie fazy:
 
-- **PASS A — „dobij WSZYSTKIM do całej":** obieg, któremu należy się pełna przerwa (`dk = cała`), a ma dopiero
-  JEDNĄ połówkę@A11 (overflow z fazy 3) → dostaje **2. połówkę → 2×½ = pełna** (rozsunięte ~2,5 h,
-  `SPACING_POLOWKI`). Eliminuje to „obiegi z połówką".
-- **PASS B — „leftover → PÓŁTOREJ":** gdy po Pass A moc jeszcze została **i nikt nie jest bez pełnej przerwy**
-  (`lacksFull`), obiegowi z **jedną CAŁĄ** dokładamy **połówkę** (= 1,5), w kolejności **malejąco po kołach**
-  (całozmianowe/najdłuższe pierwsze — pracują najdłużej, R3). **2×cała się NIE robi** (uwaga 4), a 1,5 nie
-  rusza, dopóki ktokolwiek nie ma choć jednej całej.
+- **PASS A — „dobij WSZYSTKICH do pełnej":** obieg `dk = cała` z dopiero JEDNĄ połówką@A11 (overflow z fazy 3)
+  → dostaje **2. połówkę → 2×½ = pełna** (rozsunięte ~2,5 h, `SPACING_POLOWKI`). Najpierw wszyscy mają pełną.
+- **PASS B — „wypełnij rezerwowych do 3 kół":** obiegowi `dk = cała` z 1 przerwą dokładamy 2., w kolejności
+  **malejąco po kołach** (całozmianowe/najdłuższe pierwsze — pracują najdłużej, R3). **Preferujemy POŁÓWKĘ →
+  1,5** („najlepiej rozbijaj na półtorej", uwaga 4); gdy połówki się nie da — **CAŁĄ → 2×cała** (dobicie
+  rezerwowych OFF-A11 A1/A7/A18/A23, których połówką nie zapełnimy — połówka tylko na A11). Szczyt
+  (`dk = połówka`) 2. przerwy NIE dostaje (#4). Pass B rusza po Pass A → nikt nie dostaje 2. przerwy, póki
+  inni (których da się dopełnić) nie mają pełnej; kolejność longest-first chroni sprawiedliwość.
 - Dokładki tylko **cała / połówka**. **Godzinka i szczeniak NIE są dokładane automatycznie** (patrz niżej).
 
 ---
@@ -173,9 +175,9 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
   **domyślnie 1** podmianę i zostaje pod ręką (R17). Wskazanie: jawny flag `Reserve.rolling` (checkbox w panelu) >
   pierwszy niezablokowany rezerwowy A1. **Pozostali rezerwowi A1 pracują normalnie do 3 kół**. Inne stacje:
   bez limitu liczby (ogranicza je tylko 3 koła). Ręczny `Reserve.maxJobs` zawsze nadpisuje.
-- **Wykorzystanie nadmiaru (R16):** najpierw Pass A dobija WSZYSTKICH do pełnej przerwy (samotne połówki →
-  2×½), a leftover idzie na **półtorej** (cała+połówka) dla najdłuższych — **nigdy 2×cała** i nigdy 1,5,
-  póki ktoś nie ma choć jednej całej (patrz §3a).
+- **Wykorzystanie nadmiaru (R16, ~4,5 h):** najpierw Pass A dobija WSZYSTKICH do pełnej przerwy (samotne
+  połówki → 2×½), potem Pass B **wypełnia rezerwowych do 3 kół** — najdłuższe pierwsze, **preferując półtorej**
+  (cała+połówka), a gdy połówki się nie da — **2×cała** (dobicie off-A11). Patrz §3a.
 - Pakowanie: najpierw dobijamy najczęściej używanego rezerwowego, świeżych zostawiamy na trudniejsze,
   późniejsze obiegi.
 - Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.
@@ -197,6 +199,6 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
   rezerwowego**, przenosząc jego dotychczasową (jedyną) podmianę na innego wolnego (`placeElsewhere`), po czym
   obsadza BRAK. **Relokacja ZACHOWUJE wielkość przerwy** (długodystansowiec → cała, szczyt → połówka — eviction
   nie krzywdzi nikogo połówką). Dopiero gdy i to nie pomoże → **BRAK** (dodać rezerwowego na stacji z deficytem).
-- **R16 DOPIERO przy 0 BRAK** (bramka `hasBrak`); dodatkowo **półtorej (Pass B) DOPIERO przy 0 „braku pełnej
-  przerwy"** (`lacksFull`) — dopóki ktoś nie ma całej (samotna połówka obiegu `dk=cała`), nikt nie dostaje
-  luksusu 1,5 (uwaga 4). Najpierw wszyscy do pełnej, dopiero potem 1,5 dla najdłuższych.
+- **R16 DOPIERO przy 0 BRAK** (bramka `hasBrak`). Wewnątrz: Pass A (wszyscy do pełnej) → Pass B (wypełnianie
+  rezerwowych, najdłuższe pierwsze). Kolejność longest-first + „Pass A najpierw" chronią sprawiedliwość —
+  2. przerwa idzie do najdłuższych dopiero, gdy dopełnialnych do pełnej już nie ma.

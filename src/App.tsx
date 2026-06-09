@@ -199,6 +199,7 @@ export default function App() {
   }, [obiegi]);
 
   const [planDirty, setPlanDirty] = useState(false);
+  const [lastGenAt, setLastGenAt] = useState<number | null>(null); // kiedy ostatnio przeliczono (widoczny ślad)
 
   const generate = (currentManual = manual, currentForce = forceKind, currentThrough = throughShiftBy) => {
     if (!delayed.length) return;
@@ -213,6 +214,7 @@ export default function App() {
     for (const [id, a] of Object.entries(currentManual)) merged[id] = a;
     setAssignments(merged);
     setPlanDirty(false);
+    setLastGenAt(Date.now());
   };
 
   // ręczny mark rodzaju: auto → połówka → cała → auto; natychmiast przelicza
@@ -382,15 +384,15 @@ export default function App() {
             />
             min
           </label>
-          <label className="delay-ctl" title="nie planuj przerw wcześniej niż ta godzina (próg globalny; per-stacja niżej, override per-obieg w edytorze przerwy)">
-            ⏰ nie wcześniej niż
+          <label className="delay-ctl" title="ZACZNIJ OD tej godziny (cel startu przerw, tolerancja +15 min); próg globalny — per-stacja niżej, override per-obieg w edytorze przerwy">
+            ⏰ zacznij od <small>(+15′)</small>
             <input
               type="time"
               value={HHMMSS(earliestStart)}
               onChange={(e) => setEarliestStart(hmToSec(e.target.value) ?? earliestStart)}
             />
           </label>
-          <div className="station-earliest" title="próg startu i kotwica rozkładania PER STACJA — puste pole = jak globalny">
+          <div className="station-earliest" title="zacznij od — PER STACJA (cel startu, tolerancja +15 min); puste pole = jak globalny">
             <span className="se-lbl">per stacja:</span>
             {BREAK_STATIONS.map((s) => (
               <label key={s} className="se-item">
@@ -419,6 +421,11 @@ export default function App() {
           >
             ⟳ Generuj plan{planDirty ? " •" : ""}
           </button>
+          {lastGenAt && (
+            <span className="gen-stamp" title="czas ostatniego przeliczenia planu">
+              ✓ {new Date(lastGenAt).toLocaleTimeString("pl-PL")}
+            </span>
+          )}
           {Object.keys(manual).length > 0 && (
             <button className="btn-reset" onClick={resetManual} title="usuń ręczne korekty">
               Reset korekt

@@ -30,7 +30,11 @@ const ONLY_POL_LATEST = hms(18, 15);
 // NIE „jak najbliżej 14:30". Slot w oknie = score 0; poza oknem = odległość do najbliższej krawędzi.
 export const PREF_WINDOW: [number, number] = [hms(16, 0), hms(17, 30)];
 export const PREF_START = PREF_WINDOW[0]; // zachowane dla zgodności eksportu
-const EARLIEST_DEFAULT = hms(14, 30);    // granica: przerwa NIE wcześniej niż 14:30 (R2)
+const EARLIEST_DEFAULT = hms(14, 30);    // „zacznij od" — domyślny start przerw (R2)
+// „ZACZNIJ OD" + TOLERANCJA (decyzja użytkownika 2026-06-09): ustawienie „nie wcześniej niż" jest CELEM
+// startu, nie tylko twardą granicą. Sloty w oknie [próg, próg + 15 min] są równie dobre (score 0); dopiero
+// powyżej tolerancji score rośnie. Daje to 15-min luz na lepsze upakowanie rezerwowych blisko docelowego startu.
+const START_TOLERANCE = 15 * 60;
 // DWA OKNA startu (R2, model potwierdzony 2026-06-07): okno PIERWSZEJ (= jedynej gwarantowanej) przerwy
 // jest krótsze — start najpóźniej 18:20. Okno DRUGIEJ (dodatkowej) przerwy jest dłuższe (może startować
 // później); i tak ogranicza je fizycznie R7 (pociąg musi wrócić przed zjazdem). Druga = zawsze połówka.
@@ -177,14 +181,17 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const floorOf = (o: Obieg, s: BreakStation) => opts.earliestByObieg?.[o.id] ?? stationEarliest(s);
   // scarcity: odepchnij CAŁE z A11 (A11 zostawiamy na połówki — jedyne miejsce, gdzie są możliwe)
   const scarcity = (s: Slot) => (s.kind === "cała" && s.station === "A11" ? A11_CALA_PENALTY : 0);
-  // SCORE (mniejszy = lepszy): po scarcity preferuj NAJWCZEŚNIEJSZY slot OD PROGU STARTU stacji w górę.
-  // Próg = USTAWIENIE „najwcześniej" (opts.earliest / per-stacja) — to ono steruje, kiedy ruszają przerwy
-  // (decyzja użytkownika 2026-06-09: „start przerw określony w ustawieniach"). NIE narzucamy sztywnego okna
-  // 16–17:30 — pomocnik sam ustawia próg. Wczesne starty (np. 14:30) to świadomy wybór ustawienia, a osobny
-  // próg 3,5 koła (patrz coverWindow) pilnuje, by SAMOTNA połówka długodystansowca nie była pierwszą podmianą.
+  // SCORE (mniejszy = lepszy): po scarcity preferuj start w oknie [„zacznij od", +15 min tolerancji] danej
+  // stacji. Próg „zacznij od" = USTAWIENIE „nie wcześniej niż" (opts.earliest / per-stacja) — to ono steruje,
+  // kiedy ruszają przerwy (decyzja użytkownika 2026-06-09). Sloty w [próg, próg+15] = score 0 (luz na lepsze
+  // upakowanie); powyżej tolerancji score rośnie liniowo, więc dalsze starty są tym gorsze. Osobny próg 3,5
+  // koła (coverWindow) pilnuje, by SAMOTNA połówka długodystansowca nie była pierwszą podmianą.
   // opts.pref = stary „magnes" na konkretną godzinę (back-compat, nieużywany przez UI).
-  const score = (s: Slot) =>
-    opts.pref != null ? Math.abs(s.startT - opts.pref) : scarcity(s) + (s.startT - stationEarliest(s.station));
+  const score = (s: Slot) => {
+    if (opts.pref != null) return Math.abs(s.startT - opts.pref);
+    const over = s.startT - stationEarliest(s.station) - START_TOLERANCE; // > 0 dopiero poza tolerancją
+    return scarcity(s) + (over > 0 ? over : 0);
+  };
   const forced = opts.forcedKinds ?? {};
   // CAŁOZMIANOWY (throughShift) — auto z rozkładu (zjazd ≥ 21:00 → loops=∞) LUB ręczne wskazanie pomocnika
   // (override). Taki obieg traktujemy jak całodobowy: ZAWSZE cała (wykluczony z racjonowania), priorytet
@@ -508,17 +515,18 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     }
   }
 
-  // 2. R16 — wykorzystanie pozostałej mocy (decyzja użytkownika 2026-06-09). DWIE FAZY, NIGDY 2×cała:
-  //  • PASS A — „dobij WSZYSTKIM do całej": obieg z dk="cała", który ma dopiero JEDNĄ POŁÓWKĘ@A11 (overflow
-  //    z fazy 3), dostaje DRUGĄ POŁÓWKĘ → 2×½ = pełna przerwa. Dzięki temu znikają „obiegi z połówką".
-  //  • PASS B — „leftover → PÓŁTOREJ": gdy po Pass A moc jeszcze została, obiegowi z jedną CAŁĄ dokładamy
-  //    POŁÓWKĘ (= 1,5), w kolejności MALEJĄCO PO KOŁACH — najpierw całozmianowe/najdłuższe (pracują najdłużej,
-  //    R3). NIE robimy 2×cała (uwaga 4) i NIE dajemy 1,5 nikomu, póki ktokolwiek nie ma choć jednej całej
-  //    (gwarantuje to bramka „brak BRAK" + wcześniejszy Pass A). Szczyt (dk="połówka") 2. przerwy nie dostaje.
+  // 2. R16 — pokrycie + MAKSYMALNE WYKORZYSTANIE MOCY (~4,5 h = 3 koła/rezerwowego, R13; decyzja użytkownika
+  // 2026-06-09: „maszyniści rezerwowi wykorzystani na maxa"). DWIE FAZY (bramka: brak realnego BRAK):
+  //  • PASS A — „dobij WSZYSTKICH do pełnej": obieg z dk="cała", który ma dopiero JEDNĄ POŁÓWKĘ@A11 (overflow
+  //    z fazy 3), dostaje DRUGĄ POŁÓWKĘ → 2×½ = pełna przerwa. Najpierw wszyscy mają pełną (sprawiedliwość).
+  //  • PASS B — „wypełnij rezerwowych do 3 kół": obiegowi dk="cała" z 1 przerwą dokładamy 2. przerwę,
+  //    NAJDŁUŻSZE pierwsze (całozmianowe/∞ → wysokie koła; pracują najdłużej, R3). PREFERUJEMY POŁÓWKĘ → 1,5
+  //    („najlepiej rozbijaj na półtorej", uwaga 4); gdy połówki się nie da — CAŁĄ → 2×cała (dobicie rezerwowych
+  //    OFF-A11 A1/A7/A18/A23, których połówką nie zapełnimy — połówka jest tylko na A11). Szczyt (dk="połówka")
+  //    2. przerwy NIE dostaje (#4). Pass B rusza po Pass A, więc nikt nie dostaje 2. przerwy, póki inni nie
+  //    mają pełnej (kolejność longest-first dodatkowo chroni sprawiedliwość).
   // Okno 2. przerwy dłuższe (start do LATEST_SECOND; realnie limituje R7/zjazd). Dwie połówki rozsuwamy ~2,5 h.
   const SPACING_POLOWKI = hms(2, 30);
-  // BRAMKA R16 (R9 > R16): dokładki DOPIERO po zapewnieniu pokrycia WSZYSTKIM. Dopóki jest realny BRAK —
-  // nie dokładamy nikomu (BRAK to brak rezerwowego na stacji → ręczna obsada / +rezerwowy, nie luksus gdzie indziej).
   const hasBrak = () => obiegi.some((o) => !(assignments[o.id] ?? []).some((a) => a.reserveId));
   // Dołożenie 2. przerwy danego rodzaju do obiegu o (rozsuw `target`). Zwraca true, gdy dołożono.
   const addSecond = (o: Obieg, kind: BreakKind, target: number): boolean => {
@@ -535,11 +543,6 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     }
     return false;
   };
-  // obieg, któremu NALEŻY się pełna przerwa (dk="cała"), a ma dopiero samotną POŁÓWKĘ — czyli „nie ma całej".
-  const lacksFull = () => obiegi.some((o) => {
-    const a = (assignments[o.id] ?? []).filter((x) => x.reserveId);
-    return dk(o) === "cała" && a.length === 1 && a[0].kind === "połówka";
-  });
   if (!hasBrak()) {
     // PASS A — dopełnij każdą samotną połówkę (dk="cała") do 2×½ = pełna przerwa. Iteruj do nasycenia.
     let progressA = true;
@@ -551,20 +554,17 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
         if (addSecond(o, "połówka", cur[0].startT + SPACING_POLOWKI)) progressA = true;
       }
     }
-    // PASS B — leftover → 1,5 (cała + połówka) dla NAJDŁUŻSZYCH najpierw (całozmianowe/∞ → wysokie koła).
-    // GATE (uwaga 4): NIE dajemy nikomu 1,5, dopóki KTOKOLWIEK nie ma pełnej przerwy (lacksFull) — wtedy
-    // wolną moc trzymamy, nie rozdajemy luksusu. (Pass A nie zawsze dopcha 2×½ na nasyconym A11 — wtedy
-    // samotna połówka zostaje „w ostateczności", a 1,5 nie rusza.)
-    if (!lacksFull()) {
-      const byLoopsDesc = [...obiegi].sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id));
-      let progressB = true;
-      while (progressB) {
-        progressB = false;
-        for (const o of byLoopsDesc) {
-          const cur = assignments[o.id];
-          if (!cur || cur.length !== 1 || dk(o) !== "cała" || cur[0].kind !== "cała") continue; // tylko 1×cała
-          if (addSecond(o, "połówka", driverFreeAt[o.id] ?? 0)) progressB = true; // dołóż połówkę → 1,5
-        }
+    // PASS B — wypełnij rezerwowych do maksimum (NAJDŁUŻSZE pierwsze). Preferuj połówkę (1,5), inaczej cała (2×cała).
+    const byLoopsDesc = [...obiegi].sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id));
+    let progressB = true;
+    while (progressB) {
+      progressB = false;
+      for (const o of byLoopsDesc) {
+        const cur = assignments[o.id];
+        if (!cur || cur.length !== 1 || dk(o) !== "cała") continue; // szczyt (dk=połówka) bez 2. przerwy
+        const tgt = cur[0].kind === "połówka" ? cur[0].startT + SPACING_POLOWKI : driverFreeAt[o.id] ?? 0;
+        if (addSecond(o, "połówka", tgt)) { progressB = true; continue; }     // → 1,5 (lub 2×½ dla utkniętej połówki)
+        if (addSecond(o, "cała", driverFreeAt[o.id] ?? 0)) progressB = true;  // → 2×cała (dobicie off-A11)
       }
     }
   }
