@@ -236,7 +236,9 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // się mieści — silnik musi upakować; jeśli nie — cięcie wg kół, nie losowo.) Każde cięcie cała→połówka = −0,5 eq.
   // KLUCZOWE: próg jest BILANSOWY, nie sztywny — przy nadwyżce rezerwowych 4-kołowy szczyt dostaje CAŁĄ
   // (eliminuje to „obiegi z połówką", gdy moc pozwala na pełne), a dopiero deficyt schodzi na połówki od dołu.
-  const HARD_POL_LOOPS = 3; // ≤ 3 koła = połówka ZAWSZE (twardy próg R10 E3)
+  const HARD_POL_LOOPS = 4; // < 4 koła = połówka ZAWSZE (twardy próg, decyzja użytkownika 2026-06-10:
+                            // „reszta całe, wyjątek te co robią mniej niż 4 koła"). W danych łapie 4 obiegi
+                            // (S31 3,35 · S34 3,50 · S23 3,73 · S28 3,82); 4,00 NIE jest połówką (chyba że racjonowanie).
   const eligible = [...obiegi]
     .filter((o) => !forced[o.id] && !isThrough(o) && Number.isFinite(o.loops)) // całozmianowe poza racjonowaniem
     .sort((a, b) => a.loops - b.loops || a.firstT - b.firstT);
@@ -246,11 +248,11 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const capacity = reserves.reduce(
     (s, r) => s + (r.blocked || r.id === rollingA1Id ? 0 : Math.min(MAX_RESERVE_LOAD_EQ, capOf(r))), 0
   );
-  const autoPolowka = new Set(eligible.filter((o) => o.loops <= HARD_POL_LOOPS).map((o) => o.id));
+  const autoPolowka = new Set(eligible.filter((o) => o.loops < HARD_POL_LOOPS).map((o) => o.id));
   // eqDemand respektuje też RĘCZNE/NAWROTOWE cięcia (forced=połówka) — patrz RETRY niżej
   const eqDemand = () => obiegi.reduce((s, o) => s + (forced[o.id] === "połówka" || autoPolowka.has(o.id) ? 0.5 : 1), 0);
   for (const o of eligible) {
-    if (o.loops <= HARD_POL_LOOPS) continue;     // ≤3 koła już są połówkami (twardy próg)
+    if (o.loops < HARD_POL_LOOPS) continue;      // <4 koła już są połówkami (twardy próg)
     if (eqDemand() <= capacity) break;            // bilans się spina (nadwyżka) → nie tnij więcej, reszta = całe
     autoPolowka.add(o.id);                         // deficyt: utnij temu (najmniej kół z pozostałych) → połówka
   }
@@ -423,30 +425,120 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     unassigned.push(o.id);
   };
 
-  // FAZA 1 — CAŁE poza A11 (autoSlots blokuje cała@A11). BEZ downgrade: niezmieszczone czekają na fazę 3,
-  // żeby nie zajmować A11 przed dedykowanymi połówkami.
-  const pendingCala: Obieg[] = [];
-  for (const o of order) {
-    if (dk(o) !== "cała" || assignments[o.id]?.length) continue; // pin/inny rodzaj
-    if (!tryAssign(o)) pendingCala.push(o);
-  }
-  // FAZA 2 — dedykowane POŁÓWKI na A11 (claim A11 przed nadmiarem całych).
-  for (const o of order) {
-    if (dk(o) === "cała" || assignments[o.id]?.length) continue;
-    if (tryAssign(o)) continue;
-    if (tryCover(o)) continue;
-    fallbackBrak(o);
-  }
-  // FAZA 3 — NADMIAR całych (niezmieszczonych poza A11): NA A11 NIE dajemy cała@A11 (zajmuje rezerwowego na
-  // ~90 min, mało elastyczne). Zamiast tego dostają PIERWSZĄ POŁÓWKĘ@A11 (po 1. kole, w oknie preferencji),
-  // a R16 dokłada DRUGĄ POŁÓWKĘ → 2×½ = pełna przerwa („rozbicie całej na dwie połówki — więcej opcji
-  // podmian", decyzja użytkownika 2026-06-09). Drobniejsze bloki = ciaśniejsze pakowanie. Kolejność: cała
-  // off-A11 (gdyby się zwolniło) → połówka@A11. Gdy nic nie wchodzi → BRAK (sygnał „dodać rezerwowego").
-  for (const o of pendingCala) {
-    if (assignments[o.id]?.length) continue;
-    if (tryAssign(o)) continue;   // cała poza A11 (preferowane — to jest „cała")
-    if (tryCover(o)) continue;    // overflow → połówka@A11 (1. połowa; R16 dopełni do 2×½ = pełna przerwa)
-    fallbackBrak(o);
+  // 1*. OPTYMALIZATOR (branch-and-bound / CSP, decyzja użytkownika 2026-06-10). KLUCZ: optimum = ZERO
+  // downgrade'ów — każdy obieg dostaje swój DOCELOWY rodzaj dk (cała→cała, połówka→połówka), więc liczba
+  // połówek = dokładnie bilans (np. 6), a nie greedy ~13. Pytanie sprowadza się do CSP: czy ISTNIEJE pełne,
+  // bezkolizyjne upakowanie wszystkich obiegów docelowym rodzajem? Jeśli tak — przeszukiwanie z nawrotami je
+  // znajdzie (greedy go gubił przy zerowym luzie, bo połówki fragmentowały A11). MRV (najmniej kandydatów
+  // pierwsze) + dedup symetrycznych rezerwowych + pakowanie busiest-first tną drzewo; BUDŻET węzłów/czasu +
+  // fallback do greedy gwarantują, że UI nigdy nie zamarza. Sukces ⇒ 0 BRAK i 0 downgrade (eviction/nawrót
+  // poniżej stają się no-opem). Porażka/niewykonalność/budżet ⇒ greedy faza 1/2/3 (dawne, z downgrade'ami).
+  type Place = { slot: Slot; dg: number }; // dg=1 → downgrade (dk=cała obsłużony połówką)
+  const optimizeExact = (): boolean => {
+    const toAssign = order.filter((o) => !(assignments[o.id]?.length)); // bez pinów
+    // PLACEMENTS: docelowy rodzaj dk (dg=0) + dla dk=cała także połówka (dg=1, downgrade). cała dopuszcza A11.
+    const place = new Map<string, Place[]>();
+    for (const o of toAssign) {
+      const after = driverFreeAt[o.id] ?? 0;
+      const arr: Place[] = [];
+      const kc = dk(o);
+      { const { floor, hi } = coverWindow(o, kc); const src = kc === "cała" ? candidateSlots : autoSlots;
+        for (const s of src(o, kc, floor, hi)) if (s.startT >= after) arr.push({ slot: s, dg: 0 }); }
+      if (kc === "cała") { const { floor, hi } = coverWindow(o, "połówka");
+        for (const s of autoSlots(o, "połówka", floor, hi)) if (s.startT >= after) arr.push({ slot: s, dg: 1 }); }
+      arr.sort((a, b) => a.dg - b.dg || score(a.slot) - score(b.slot));
+      if (arr.length === 0) return false; // obieg bez żadnego slotu → greedy (BRAK + nawrót)
+      place.set(o.id, arr);
+    }
+    const vars = [...toAssign].sort((a, b) => place.get(a.id)!.length - place.get(b.id)!.length); // MRV
+    const jobs = new Map<string, Array<{ s: number; e: number }>>();
+    const load = new Map<string, number>(), cnt = new Map<string, number>();
+    for (const r of rs) { jobs.set(r.ref.id, r.jobs.map((j) => ({ s: j.s, e: j.e }))); load.set(r.ref.id, r.loadEq); cnt.set(r.ref.id, r.count); }
+    // rezerwowi per stacja policzeni RAZ (blocked/manualOnly są statyczne); avail sprawdzamy per slot
+    const byStation = new Map<BreakStation, RState[]>();
+    for (const r of rs) if (!r.ref.blocked && !r.ref.manualOnly) (byStation.get(r.station) ?? byStation.set(r.station, []).get(r.station)!).push(r);
+    const elig = (slot: Slot) =>
+      (byStation.get(slot.station) ?? []).filter((r) =>
+        (r.ref.availFrom == null || slot.startT >= r.ref.availFrom) &&
+        (r.ref.availTo == null || slot.startT + slot.durationMin * 60 <= r.ref.availTo));
+    const free = (rid: string, s: number, e: number) => !jobs.get(rid)!.some((j) => s < j.e && j.s < e);
+    const canTake = (r: RState, slot: Slot) =>
+      load.get(r.ref.id)! + CALA_EQ[slot.kind] <= MAX_RESERVE_LOAD_EQ + 1e-6 &&
+      cnt.get(r.ref.id)! < r.cap && free(r.ref.id, slot.startT, slot.startT + slot.durationMin * 60);
+    // minimalny downgrade osiągalny dla obiegu w bieżącym stanie (∞ = nie ma gdzie go obsadzić → ten branch BRAK)
+    const minDg = (o: Obieg): number => {
+      let m = Infinity;
+      for (const p of place.get(o.id)!) { if (p.dg >= m) continue; if (elig(p.slot).some((r) => canTake(r, p.slot))) m = p.dg; }
+      return m;
+    };
+    let nodes = 0, aborted = false; const t0 = Date.now();
+    // BUDŻET — prymarnie WĘZŁOWY (deterministyczny wynik: ta sama obsada → ten sam plan, niezależnie od
+    // szybkości maszyny). Optimum trafia się zwykle natychmiast (REAL 12: dg=2 przy 76 węźle / 10 ms), więc
+    // głównym hamulcem jest STALL: gdy przez STALL_NODES nie ma poprawy inkumbenta, kończymy (na łatwych
+    // szybko, na trudnych dłużej). NODE_BUDGET i czas to twarde zabezpieczenia, by UI nie zamarzło; po
+    // wyczerpaniu — fallback do greedy. Wszystkie progi w WĘZŁACH (deterministyczne), czas tylko awaryjnie.
+    const NODE_BUDGET = 4_000_000, STALL_NODES = 30_000, TIME_BUDGET_MS = 1000;
+    type Pick = { o: Obieg; slot: Slot; rid: string };
+    let bestCost = Infinity; let bestChosen: Pick[] | null = null; let lastImprove = 0;
+    const cur: Array<{ o: Obieg; slot: Slot; rid: string }> = [];
+    const dfs = (i: number, dgSoFar: number): void => {
+      if (aborted) return;
+      if (++nodes > NODE_BUDGET || (bestChosen && nodes - lastImprove > STALL_NODES) ||
+          ((nodes & 2047) === 0 && Date.now() - t0 > TIME_BUDGET_MS)) { aborted = true; return; }
+      if (dgSoFar >= bestCost) return; // przycięcie inkumbentem
+      if (i === vars.length) { bestCost = dgSoFar; bestChosen = cur.slice(); lastImprove = nodes; return; }
+      // DOLNE OGRANICZENIE + forward-check: suma minDg pozostałych; ∞ → branch prowadzi do BRAK (odetnij)
+      let lb = dgSoFar;
+      for (let j = i; j < vars.length; j++) { const m = minDg(vars[j]); if (m === Infinity) return; lb += m; if (lb >= bestCost) return; }
+      const o = vars[i];
+      for (const p of place.get(o.id)!) {
+        if (dgSoFar + p.dg >= bestCost) break; // placements sort: dg rośnie → dalej nie będzie lepiej
+        const e = p.slot.startT + p.slot.durationMin * 60;
+        const cands = elig(p.slot).filter((r) => canTake(r, p.slot)).sort((a, b) => load.get(b.ref.id)! - load.get(a.ref.id)!);
+        let emptyTried = false; // symetria: świeży (pusty) rezerwowy danej stacji jest wymienny — próbuj tylko JEDNEGO
+        for (const r of cands) {
+          const rid = r.ref.id;
+          if (jobs.get(rid)!.length === 0) { if (emptyTried) continue; emptyTried = true; }
+          jobs.get(rid)!.push({ s: p.slot.startT, e }); load.set(rid, load.get(rid)! + CALA_EQ[p.slot.kind]); cnt.set(rid, cnt.get(rid)! + 1);
+          cur.push({ o, slot: p.slot, rid });
+          dfs(i + 1, dgSoFar + p.dg);
+          cur.pop(); jobs.get(rid)!.pop(); load.set(rid, load.get(rid)! - CALA_EQ[p.slot.kind]); cnt.set(rid, cnt.get(rid)! - 1);
+          if (aborted) return;
+        }
+      }
+    };
+    dfs(0, 0);
+    const sol = bestChosen as Pick[] | null; // cast: CFA nie widzi przypisania w domknięciu dfs
+    if (sol == null) return false; // nic nie znaleziono (budżet bez pełnego rozwiązania) → greedy
+    for (const { o, slot, rid } of sol) commit(o, slot, rs.find((x) => x.ref.id === rid)!);
+    return true;
+  };
+
+  if (!optimizeExact()) {
+    // FAZA 1 — CAŁE poza A11 (autoSlots blokuje cała@A11). Niezmieszczone → pendingCala (nadmiar dla A11).
+    // Greedy „całe-first na A11" testowany 2026-06-10 — odrzucony: głodził połówki (BRAK) i ścinał na połówkę
+    // nawet długodystansowców 5,0. Dlatego najmniej elastyczne A11-only połówki idą PIERWSZE (faza 2).
+    const pendingCala: Obieg[] = [];
+    for (const o of order) {
+      if (dk(o) !== "cała" || assignments[o.id]?.length) continue; // pin/inny rodzaj
+      if (!tryAssign(o)) pendingCala.push(o);
+    }
+    // FAZA 2 — dedykowane POŁÓWKI na A11 (claim A11 — najmniej elastyczne, połówka możliwa TYLKO na A11).
+    for (const o of order) {
+      if (dk(o) === "cała" || assignments[o.id]?.length) continue;
+      if (tryAssign(o)) continue;
+      if (tryCover(o)) continue;
+      fallbackBrak(o);
+    }
+    // FAZA 3 — NADMIAR całych (niezmieszczonych poza A11): ląduje jako CAŁA@A11 (a11 też może być cała).
+    // Kolejność: cała off-A11 → cała@A11 → (ostateczność) połówka@A11 → BRAK (sygnał „dodać rezerwowego").
+    for (const o of pendingCala) {
+      if (assignments[o.id]?.length) continue;
+      if (tryAssign(o)) continue;        // cała poza A11 (preferowane)
+      if (tryAssign(o, true)) continue;  // overflow → CAŁA@A11
+      if (tryCover(o)) continue;         // ostateczność: pokrycie awaryjne (połówka@A11)
+      fallbackBrak(o);
+    }
   }
 
   // 1b. PASS NAPRAWCZY (eviction 1-poziomowy): dla każdego BRAK obiegu spróbuj ZWOLNIĆ rezerwowego,
@@ -534,16 +626,15 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     }
   }
 
-  // 2. R16 — pokrycie + MAKSYMALNE WYKORZYSTANIE MOCY (~4,5 h = 3 koła/rezerwowego, R13; decyzja użytkownika
-  // 2026-06-09: „maszyniści rezerwowi wykorzystani na maxa"). DWIE FAZY (bramka: brak realnego BRAK):
-  //  • PASS A — „dobij WSZYSTKICH do pełnej": obieg z dk="cała", który ma dopiero JEDNĄ POŁÓWKĘ@A11 (overflow
-  //    z fazy 3), dostaje DRUGĄ POŁÓWKĘ → 2×½ = pełna przerwa. Najpierw wszyscy mają pełną (sprawiedliwość).
-  //  • PASS B — „wypełnij rezerwowych do 3 kół": obiegowi dk="cała" z 1 przerwą dokładamy 2. przerwę,
-  //    NAJDŁUŻSZE pierwsze (całozmianowe/∞ → wysokie koła; pracują najdłużej, R3). PREFERUJEMY POŁÓWKĘ → 1,5
-  //    („najlepiej rozbijaj na półtorej", uwaga 4); gdy połówki się nie da — CAŁĄ → 2×cała (dobicie rezerwowych
-  //    OFF-A11 A1/A7/A18/A23, których połówką nie zapełnimy — połówka jest tylko na A11). Szczyt (dk="połówka")
-  //    2. przerwy NIE dostaje (#4). Pass B rusza po Pass A, więc nikt nie dostaje 2. przerwy, póki inni nie
-  //    mają pełnej (kolejność longest-first dodatkowo chroni sprawiedliwość).
+  // 2. R16 — drugie przerwy DOPIERO po obsadzeniu wszystkich na całe (decyzja użytkownika 2026-06-10, zmiana
+  // wobec 2026-06-09 „na maxa"). DWIE FAZY (bramka: brak realnego BRAK):
+  //  • PASS A — „dobij WSZYSTKICH do pełnej": obieg z dk="cała", który ma dopiero JEDNĄ POŁÓWKĘ@A11 (rzadkie
+  //    po zmianie 2026-06-10 — nadmiar całych ląduje teraz jako cała@A11, nie jako połówka), dostaje DRUGĄ
+  //    POŁÓWKĘ → 2×½ = pełna przerwa. Najpierw wszyscy mają pełną (sprawiedliwość).
+  //  • PASS B — drugie przerwy TYLKO dla obiegów < 4 koła („wyjątkiem mogą być te co robią mniej niż 4 koła"):
+  //    krótki obieg (dk=połówka) przy NADWYŻCE mocy dostaje 2. połówkę → 2×½ = pełna. Długodystansowce 2.
+  //    przerwy NIE dostają (koniec „1,5 dla innych"). Przy spiętym bilansie (moc=zapotrzebowanie) Pass B nie
+  //    odpala — brak wolnego rezerwowego. Pass B rusza po Pass A → najpierw wszyscy mają pełną.
   // Okno 2. przerwy dłuższe (start do LATEST_SECOND; realnie limituje R7/zjazd). Dwie połówki rozsuwamy ~2,5 h.
   const SPACING_POLOWKI = hms(2, 30);
   const hasBrak = () => obiegi.some((o) => !(assignments[o.id] ?? []).some((a) => a.reserveId));
@@ -573,17 +664,23 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
         if (addSecond(o, "połówka", cur[0].startT + SPACING_POLOWKI)) progressA = true;
       }
     }
-    // PASS B — wypełnij rezerwowych do maksimum (NAJDŁUŻSZE pierwsze). Preferuj połówkę (1,5), inaczej cała (2×cała).
-    const byLoopsDesc = [...obiegi].sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id));
+    // PASS B — drugie przerwy DOPIERO po obsadzeniu wszystkich na całe (Pass A wyżej dopełnił całe do pełnej),
+    // i TYLKO dla obiegów < 4 koła (decyzja użytkownika 2026-06-10: „drugie podmiany dopiero po obsadzeniu
+    // wszystkich na całe, wyjątkiem mogą być te co robią mniej niż 4 koła"). Te krótkie obiegi są połówkami
+    // (dk=połówka) — przy NADWYŻCE mocy dokładamy im 2. połówkę → 2×½ = pełna. Długodystansowce 2. przerwy NIE
+    // dostają (koniec „1,5 dla innych" i „2×cała"). Przy spiętym bilansie (moc=zapotrzebowanie) Pass B nie
+    // odpali — nie ma wolnego rezerwowego. NAJKRÓTSZE pierwsze (te najbardziej „niedosycone").
+    const POL_SECOND_LOOPS = 4;
+    const byLoopsAsc = [...obiegi]
+      .filter((o) => Number.isFinite(o.loops) && o.loops < POL_SECOND_LOOPS)
+      .sort((a, b) => a.loops - b.loops || numOf(a.id) - numOf(b.id));
     let progressB = true;
     while (progressB) {
       progressB = false;
-      for (const o of byLoopsDesc) {
+      for (const o of byLoopsAsc) {
         const cur = assignments[o.id];
-        if (!cur || cur.length !== 1 || dk(o) !== "cała") continue; // szczyt (dk=połówka) bez 2. przerwy
-        const tgt = cur[0].kind === "połówka" ? cur[0].startT + SPACING_POLOWKI : driverFreeAt[o.id] ?? 0;
-        if (addSecond(o, "połówka", tgt)) { progressB = true; continue; }     // → 1,5 (lub 2×½ dla utkniętej połówki)
-        if (addSecond(o, "cała", driverFreeAt[o.id] ?? 0)) progressB = true;  // → 2×cała (dobicie off-A11)
+        if (!cur || cur.length !== 1 || cur[0].kind !== "połówka") continue; // dokładamy 2. połówkę → 2×½ = pełna
+        if (addSecond(o, "połówka", cur[0].startT + SPACING_POLOWKI)) progressB = true;
       }
     }
   }

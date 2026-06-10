@@ -188,17 +188,23 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
 - Pakowanie: najpierw dobijamy najczęściej używanego rezerwowego, świeżych zostawiamy na trudniejsze,
   późniejsze obiegi.
 - Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.
-- **Kolejność — CAŁE PIERWSZE (FAZY, jak liczy pomocnik instruktora §4a krok2→3):**
+- **PRZYDZIAŁ — OPTYMALIZATOR (branch-and-bound, `optimizeExact`; decyzja użytkownika 2026-06-10):** głównym
+  mechanizmem NIE jest już greedy, tylko przeszukiwanie z nawrotami MINIMALIZUJĄCE liczbę downgrade'ów (obieg
+  `dk=cała` obsłużony połówką). Optimum = każdy dostaje swój docelowy rodzaj → liczba połówek = dokładnie bilans
+  (np. REAL 12: **2 downgrade** zamiast greedy ~9; A11 robi MIX całych i połówek, każdy rezerwowy 3 koła).
+  Placements = docelowy rodzaj (dg=0) + dla całej także połówka (dg=1); **cała@A11 dozwolona**. Przycinanie:
+  inkumbent + dolne ograniczenie (suma `minDg` pozostałych) + dedup pustych rezerwowych + MRV. Budżet WĘZŁOWY
+  (deterministyczny wynik), STALL „brak poprawy przez N węzłów" kończy wcześnie, czas = zabezpieczenie UI.
+  Wynik znajduje się zwykle natychmiast (~10 ms); zwykle ≤ ~0,5 s. **Porażka/budżet/niewykonalność ⇒ fallback
+  do greedy (FAZY niżej).** Pełna cała@A11 znosi dawne rozbijanie nadmiaru na 2×½ (zalewało A11 połówkami).
+- **Kolejność greedy (FALLBACK, gdy optymalizator nie znajdzie planu — np. obsada przeciążona co do koła):**
   - **FAZA 1:** CAŁE **poza A11** (A1/A7/A18/A23). W obrębie całych: **CAŁOZMIANOWE/całodobowe pierwsze**
-    (`criticalRank`, `isThrough`), potem **MALEJĄCO PO KOŁACH** (`loopKey`) — długodystansowce zajmują całe
-    off-A11 przed szczytami (uwaga 5). Nadmiar, który nie wszedł poza A11, czeka na fazę 3.
+    (`criticalRank`, `isThrough`), potem **MALEJĄCO PO KOŁACH** (`loopKey`). Nadmiar czeka na fazę 3.
   - **FAZA 2:** dedykowane **POŁÓWKI szczytów na A11** — zajmują A11, zanim wejdzie tam nadmiar całych.
-  - **FAZA 3:** nadmiar całych → cała na **dowolnej wolnej stacji off-A11**; gdy brak → **połówka@A11**
-    (1. połowa; R16/Pass A dopełnia do 2×½ = pełna). **Automat NIE stawia cała@A11** (A11 = rozbicie na 2×½,
-    uwaga 3). Gdy nic nie wchodzi → BRAK.
+  - **FAZA 3:** nadmiar całych → cała off-A11; gdy brak → **CAŁA@A11** (a11 też może być cała); ostatecznie
+    połówka@A11 → BRAK.
   - **NAWRÓT (cięcie wg kół):** jeśli mimo to został BRAK, tnij następnego najmniej-kołowego z całych na połówkę
-    (`forcedKinds`) i przelicz od nowa; bierz wynik tylko, gdy zmniejsza BRAK. (Dawniej: bottleneck-first =
-    połówki/szczyty PIERWSZE — przez to całodobowe szły na BRAK, a szczyty dostawały po 2 przerwy.)
+    (`forcedKinds`) i przelicz od nowa; bierz wynik tylko, gdy zmniejsza BRAK.
 - **Pokrycie (R9) jest nadrzędne:** każdy obieg dostaje ≥ 1 przerwę. Najpierw `tryAssign` (preferowany rodzaj,
   okno ≤ 18:20). Gdy nie złapie wolnego rezerwowego — **pokrycie awaryjne** (`tryCover`): zejście na krótszy
   rodzaj (**połówka** — bez godzinki i szczeniaka), **to samo okno ≤ 18:20** (jedyna przerwa nie później).
