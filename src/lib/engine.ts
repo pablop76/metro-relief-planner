@@ -515,7 +515,10 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     // głównym hamulcem jest STALL: gdy przez STALL_NODES nie ma poprawy inkumbenta, kończymy (na łatwych
     // szybko, na trudnych dłużej). NODE_BUDGET i czas to twarde zabezpieczenia, by UI nie zamarzło; po
     // wyczerpaniu — fallback do greedy. Wszystkie progi w WĘZŁACH (deterministyczne), czas tylko awaryjnie.
-    const NODE_BUDGET = 4_000_000, STALL_NODES = 30_000, TIME_BUDGET_MS = 1000;
+    // STALL_NODES dobrane empirycznie 2026-06-10: optimum trafia się przy ~76 węźle, więc 4000 węzłów bez
+    // poprawy wystarcza — TA SAMA jakość co 30 000 (downgr identyczne na wszystkich testach), ale ~70 ms
+    // zamiast ~460 ms. Usuwa „zacięcie" przy zmianie opóźnienia/ustawień (regeneracja na żywo).
+    const NODE_BUDGET = 4_000_000, STALL_NODES = 4_000, TIME_BUDGET_MS = 1000;
     type Pick = { o: Obieg; slot: Slot; rid: string };
     let bestCost = Infinity; let bestChosen: Pick[] | null = null; let lastImprove = 0;
     const cur: Array<{ o: Obieg; slot: Slot; rid: string }> = [];
