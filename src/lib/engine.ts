@@ -14,9 +14,9 @@ const hms = (h: number, m: number) => h * 3600 + m * 60;
 const AUTO_KINDS: BreakKind[] = DOWNGRADE.filter((k) => k === "cała" || k === "połówka");
 
 // R17 — rezerwa ruchowa A1 (Kabaty): na A1 stoi pociąg rezerwy ruchowej; JEDEN maszynista z obsady
-// musi zostać pod ręką, by wprowadzić skład za pociąg, który uległ awarii / wymaga sprzątania. Ten
-// JEDEN robi DOMYŚLNIE tylko 1 koło (jedną całą); POZOSTALI rezerwowi z A1 pracują normalnie do 3 kół.
-// Którego dotyczy limit: jawny flag `rolling` > pierwszy niezablokowany rezerwowy A1. `maxJobs` nadpisuje.
+// może zostać pod ręką, by wprowadzić skład za pociąg, który uległ awarii / wymaga sprzątania. Ten robi
+// wtedy tylko 1 koło (jedną całą). UWAGA (2026-06-10): to OPT-IN — TYLKO gdy pomocnik zaznaczy `rolling`
+// (checkbox w panelu). DOMYŚLNIE wszyscy rezerwowi (też A1) mają MAKSYMALNY limit. `maxJobs` nadpisuje.
 const A1_MOBILE_MAX_JOBS = 1;
 
 // R3 — maksymalnie 6 h ciągłej pracy bez przerwy, liczone od REALNEGO startu maszynisty (entry2nd).
@@ -245,12 +245,12 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // klucz sortowania malejąco po kołach (∞ → największy); dwa ∞ = remis (rozstrzyga dalszy tie-break)
   const loopKey = (o: Obieg) => (Number.isFinite(effLoops(o)) ? effLoops(o) : 1e9);
 
-  // R17 — wskazanie rezerwy ruchowej A1 (limit 1 koło): jawny flag `rolling` > pierwszy niezablokowany
-  // rezerwowy A1. Pozostali rezerwowi A1 = bez limitu liczby (ogranicza ich tylko 3 koła, fitsLoad).
-  const rollingA1Id =
-    reserves.find((r) => r.station === "A1" && r.rolling && !r.blocked)?.id ??
-    reserves.find((r) => r.station === "A1" && !r.blocked)?.id;
-  // Limit liczby podmian rezerwowego: ręczny maxJobs > (rezerwa ruchowa A1 = 1) > bez limitu (Infinity).
+  // R17 — rezerwa ruchowa A1 (limit 1 koło) TYLKO gdy pomocnik JAWNIE zaznaczy `rolling` (checkbox).
+  // Decyzja użytkownika 2026-06-10: „dawaj WSZYSTKIM maksymalny limit; rezerwę ruchową / standby / tylko-moje
+  // zaznaczam sam". Usunięto auto-fallback (pierwszy niezablokowany A1 → rolling), który bezzasadnie ścinał A1
+  // do 1 koła → ciągły DEFICYT na A1. Domyślnie ŻADEN rezerwowy nie jest ograniczany liczbą podmian.
+  const rollingA1Id = reserves.find((r) => r.station === "A1" && r.rolling && !r.blocked)?.id;
+  // Limit liczby podmian: ręczny maxJobs > (jawna rezerwa ruchowa A1 = 1) > bez limitu (Infinity, do 3 kół).
   const capOf = (r: Reserve): number =>
     r.maxJobs ?? (r.id === rollingA1Id ? A1_MOBILE_MAX_JOBS : Infinity);
 
