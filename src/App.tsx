@@ -410,7 +410,21 @@ export default function App() {
             <input
               type="number"
               value={globalDelay}
-              onChange={(e) => setGlobalDelay(parseInt(e.target.value, 10) || 0)}
+              onChange={(e) => {
+                const next = parseInt(e.target.value, 10) || 0;
+                // auto-podmiany przesuwają się przez regenerację (delayed); RĘCZNE mają absolutny czas —
+                // przesuwamy je o DELTĘ opóźnienia, żeby też nadążały za linią (decyzja użytkownika 2026-06-10).
+                const deltaSec = (next - globalDelay) * 60;
+                if (deltaSec !== 0) {
+                  setManual((m) => {
+                    const out: Record<string, BreakAssignment[]> = {};
+                    for (const [id, list] of Object.entries(m))
+                      out[id] = list.map((a) => ({ ...a, startT: a.startT + deltaSec }));
+                    return out;
+                  });
+                }
+                setGlobalDelay(next);
+              }}
             />
             min
           </label>
