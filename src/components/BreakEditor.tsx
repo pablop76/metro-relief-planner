@@ -20,7 +20,9 @@ interface Props {
 }
 
 export function BreakEditor({ obieg, assignment, reserves, byReserve, earliest, earliestOverride, onEarliestChange, onChange, onClose, onRemove }: Props) {
-  const slots = useMemo(() => feasibleSlots(obieg, { earliest }), [obieg, earliest]);
+  // RĘCZNY wybór: bez progu „zacznij od" — użytkownik sam decyduje, od kiedy wstawić podmianę
+  // (granica dolna tylko fizyczna: wjazd obiegu na linię). Decyzja użytkownika 2026-06-10.
+  const slots = useMemo(() => feasibleSlots(obieg, { earliest }, true), [obieg, earliest]);
   // rezerwowy tylko z tej samej stacji co przerwa (rezerwowy podmienia tam, gdzie stoi)
   const stationReserves = assignment ? reserves.filter((r) => r.station === assignment.station) : [];
 

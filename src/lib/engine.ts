@@ -129,11 +129,16 @@ function candidateSlots(o: Obieg, kind: BreakKind, earliest: number | ((s: Break
   return out;
 }
 
-/** Wszystkie dopuszczalne sloty obiegu (wszystkie rodzaje) — do ręcznej edycji w UI. */
-export function feasibleSlots(o: Obieg, opts: PlanOptions = {}): Slot[] {
+/** Wszystkie dopuszczalne sloty obiegu (wszystkie rodzaje) — do ręcznej edycji w UI.
+ *  `unrestricted` (RĘCZNY wybór, decyzja użytkownika 2026-06-10: „jeśli wybieram sam, nie ograniczaj od kiedy
+ *  mogę wstawić"): pomija próg „zacznij od" — slot można postawić od momentu wjazdu obiegu na linię (jedyna
+ *  granica dolna to fizyczne `ae`/wjazd w candidateSlots), aż do LATEST_SECOND. Bez flagi: zwykły próg. */
+export function feasibleSlots(o: Obieg, opts: PlanOptions = {}, unrestricted = false): Slot[] {
   const g = opts.earliest ?? EARLIEST_DEFAULT;
-  // próg startu slotu: override per-obieg > per-stacja > globalny
-  const floor = (s: BreakStation) => opts.earliestByObieg?.[o.id] ?? opts.earliestByStation?.[s] ?? g;
+  // próg startu slotu: ręczny = brak (0); inaczej override per-obieg > per-stacja > globalny
+  const floor = unrestricted
+    ? () => 0
+    : (s: BreakStation) => opts.earliestByObieg?.[o.id] ?? opts.earliestByStation?.[s] ?? g;
   const all: Slot[] = [];
   for (const kind of DOWNGRADE) all.push(...candidateSlots(o, kind, floor, LATEST_SECOND));
   return all.sort((a, b) => a.startT - b.startT || b.durationMin - a.durationMin);
