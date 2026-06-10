@@ -42,14 +42,15 @@ interface Props {
   /** ręczne oznaczenie całozmianowy: true/false = override pomocnika, undefined = auto z rozkładu */
   throughShiftOverride?: boolean;
   onToggleThroughShift?: () => void;
-  /** efektywny próg „nie wcześniej niż" dla tego obiegu (override ?? globalny) */
-  earliest: number;
   /** override progu per-obieg (undefined = używa globalnego) */
   earliestOverride?: number;
   onEarliestChange?: (sec?: number) => void;
+  /** ręczna godzina rozpoczęcia pracy maszynisty 2. zmiany (override; undefined = wykryty entry2nd) */
+  driverStartOverride?: number;
+  onDriverStartChange?: (sec?: number) => void;
 }
 
-export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, trainNo, onTrainChange, forceKind, onCycleKind, throughShiftOverride, onToggleThroughShift, earliest, earliestOverride, onEarliestChange }: Props) {
+export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, trainNo, onTrainChange, forceKind, onCycleKind, throughShiftOverride, onToggleThroughShift, earliestOverride, onEarliestChange, driverStartOverride, onDriverStartChange }: Props) {
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const entry = afternoonEntry(obieg.events);
   const exit = obieg.events[obieg.events.length - 1];
@@ -73,8 +74,10 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
     onBreaksChange(sorted.filter((_, k) => k !== i));
     setEditIdx(null);
   };
+  // ręczny override godziny rozpoczęcia pracy maszynisty 2. zmiany (dla feasibleSlots manual)
+  const manualOpts = { entry2ndByObieg: driverStartOverride != null ? { [obieg.id]: driverStartOverride } : undefined };
   const addBreak = () => {
-    const s = feasibleSlots(obieg, { earliest })[0];
+    const s = feasibleSlots(obieg, manualOpts, true)[0];
     if (!s) return;
     const nb: BreakAssignment = {
       obiegId: obieg.id, station: s.station, dir: s.dir, startT: s.startT,
@@ -171,9 +174,10 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
           assignment={sorted[editIdx]}
           reserves={reserves}
           byReserve={byReserve}
-          earliest={earliest}
           earliestOverride={earliestOverride}
           onEarliestChange={onEarliestChange}
+          driverStartOverride={driverStartOverride}
+          onDriverStartChange={onDriverStartChange}
           onChange={(a) => updateBreak(editIdx, a)}
           onClose={() => setEditIdx(null)}
           onRemove={() => removeBreak(editIdx)}

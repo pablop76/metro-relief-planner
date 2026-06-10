@@ -28,6 +28,8 @@ const LS = {
   earliest: "pm_earliest",
   earliestStation: "pm_earliest_station",
   earliestObieg: "pm_earliest_obieg",
+  entry2ndObieg: "pm_entry2nd_obieg",
+  xferBuffer: "pm_xfer_buffer",
   layout: "pm_layout",
 };
 
@@ -97,6 +99,15 @@ export default function App() {
   const [earliestByStation, setEarliestByStation] = useState<Partial<Record<BreakStation, number>>>(() =>
     loadLS<Partial<Record<BreakStation, number>>>(LS.earliestStation, {})
   );
+  // ręczna godzina rozpoczęcia pracy maszynisty 2. zmiany per obieg (13:00/13:30/14:00) — dolna granica
+  // RĘCZNEGO wstawiania przerwy (feasibleSlots manual). Pusta = wykryty entry2nd.
+  const [entry2ndByObieg, setEntry2ndByObieg] = useState<Record<string, number>>(() =>
+    loadLS<Record<string, number>>(LS.entry2ndObieg, {})
+  );
+  // R20: konfigurowalny bufor na przeskok na drugi peron (minuty); domyślnie 5
+  const [xferBufferMin, setXferBufferMin] = useState<number>(() => loadLS<number>(LS.xferBuffer, 5));
+  // WARIANT planu: każde kliknięcie „Generuj plan" zwiększa seed → inna, równie dobra kombinacja
+  const [planSeed, setPlanSeed] = useState<number>(0);
   const [earliestByObieg, setEarliestByObieg] = useState<Record<string, number>>(() =>
     loadLS<Record<string, number>>(LS.earliestObieg, {})
   );
@@ -203,7 +214,7 @@ export default function App() {
   const [planDirty, setPlanDirty] = useState(false);
   const [lastGenAt, setLastGenAt] = useState<number | null>(null); // kiedy ostatnio przeliczono (widoczny ślad)
 
-  const generate = (currentManual = manual, currentForce = forceKind, currentThrough = throughShiftBy) => {
+  const generate = (currentManual = manual, currentForce = forceKind, currentThrough = throughShiftBy, seed = planSeed) => {
     if (!delayed.length) return;
     const res = planBreaks(delayed, reserves, {
       forcedKinds: currentForce,
@@ -211,6 +222,8 @@ export default function App() {
       earliest: earliestStart,
       earliestByStation,
       earliestByObieg,
+      xferBufferMin,
+      seed,
     });
     const merged: Record<string, BreakAssignment[]> = { ...res.assignments };
     for (const [id, a] of Object.entries(currentManual)) merged[id] = a;
@@ -244,7 +257,7 @@ export default function App() {
 
   // generuj plan automatycznie tylko gdy zmieni się ROZKŁAD/dzień (nie przy zmianie rezerwowych)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => generate(), [delayed, earliestStart, earliestByStation, earliestByObieg]);
+  useEffect(() => generate(), [delayed, earliestStart, earliestByStation, earliestByObieg, xferBufferMin]);
 
   // zmiana rezerwowych NIE przebudowuje planu sama — oznacz go jako nieaktualny (kliknij „Generuj")
   const firstResRef = useRef(true);
@@ -269,6 +282,8 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.earliest, JSON.stringify(earliestStart)), [earliestStart]);
   useEffect(() => localStorage.setItem(LS.earliestStation, JSON.stringify(earliestByStation)), [earliestByStation]);
   useEffect(() => localStorage.setItem(LS.earliestObieg, JSON.stringify(earliestByObieg)), [earliestByObieg]);
+  useEffect(() => localStorage.setItem(LS.entry2ndObieg, JSON.stringify(entry2ndByObieg)), [entry2ndByObieg]);
+  useEffect(() => localStorage.setItem(LS.xferBuffer, JSON.stringify(xferBufferMin)), [xferBufferMin]);
   useEffect(() => localStorage.setItem(LS.sbW, JSON.stringify(sidebarWidth)), [sidebarWidth]);
   useEffect(() => localStorage.setItem(LS.sbCol, JSON.stringify(sbCollapsed)), [sbCollapsed]);
   useEffect(() => localStorage.setItem(LS.layout, JSON.stringify(layout)), [layout]);
@@ -406,6 +421,16 @@ export default function App() {
               value={HHMMSS(earliestStart)}
               onChange={(e) => setEarliestStart(hmToSec(e.target.value) ?? earliestStart)}
             />
+          </label>
+          <label className="delay-ctl" title="R20: ile minut ma rezerwowy na przeskok na drugi peron, by zdążyć na kolejną podmianę z przeciwnego toru (alert ⚠ gdy ciaśniej)">
+            ⚠ przeskok toru
+            <input
+              type="number"
+              min={0}
+              value={xferBufferMin}
+              onChange={(e) => setXferBufferMin(Math.max(0, parseInt(e.target.value, 10) || 0))}
+            />
+            min
           </label>
           <div className="station-earliest" title="zacznij od — PER STACJA (cel startu, tolerancja +15 min); puste pole = jak globalny">
             <span className="se-lbl">per stacja:</span>
@@ -547,11 +572,13 @@ export default function App() {
               <button
                 className="btn-danger"
                 onClick={() => {
-                  generate();
+                  const s = planSeed + 1; // nowy WARIANT przy każdym ręcznym przeliczeniu
+                  setPlanSeed(s);
+                  generate(manual, forceKind, throughShiftBy, s);
                   setShowGenConfirm(false);
                 }}
               >
-                ⟳ Tak, przelicz plan
+                ⟳ Tak, przelicz plan (inny wariant)
               </button>
             </div>
           </div>
@@ -600,9 +627,17 @@ export default function App() {
                   onCycleKind={() => cycleKind(o.id)}
                   throughShiftOverride={throughShiftBy[o.id]}
                   onToggleThroughShift={() => cycleThroughShift(o.id)}
-                  earliest={earliestByObieg[o.id] ?? earliestStart}
                   earliestOverride={earliestByObieg[o.id]}
                   onEarliestChange={(sec) => setObiegEarliest(o.id, sec)}
+                  driverStartOverride={entry2ndByObieg[o.id]}
+                  onDriverStartChange={(sec) =>
+                    setEntry2ndByObieg((m) => {
+                      const n = { ...m };
+                      if (sec == null) delete n[o.id];
+                      else n[o.id] = sec;
+                      return n;
+                    })
+                  }
                 />
               </div>
             ))}

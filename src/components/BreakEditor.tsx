@@ -9,20 +9,25 @@ interface Props {
   reserves: Reserve[];
   /** wszystkie przerwy wg rezerwowego — do wykrywania konfliktów czasowych */
   byReserve: Record<string, BreakAssignment[]>;
-  /** efektywny próg „nie wcześniej niż" dla tego obiegu */
-  earliest: number;
   /** override progu per-obieg (undefined = globalny) */
   earliestOverride?: number;
   onEarliestChange?: (sec?: number) => void;
+  /** ręczna godzina rozpoczęcia pracy maszynisty 2. zmiany (override; undefined = wykryty entry2nd) */
+  driverStartOverride?: number;
+  onDriverStartChange?: (sec?: number) => void;
   onChange: (a: BreakAssignment) => void;
   onClose: () => void;
   onRemove?: () => void;
 }
 
-export function BreakEditor({ obieg, assignment, reserves, byReserve, earliest, earliestOverride, onEarliestChange, onChange, onClose, onRemove }: Props) {
-  // RĘCZNY wybór: bez progu „zacznij od" — użytkownik sam decyduje, od kiedy wstawić podmianę
-  // (granica dolna tylko fizyczna: wjazd obiegu na linię). Decyzja użytkownika 2026-06-10.
-  const slots = useMemo(() => feasibleSlots(obieg, { earliest }, true), [obieg, earliest]);
+export function BreakEditor({ obieg, assignment, reserves, byReserve, earliestOverride, onEarliestChange, driverStartOverride, onDriverStartChange, onChange, onClose, onRemove }: Props) {
+  // RĘCZNY wybór: okno = godziny pracy maszynisty 2. zmiany [start (ręczny override ?? wykryty entry2nd), 22:00].
+  // Bez progu „zacznij od". Decyzja użytkownika 2026-06-10.
+  const driverStart = driverStartOverride ?? obieg.entry2nd;
+  const slots = useMemo(
+    () => feasibleSlots(obieg, { entry2ndByObieg: { [obieg.id]: driverStart } }, true),
+    [obieg, driverStart]
+  );
   // rezerwowy tylko z tej samej stacji co przerwa (rezerwowy podmienia tam, gdzie stoi)
   const stationReserves = assignment ? reserves.filter((r) => r.station === assignment.station) : [];
 
@@ -143,6 +148,29 @@ export function BreakEditor({ obieg, assignment, reserves, byReserve, earliest, 
                 className="be-early-clear"
                 onClick={() => onEarliestChange(undefined)}
                 title="wróć do progu globalnego"
+              >
+                ×
+              </button>
+            )}
+          </span>
+        </label>
+      )}
+
+      {onDriverStartChange && (
+        <label title="Godzina rozpoczęcia pracy maszynisty 2. zmiany (np. 13:00/13:30, domyślnie ~14:00). Od niej zaczyna się lista slotów ręcznych. Domyślnie wykryta z rozkładu.">
+          Rozpoczęcie pracy (2. zmiana)
+          <span className="be-early">
+            <input
+              type="time"
+              value={HHMMSS(driverStart)}
+              onChange={(e) => onDriverStartChange(hmToSec(e.target.value))}
+            />
+            {driverStartOverride != null && (
+              <button
+                type="button"
+                className="be-early-clear"
+                onClick={() => onDriverStartChange(undefined)}
+                title="wróć do godziny wykrytej z rozkładu"
               >
                 ×
               </button>

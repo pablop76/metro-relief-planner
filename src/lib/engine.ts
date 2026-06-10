@@ -48,6 +48,7 @@ const DIR_PENALTY = 6 * 60;
 const LATEST_FIRST = hms(18, 20);  // 1. (a zarazem JEDYNA gwarantowana) przerwa: twardo do 18:20.
                                    // Reguła: jedyna przerwa NIE może startować po 18:20 (pokrycie = 1 przerwa).
 const LATEST_SECOND = hms(20, 0);  // DRUGA (dodatkowa) przerwa: dłuższe okno (realnie limituje R7/zjazd)
+const SHIFT2_END = hms(22, 0);     // koniec 2. zmiany — górna granica RĘCZNEGO wyboru slotu (feasibleSlots)
 
 // ROZKŁADANIE startów (R2): preferujemy NAJWCZEŚNIEJSZY slot od progu startu stacji w górę (earliestByStation
 // > earliest globalny; domyślnie 14:30 — użytkownik ustawia próg sam). Moc rezerwowych wypełnia się od dołu,
@@ -77,6 +78,25 @@ export interface PlanOptions {
   /** ręczne oznaczenie obiegu jako CAŁOZMIANOWY (ustawia pomocnik): true = wymuś (jak całodobowy →
    *  zawsze cała, priorytet), false = wymuś zwykły (mimo auto-wykrycia), brak klucza = auto z rozkładu. */
   throughShiftOverride?: Record<string, boolean>;
+  /** WARIANT planu (decyzja użytkownika 2026-06-10): ziarno losowości do tie-breaków optymalizatora.
+   *  Każda wartość daje INNĄ, równie dobrą kombinację (ta sama minimalna liczba downgrade'ów). Domyślnie 0. */
+  seed?: number;
+  /** ręczna godzina rozpoczęcia pracy maszynisty 2. zmiany per obieg (klucz = id, sekundy od północy) —
+   *  nadpisuje wykryty `entry2nd` jako dolną granicę RĘCZNEGO wstawiania przerwy (feasibleSlots manual). */
+  entry2ndByObieg?: Record<string, number>;
+  /** R20: bufor na przeskok na drugi peron przy kolejnej podmianie (minuty); domyślnie XFER_BUFFER_MIN (5). */
+  xferBufferMin?: number;
+}
+
+/** Deterministyczny PRNG (mulberry32) — ze stałego ziarna ten sam ciąg → powtarzalny wariant planu. */
+function mulberry32(seed: number) {
+  let a = seed | 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 /** Wjazd na linię po południu: pierwsze zdarzenie po przerwie >60 min (po 12:00), inaczej pierwsze. */
@@ -130,17 +150,21 @@ function candidateSlots(o: Obieg, kind: BreakKind, earliest: number | ((s: Break
 }
 
 /** Wszystkie dopuszczalne sloty obiegu (wszystkie rodzaje) — do ręcznej edycji w UI.
- *  `unrestricted` (RĘCZNY wybór, decyzja użytkownika 2026-06-10: „jeśli wybieram sam, nie ograniczaj od kiedy
- *  mogę wstawić"): pomija próg „zacznij od" — slot można postawić od momentu wjazdu obiegu na linię (jedyna
- *  granica dolna to fizyczne `ae`/wjazd w candidateSlots), aż do LATEST_SECOND. Bez flagi: zwykły próg. */
-export function feasibleSlots(o: Obieg, opts: PlanOptions = {}, unrestricted = false): Slot[] {
+ *  `manual` (RĘCZNY wybór, decyzja użytkownika 2026-06-10): okno = GODZINY PRACY MASZYNISTY 2. ZMIANY,
+ *  czyli [`entry2nd` (realny wjazd), `SHIFT2_END` 22:00]. Bez progu „zacznij od" („nie ograniczaj od kiedy
+ *  mogę wstawić"), ale ograniczone do realnej zmiany maszynisty (nie wcześniej niż jego wjazd, nie później
+ *  niż koniec 2. zmiany). Bez flagi: zwykły próg „zacznij od" i okno do LATEST_SECOND. */
+export function feasibleSlots(o: Obieg, opts: PlanOptions = {}, manual = false): Slot[] {
   const g = opts.earliest ?? EARLIEST_DEFAULT;
-  // próg startu slotu: ręczny = brak (0); inaczej override per-obieg > per-stacja > globalny
-  const floor = unrestricted
-    ? () => 0
+  // próg startu slotu: ręczny = ręcznie ustawiona godzina rozpoczęcia pracy maszynisty 2. zmiany
+  // (entry2ndByObieg) > wykryty entry2nd; inaczej override per-obieg > per-stacja > globalny
+  const driverStart = opts.entry2ndByObieg?.[o.id] ?? o.entry2nd;
+  const floor = manual
+    ? () => driverStart
     : (s: BreakStation) => opts.earliestByObieg?.[o.id] ?? opts.earliestByStation?.[s] ?? g;
+  const latest = manual ? SHIFT2_END : LATEST_SECOND; // ręczny: do końca 2. zmiany (22:00)
   const all: Slot[] = [];
-  for (const kind of DOWNGRADE) all.push(...candidateSlots(o, kind, floor, LATEST_SECOND));
+  for (const kind of DOWNGRADE) all.push(...candidateSlots(o, kind, floor, latest));
   return all.sort((a, b) => a.startT - b.startT || b.durationMin - a.durationMin);
 }
 
@@ -438,6 +462,15 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // pierwsze) + dedup symetrycznych rezerwowych + pakowanie busiest-first tną drzewo; BUDŻET węzłów/czasu +
   // fallback do greedy gwarantują, że UI nigdy nie zamarza. Sukces ⇒ 0 BRAK i 0 downgrade (eviction/nawrót
   // poniżej stają się no-opem). Porażka/niewykonalność/budżet ⇒ greedy faza 1/2/3 (dawne, z downgrade'ami).
+  // WARIANT (seed≠0, decyzja użytkownika 2026-06-10: „Generuj plan" ma dawać różne kombinacje). Wariujemy
+  // TYLKO wybór rezerwowego wśród remisów obciążenia (resKey), NIE kolejność slotów — dzięki temu każdy
+  // wariant ma tę samą MINIMALNĄ liczbę downgrade'ów (jakość zachowana), a zmienia się KTO obsługuje obieg
+  // (kaskadowo też część stacji/czasów). Jitter slotów testowany i ODRZUCONY: psuł jakość (seed bywał 3 zamiast 2).
+  // Seed=0 (domyślny/auto) → resKey=0 → plan deterministyczny, niezmieniony.
+  const vary = ((opts.seed ?? 0) | 0) !== 0;
+  const rng = mulberry32((opts.seed ?? 0) | 0);
+  const resKey = new Map(rs.map((r) => [r.ref.id, vary ? rng() : 0] as const));
+
   type Place = { slot: Slot; dg: number }; // dg=1 → downgrade (dk=cała obsłużony połówką)
   const optimizeExact = (): boolean => {
     const toAssign = order.filter((o) => !(assignments[o.id]?.length)); // bez pinów
@@ -499,7 +532,8 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       for (const p of place.get(o.id)!) {
         if (dgSoFar + p.dg >= bestCost) break; // placements sort: dg rośnie → dalej nie będzie lepiej
         const e = p.slot.startT + p.slot.durationMin * 60;
-        const cands = elig(p.slot).filter((r) => canTake(r, p.slot)).sort((a, b) => load.get(b.ref.id)! - load.get(a.ref.id)!);
+        const cands = elig(p.slot).filter((r) => canTake(r, p.slot))
+          .sort((a, b) => load.get(b.ref.id)! - load.get(a.ref.id)! || resKey.get(a.ref.id)! - resKey.get(b.ref.id)!);
         let emptyTried = false; // symetria: świeży (pusty) rezerwowy danej stacji jest wymienny — próbuj tylko JEDNEGO
         for (const r of cands) {
           const rid = r.ref.id;
@@ -701,7 +735,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // Pierwsza podmiana nigdy nie jest „ciasna" (rezerwowy ustawił się na peronie wcześniej).
   // Ręczny crossTrack ustawia planista w edytorze (BreakEditor).
   const opp = (d: Dir): Dir => (d === "Kabaty" ? "Młociny" : "Kabaty");
-  const XFER = XFER_BUFFER_MIN * 60;
+  const XFER = (opts.xferBufferMin ?? XFER_BUFFER_MIN) * 60; // bufor przeskoku na drugi peron (konfigurowalny)
   const jobsByRes: Record<string, BreakAssignment[]> = {};
   for (const list of Object.values(assignments))
     for (const a of list) if (a.reserveId) (jobsByRes[a.reserveId] ??= []).push(a);
