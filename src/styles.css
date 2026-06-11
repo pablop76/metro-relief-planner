@@ -239,6 +239,7 @@ body {
 .rp-names { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .rp-names li { display: flex; align-items: center; gap: 6px; font-size: 12px; background: var(--panel-2); border-radius: 5px; padding: 3px 6px; }
 .rp-names li.rp-full { outline: 1px solid var(--red); }
+.rp-names li.rp-custom { box-shadow: inset 3px 0 0 var(--warn); background: rgba(227,160,8,.10); }
 .rp-nm { flex: 1; }
 .rp-load { color: var(--muted); font-size: 11px; }
 .rp-x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; }
@@ -392,11 +393,19 @@ body {
 .rp-cfg, .rp-x { background: none; border: none; cursor: pointer; line-height: 1; }
 .rp-cfg { color: var(--muted); font-size: 13px; }
 .rp-cfg:hover, .rp-cfg.on { color: var(--accent); }
+.rp-cfg.has-custom { color: var(--warn); }
 .rp-blocked .rp-nm { color: #6b6f78; text-decoration: line-through; }
 .rp-badge { font-style: normal; font-size: 9px; margin-left: 4px; color: var(--muted); }
 .rp-b-block { color: var(--red); }
 .rp-b-pin { color: var(--accent); }
 .rp-b-roll { color: var(--warn); }
+.rp-b-custom {
+  color: var(--warn);
+  border: 1px solid rgba(227,160,8,.55);
+  border-radius: 8px;
+  padding: 0 4px;
+  font-weight: 700;
+}
 .rp-cfg-box {
   display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px;
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; font-size: 11px;

@@ -34,6 +34,20 @@ const newId = () =>
   (crypto as Crypto & { randomUUID?: () => string }).randomUUID?.() ??
   `r${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
+const customSettings = (r: Reserve): string[] => {
+  const items: string[] = [];
+  if (r.blocked) items.push("wykluczony");
+  if (r.manualOnly) items.push("tylko moje obiegi");
+  if (r.rolling) items.push("rezerwa ruchowa");
+  if (r.maxJobs != null) items.push(`max podmian: ${r.maxJobs}`);
+  if (r.line) items.push(`linia: ${r.line}`);
+  if (r.availFrom != null) items.push(`pracuje od: ${HHMMSS(r.availFrom)}`);
+  if (r.availTo != null) items.push(`pracuje do: ${HHMMSS(r.availTo)}`);
+  if ((r.auth?.length ?? 0) > 0 || r.authNote) items.push("autoryzacje taboru");
+  if ((r.pins?.length ?? 0) > 0) items.push(`przypiete obiegi: ${r.pins!.join(", ")}`);
+  return items;
+};
+
 export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count, byReserve, obiegIds, horizontal }: Props) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [warn, setWarn] = useState("");
@@ -199,8 +213,14 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
                 const full = reserveFull(eq);
                 const jobs = byReserve?.[r.id] ?? [];
                 const cfgOpen = openCfg === r.id;
+                const custom = customSettings(r);
+                const hasCustom = custom.length > 0;
                 return (
-                  <li key={r.id} className={`${full ? "rp-full" : ""}${r.blocked ? " rp-blocked" : ""}${dragId === r.id ? " rp-dragging" : ""}`}>
+                  <li
+                    key={r.id}
+                    className={`${full ? "rp-full" : ""}${r.blocked ? " rp-blocked" : ""}${hasCustom ? " rp-custom" : ""}${dragId === r.id ? " rp-dragging" : ""}`}
+                    title={hasCustom ? `Wlasne ustawienia: ${custom.join(" | ")}` : undefined}
+                  >
                     <div
                       className="rp-row1"
                       draggable
@@ -213,6 +233,7 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
                       <i className="rp-drag" title="przeciągnij na inną stację">⠿</i>
                       <span className="rp-nm">
                         {r.name}
+                        {hasCustom && <i className="rp-badge rp-b-custom" title={`Wlasne ustawienia: ${custom.join(" | ")}`}>ust.</i>}
                         {r.blocked && <i className="rp-badge rp-b-block" title="wykluczony">⊘</i>}
                         {(r.pins?.length ?? 0) > 0 && (
                           <i className="rp-badge rp-b-pin" title={`obiegi: ${r.pins!.join(", ")}`}>📌{r.pins!.length}</i>
@@ -235,9 +256,9 @@ export function ReservePanel({ reserves, onChange, drivers, load, loadEq, count,
                         {c}× · {(Math.round(eq * 10) / 10).toString().replace(".", ",")}/3
                       </span>
                       <button
-                        className={`rp-cfg${cfgOpen ? " on" : ""}`}
+                        className={`rp-cfg${cfgOpen ? " on" : ""}${hasCustom ? " has-custom" : ""}`}
                         onClick={() => setOpenCfg(cfgOpen ? null : r.id)}
-                        title="ustawienia"
+                        title={hasCustom ? `ustawienia: ${custom.join(" | ")}` : "ustawienia"}
                       >
                         ⚙
                       </button>
