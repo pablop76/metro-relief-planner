@@ -566,6 +566,19 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       // ponownie). Interwały łamią pełność czystego matchingu, więc przy porażce restart z inną kolejnością.
       let mnodes = 0; const PER_TRY = 120_000;            // budżet WĘZŁÓW na pojedynczą próbę (reset co restart)
       let asg = new Map<string, AJob[]>();
+      // BUFOR „przeskok toru" jako TWARDE ograniczenie dopasowania (decyzja użytkownika 2026-06-11): rezerwowy
+      // NIE dostanie dwóch podmian, między którymi musiałby przeskoczyć na drugi peron w oknie ≤ bufor. Taka
+      // para to KONFLIKT (jak kolizja czasowa) → silnik relokuje jedną, dobierając inny slot (w razie potrzeby
+      // z luzem / połówkę). Dzięki temu zmiana bufora REALNIE zmienia plan (nie tylko ⚠). Krańcówki (A1/A23)
+      // bez przeskoku. Tylko obiegi NIE nakładające się czasowo (nakładanie łapie osobny warunek).
+      const oppDir = (d: Dir): Dir => (d === "Kabaty" ? "Młociny" : "Kabaty");
+      const XFM = (opts.xferBufferMin ?? XFER_BUFFER_MIN) * 60;
+      const crossTight = (a: AJob, b: { s: number; e: number; slot: Slot }, station: BreakStation): boolean => {
+        if (XFM <= 0 || station === "A1" || station === "A23") return false;
+        const [x, y] = a.s <= b.s ? [a, b] : [b, a];               // x wcześniejszy, y późniejszy
+        const handover = returnsOppositeTrack(x.slot.kind) ? oppDir(x.slot.dir) : x.slot.dir; // gdzie stoi po oddaniu
+        return y.slot.dir !== handover && y.s - x.e > 0 && y.s - x.e <= XFM; // inny peron + ciasno (i bez nakładania)
+      };
       // `moving` MONOTONICZNE w obrębie jednej próby (jak visited w Kuhn): obieg raz wpisany do łańcucha nie jest
       // relokowany ponownie → gwarancja zakończenia (≤ N obiegów). Pełność dorównuje restart z inną kolejnością.
       const augment = (oid: string, moving: Set<string>, depth: number): boolean => {
@@ -573,15 +586,18 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
         moving.add(oid);
         for (const slot of zeroPlace.get(oid)!) {
           const s = slot.startT, e = slot.startT + slot.durationMin * 60;
+          const nb = { s, e, slot };
           for (const r of byStation.get(slot.station) ?? []) {
             const rid = r.ref.id;
             if (!availOk(r, slot)) continue;
             const cur = asg.get(rid)!;
-            const conflicts = cur.filter((j) => s < j.e && j.s < e);   // kolizje czasowe na tym rezerwowym
-            if (conflicts.some((c) => moving.has(c.oid))) continue;     // kolizja z obiegiem już w łańcuchu → pomiń
+            // KONFLIKT = kolizja czasowa LUB zbyt ciasny przeskok toru (bufor) na tym rezerwowym
+            const conflicts = cur.filter((j) => (s < j.e && j.s < e) || crossTight(j, nb, r.ref.station));
+            if (conflicts.some((c) => moving.has(c.oid))) continue;     // konflikt z obiegiem już w łańcuchu → pomiń
             if (cur.length - conflicts.length + 1 > capN.get(rid)!) continue; // brak miejsca nawet po relokacji
+            const cset = new Set(conflicts);
             const saved = new Map([...asg].map(([k, v]) => [k, v.slice()] as const)); // pełny snapshot (relokacje mutują wielu)
-            asg.set(rid, [...cur.filter((j) => !(s < j.e && j.s < e)), { oid, s, e, slot }]); // oid NAJPIERW
+            asg.set(rid, [...cur.filter((j) => !cset.has(j)), { oid, s, e, slot }]); // oid NAJPIERW (zajmuje miejsce)
             let ok = true;
             for (const c of conflicts) if (!augment(c.oid, moving, depth + 1)) { ok = false; break; }
             if (ok) return true;
