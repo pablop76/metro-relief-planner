@@ -90,6 +90,10 @@ export interface PlanOptions {
   entry2ndByObieg?: Record<string, number>;
   /** R20: bufor na przeskok na drugi peron przy kolejnej podmianie (minuty); domyślnie XFER_BUFFER_MIN (5). */
   xferBufferMin?: number;
+  /** OPCJA „nie zaczynaj od szczytów" (decyzja użytkownika 2026-06-11): szczyt (obieg < `PEAK_NOT_FIRST_LOOPS`
+   *  koła) NIE może być PIERWSZĄ podmianą — jego przerwa startuje dopiero po 1. pełnym kole, więc wczesne sloty
+   *  (pierwsza fala) zajmują długodystansowcy/całozmianowi, a szczyt wchodzi po pierwszej podmianie. */
+  peaksNotFirst?: boolean;
   /** WEWNĘTRZNE — wspólny deadline (ms timestamp) na CAŁY plan łącznie z rekurencją nawrotu, by łączny czas
    *  był ograniczony (UI nie zamarza nawet przy głębokim cięciu w deficycie). Ustawiany automatycznie. */
   deadline?: number;
@@ -313,6 +317,14 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // najwcześniej, by się zmieściło (decyzja użytkownika 2026-06-09: „zostaw, chyba że < 10 rezerwowych").
   const POL_LATE_LOOPS = 3.5;
   const enoughReserves = reserves.filter((r) => !r.blocked).length >= 10;
+  // OPCJA „nie zaczynaj od szczytów" (decyzja użytkownika 2026-06-11): szczyt = obieg < 4,5 koła (nie
+  // całozmianowy). NIE twardy próg czasowy (ścinał pełne obciążenie do połówek), tylko MIĘKKIE PRZESUNIĘCIE:
+  // szczyt woli PÓŹNIEJSZY slot (sortowanie placements malejąco po czasie), więc wczesne sloty zajmują
+  // długodystansowcy/całozmianowi, a szczyt wchodzi po pierwszej podmianie. Miękko = nie psuje upakowania
+  // (wszyscy nadal po 3 całe), tylko zmienia KTO bierze wczesny slot.
+  const PEAK_NOT_FIRST_LOOPS = 4.5;
+  const isPeakLate = (o: Obieg) =>
+    !!opts.peaksNotFirst && Number.isFinite(effLoops(o)) && effLoops(o) < PEAK_NOT_FIRST_LOOPS;
   const coverWindow = (o: Obieg, kind: BreakKind): { floor: (s: BreakStation) => number; hi: number } => {
     if (kind === "połówka") {
       // po 1. kole tylko gdy: dość rezerwowych (≥10) ORAZ obieg ≥ 3,5 koła; inaczej połówka może startować wcześnie
@@ -501,7 +513,9 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       // ściąć D17/D20 (5,0). Gdy długodystansowiec nie mieści się jako cała → BRAK → nawrót tnie najniżej-kołowy.
       if (kc === "cała" && effLoops(o) < OPT_DOWNGRADE_MAX) { const { floor, hi } = coverWindow(o, "połówka");
         for (const s of autoSlots(o, "połówka", floor, hi)) if (s.startT >= after) arr.push({ slot: s, dg: 1 }); }
-      arr.sort((a, b) => a.dg - b.dg || score(a.slot) - score(b.slot));
+      // „nie zaczynaj od szczytów": szczyt woli PÓŹNIEJSZY slot (sort malejąco po czasie) — matcher/B&B najpierw
+      // próbują dla niego późnych slotów, więc wczesne zostają dla długodystansowców (miękko, nie psuje upakowania).
+      arr.sort((a, b) => a.dg - b.dg || (isPeakLate(o) ? b.slot.startT - a.slot.startT : score(a.slot) - score(b.slot)));
       if (arr.length === 0) return false; // obieg bez żadnego slotu → greedy (BRAK + nawrót)
       place.set(o.id, arr);
     }

@@ -30,6 +30,7 @@ const LS = {
   earliestObieg: "pm_earliest_obieg",
   entry2ndObieg: "pm_entry2nd_obieg",
   xferBuffer: "pm_xfer_buffer",
+  peaksNotFirst: "pm_peaks_not_first",
   layout: "pm_layout",
 };
 
@@ -106,6 +107,7 @@ export default function App() {
   );
   // R20: konfigurowalny bufor na przeskok na drugi peron (minuty); domyślnie 5
   const [xferBufferMin, setXferBufferMin] = useState<number>(() => loadLS<number>(LS.xferBuffer, 5));
+  const [peaksNotFirst, setPeaksNotFirst] = useState<boolean>(() => loadLS<boolean>(LS.peaksNotFirst, false));
   // WARIANT planu: każde kliknięcie „Generuj plan" zwiększa seed → inna, równie dobra kombinacja
   const [planSeed, setPlanSeed] = useState<number>(0);
   const [earliestByObieg, setEarliestByObieg] = useState<Record<string, number>>(() =>
@@ -224,6 +226,7 @@ export default function App() {
       earliestByStation,
       earliestByObieg,
       xferBufferMin,
+      peaksNotFirst,
       seed,
     });
     const merged: Record<string, BreakAssignment[]> = { ...res.assignments };
@@ -258,7 +261,7 @@ export default function App() {
 
   // generuj plan automatycznie tylko gdy zmieni się ROZKŁAD/dzień (nie przy zmianie rezerwowych)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => generate(), [delayed, earliestStart, earliestByStation, earliestByObieg, xferBufferMin]);
+  useEffect(() => generate(), [delayed, earliestStart, earliestByStation, earliestByObieg, xferBufferMin, peaksNotFirst]);
 
   // zmiana rezerwowych NIE przebudowuje planu sama — oznacz go jako nieaktualny (kliknij „Generuj")
   const firstResRef = useRef(true);
@@ -285,6 +288,7 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.earliestObieg, JSON.stringify(earliestByObieg)), [earliestByObieg]);
   useEffect(() => localStorage.setItem(LS.entry2ndObieg, JSON.stringify(entry2ndByObieg)), [entry2ndByObieg]);
   useEffect(() => localStorage.setItem(LS.xferBuffer, JSON.stringify(xferBufferMin)), [xferBufferMin]);
+  useEffect(() => localStorage.setItem(LS.peaksNotFirst, JSON.stringify(peaksNotFirst)), [peaksNotFirst]);
   useEffect(() => localStorage.setItem(LS.sbW, JSON.stringify(sidebarWidth)), [sidebarWidth]);
   useEffect(() => localStorage.setItem(LS.sbCol, JSON.stringify(sbCollapsed)), [sbCollapsed]);
   useEffect(() => localStorage.setItem(LS.layout, JSON.stringify(layout)), [layout]);
@@ -467,6 +471,14 @@ export default function App() {
               onChange={(e) => setXferBufferMin(Math.max(0, parseInt(e.target.value, 10) || 0))}
             />
             min
+          </label>
+          <label className="delay-ctl" title="Szczyt (obieg < 4,5 koła) nie będzie PIERWSZĄ podmianą rezerwowego — wczesne sloty zajmują długodystansowcy/całozmianowi, szczyt wchodzi po pierwszej podmianie. Obciążenie bez zmian (wszyscy nadal po 3 koła).">
+            <input
+              type="checkbox"
+              checked={peaksNotFirst}
+              onChange={(e) => setPeaksNotFirst(e.target.checked)}
+            />
+            nie zaczynaj od szczytów
           </label>
           <div className="station-earliest" title="zacznij od — PER STACJA (cel startu, tolerancja +15 min); puste pole = jak globalny">
             <span className="se-lbl">per stacja:</span>
