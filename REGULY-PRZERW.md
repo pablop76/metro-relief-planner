@@ -104,18 +104,21 @@ Decyduje liczba kół (`planBreaks`) — **BILANS = MAKSYMALIZUJ OBCIĄŻENIE** 
 
 ### 3a. Druga (dodatkowa) przerwa — kombinacje
 
-Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). R16 = pokrycie + **MAKSYMALNE WYKORZYSTANIE MOCY**
-(~4,5 h = 3 koła/rezerwowego, R13; decyzja użytkownika 2026-06-09: „rezerwowi wykorzystani na maxa"). Bramka:
-**brak realnego BRAK**. Dwie fazy:
+Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). R16 = pokrycie + **MAKSYMALNE WYKORZYSTANIE MOCY**:
+**każdy rezerwowy do `min(3 koła, maxJobs)`** — chyba że planista ręcznie ustawi niższy limit (`maxJobs`).
+(decyzja użytkownika 2026-06-11, SUPERSEDUJE 2026-06-10). Bramka: **brak realnego BRAK**. Etapy:
 
-- **PASS A — „dobij WSZYSTKICH do pełnej":** obieg `dk = cała` z dopiero JEDNĄ połówką@A11 (overflow z fazy 3)
-  → dostaje **2. połówkę → 2×½ = pełna** (rozsunięte ~2,5 h, `SPACING_POLOWKI`). Najpierw wszyscy mają pełną.
-- **PASS B — „wypełnij rezerwowych do 3 kół":** obiegowi `dk = cała` z 1 przerwą dokładamy 2., w kolejności
-  **malejąco po kołach** (całozmianowe/najdłuższe pierwsze — pracują najdłużej, R3). **Preferujemy POŁÓWKĘ →
-  1,5** („najlepiej rozbijaj na półtorej", uwaga 4); gdy połówki się nie da — **CAŁĄ → 2×cała** (dobicie
-  rezerwowych OFF-A11 A1/A7/A18/A23, których połówką nie zapełnimy — połówka tylko na A11). Szczyt
-  (`dk = połówka`) 2. przerwy NIE dostaje (#4). Pass B rusza po Pass A → nikt nie dostaje 2. przerwy, póki
-  inni (których da się dopełnić) nie mają pełnej; kolejność longest-first chroni sprawiedliwość.
+- **KROK 0 — REBALANS w obrębie stacji (bez nowych przerw):** pakuje pojedyncze przydziały, dobijając
+  rezerwowych najbliższych pełna kosztem najmniej obciążonych **tej samej stacji** (rezerwowy podmienia tylko
+  u siebie). Maksymalizuje liczbę rezerwowych na 3,0; nadmiarowi zostają widocznie wolni (do zwolnienia ręcznie).
+  Naprawia nierówny rozkład A1/A11 w planach z połówkami. Nie zmienia rodzajów/slotów → nie łamie reguł.
+- **DRABINA DOCIĄŻANIA (drugie przerwy)** — dokładamy, dopóki rezerwowi < `min(3, maxJobs)` (`roomLeft`):
+  - **RUNDA A — obiegi < 4,5 koła → 1,5:** 2. **POŁÓWKA** (możliwa tylko na A11) — dociąża rezerwowych A11.
+  - **RUNDA B — obiegi ≥ 4,5 koła → 2,0:** 2. **CAŁA off-A11** (A1/A7/A18/A23 — połówką ich nie zapełnimy,
+    połówka tylko na A11); fallback przy braku miejsca: połówka@A11. **„dwa nie dla tych co robią < 4,5"**
+    (decyzja użytkownika) — krótkie obiegi kończą na 1,5, długodystansowce mogą mieć 2. pełną przerwę.
+  - Limit `MAX_BREAKS_PER_OBIEG = 2` → każdy obieg dostaje najwyżej JEDNĄ 2. przerwę. Rozsuw ~2,5 h
+    (`SPACING_POLOWKI`). Bez RNG (determinizm), bezpiecznik `planDeadline`.
 - Dokładki tylko **cała / połówka**. **Godzinka i szczeniak NIE są dokładane automatycznie** (patrz niżej).
 
 ---
@@ -184,9 +187,10 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
   **domyślnie 1** podmianę i zostaje pod ręką (R17). Wskazanie: jawny flag `Reserve.rolling` (checkbox w panelu) >
   pierwszy niezablokowany rezerwowy A1. **Pozostali rezerwowi A1 pracują normalnie do 3 kół**. Inne stacje:
   bez limitu liczby (ogranicza je tylko 3 koła). Ręczny `Reserve.maxJobs` zawsze nadpisuje.
-- **Wykorzystanie nadmiaru (R16, ~4,5 h):** najpierw Pass A dobija WSZYSTKICH do pełnej przerwy (samotne
-  połówki → 2×½), potem Pass B **wypełnia rezerwowych do 3 kół** — najdłuższe pierwsze, **preferując półtorej**
-  (cała+połówka), a gdy połówki się nie da — **2×cała** (dobicie off-A11). Patrz §3a.
+- **Wykorzystanie nadmiaru (R16):** KROK 0 = REBALANS w obrębie stacji (pakuje istniejące przydziały, bez
+  nowych przerw), potem DRABINA drugich przerw: RUNDA A (obiegi <4,5 → 1,5 = 2. połówka@A11) → RUNDA B
+  (obiegi ≥4,5 → 2,0 = 2. cała off-A11, fallback połówka@A11). Cel: **każdy rezerwowy do `min(3, maxJobs)`**.
+  „dwa nie dla tych co robią <4,5". Patrz §3a (decyzja 2026-06-11, superseduje 2026-06-10).
 - Pakowanie: najpierw dobijamy najczęściej używanego rezerwowego, świeżych zostawiamy na trudniejsze,
   późniejsze obiegi.
 - Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.
@@ -218,6 +222,6 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
   rezerwowego**, przenosząc jego dotychczasową (jedyną) podmianę na innego wolnego (`placeElsewhere`), po czym
   obsadza BRAK. **Relokacja ZACHOWUJE wielkość przerwy** (długodystansowiec → cała, szczyt → połówka — eviction
   nie krzywdzi nikogo połówką). Dopiero gdy i to nie pomoże → **BRAK** (dodać rezerwowego na stacji z deficytem).
-- **R16 DOPIERO przy 0 BRAK** (bramka `hasBrak`). Wewnątrz: Pass A (wszyscy do pełnej) → Pass B (wypełnianie
-  rezerwowych, najdłuższe pierwsze). Kolejność longest-first + „Pass A najpierw" chronią sprawiedliwość —
-  2. przerwa idzie do najdłuższych dopiero, gdy dopełnialnych do pełnej już nie ma.
+- **R16 DOPIERO przy 0 BRAK** (bramka `hasBrak`). Wewnątrz: KROK 0 rebalans w obrębie stacji (bez nowych
+  przerw) → RUNDA A (krótkie <4,5 do 1,5) → RUNDA B (długodystansowce ≥4,5 do 2,0, off-A11). Dokładamy tylko
+  dopóki rezerwowi < `min(3, maxJobs)` (`roomLeft`); ręczny `maxJobs` jest respektowany. Patrz §3a.

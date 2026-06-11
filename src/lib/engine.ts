@@ -831,34 +831,80 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     }
     return false;
   };
-  if (!hasBrak()) {
-    // PASS A — dopełnij każdą samotną połówkę (dk="cała") do 2×½ = pełna przerwa. Iteruj do nasycenia.
-    let progressA = true;
-    while (progressA) {
-      progressA = false;
-      for (const o of order) {
-        const cur = assignments[o.id];
-        if (!cur || cur.length !== 1 || dk(o) !== "cała" || cur[0].kind !== "połówka") continue;
-        if (addSecond(o, "połówka", cur[0].startT + SPACING_POLOWKI)) progressA = true;
+  const targetEq = (r: RState) => Math.min(MAX_RESERVE_LOAD_EQ, capOf(r.ref)); // cel obciążenia (respektuje maxJobs)
+  // Przeniesienie ZAANGAŻOWANEJ przerwy `a` z rezerwowego `from` na `to` (ta sama stacja i czas — driverFreeAt
+  // bez zmian). Lustrzanie aktualizuje obciążenie obu rezerwowych i `reserveId` przydziału.
+  const moveJob = (a: BreakAssignment, from: RState, to: RState) => {
+    removeJob(from, a);
+    to.jobs.push({ s: a.startT, e: a.startT + a.durationMin * 60, obiegId: a.obiegId });
+    to.loadMin += a.durationMin; to.loadEq += CALA_EQ[a.kind]; to.count += 1;
+    a.reserveId = to.ref.id;
+  };
+  // REBALANS w obrębie stacji (BEZ nowych przerw): pakuje pojedyncze przydziały, dobijając rezerwowych
+  // najbliższych pełna kosztem najmniej obciążonych TEJ SAMEJ stacji (rezerwowy podmienia tylko u siebie).
+  // Maksymalizuje liczbę rezerwowych na min(3, maxJobs); nadmiarowi zostają widocznie wolni (do zwolnienia).
+  // Nie zmienia rodzajów/slotów → zero kolizji z regułami (sprawiedliwość, scarcity A11, piny). Bez RNG.
+  const rebalanceStations = () => {
+    const groups = new Map<BreakStation, RState[]>();
+    for (const r of rs) if (!r.ref.blocked && !r.ref.manualOnly)
+      (groups.get(r.station) ?? groups.set(r.station, []).get(r.station)!).push(r);
+    for (const group of groups.values()) {
+      let moved = true, guard = 0;
+      while (moved && guard++ < 1000 && Date.now() <= planDeadline) {
+        moved = false;
+        const fill = group.filter((r) => r.loadEq + 1e-6 < targetEq(r)).sort((a, b) => b.loadEq - a.loadEq)[0];
+        if (!fill) break;                                              // wszyscy na stacji pełni → koniec
+        const donors = group.filter((r) => r !== fill && r.loadEq > 1e-6).sort((a, b) => a.loadEq - b.loadEq);
+        for (const donor of donors) {
+          let did = false;
+          for (const j of [...donor.jobs]) {
+            const arr = assignments[j.obiegId];
+            if (!arr || arr.length !== 1) continue;                    // pin / 2 przerwy — nie ruszaj
+            const a = arr[0];
+            if (a.reserveId !== donor.ref.id || a.manual) continue;
+            const e = a.startT + a.durationMin * 60;
+            if (!freeAt(fill, a.startT, e) || !fitsLoad(fill.loadEq, a.kind) || fill.count >= fill.cap) continue;
+            if (fill.ref.availFrom != null && a.startT < fill.ref.availFrom) continue;
+            if (fill.ref.availTo != null && e > fill.ref.availTo) continue;
+            moveJob(a, donor, fill); moved = did = true; break;
+          }
+          if (did) break;
+        }
       }
     }
-    // PASS B — drugie przerwy DOPIERO po obsadzeniu wszystkich na całe (Pass A wyżej dopełnił całe do pełnej),
-    // i TYLKO dla obiegów < 4 koła (decyzja użytkownika 2026-06-10: „drugie podmiany dopiero po obsadzeniu
-    // wszystkich na całe, wyjątkiem mogą być te co robią mniej niż 4 koła"). Te krótkie obiegi są połówkami
-    // (dk=połówka) — przy NADWYŻCE mocy dokładamy im 2. połówkę → 2×½ = pełna. Długodystansowce 2. przerwy NIE
-    // dostają (koniec „1,5 dla innych" i „2×cała"). Przy spiętym bilansie (moc=zapotrzebowanie) Pass B nie
-    // odpali — nie ma wolnego rezerwowego. NAJKRÓTSZE pierwsze (te najbardziej „niedosycone").
-    const POL_SECOND_LOOPS = 4;
-    const byLoopsAsc = [...obiegi]
-      .filter((o) => Number.isFinite(o.loops) && o.loops < POL_SECOND_LOOPS)
-      .sort((a, b) => a.loops - b.loops || numOf(a.id) - numOf(b.id));
-    let progressB = true;
-    while (progressB) {
-      progressB = false;
-      for (const o of byLoopsAsc) {
+  };
+  // DOCIĄŻANIE rezerwowych do min(3, maxJobs) drugimi przerwami (decyzja 2026-06-11 — SUPERSEDUJE PASS A/B
+  // z 2026-06-10). Drabina (MAX_BREAKS_PER_OBIEG=2 → każdy obieg ma najwyżej JEDNĄ 2. przerwę):
+  //  • RUNDA A — obiegi < 4,5 koła do 1,5: 2. POŁÓWKA (możliwa TYLKO na A11) — dociąża rezerwowych A11.
+  //  • RUNDA B — obiegi ≥ 4,5 koła do 2,0: 2. CAŁA off-A11 (autoSlots blokuje cała@A11) — dociąża A1/A7/A18/
+  //    A23 (połówka tam nie wejdzie, więc tylko CAŁE dobiją tamtejszych rezerwowych). Fallback: brak miejsca
+  //    na całą → połówka@A11 (≥4,5 woli rest niż nic). „dwa nie dla tych co robią < 4,5" (decyzja użytkownika).
+  // Bramka roomLeft: nie dokładamy ponad realne zapotrzebowanie rezerwowych. Bez RNG (determinizm), planDeadline.
+  const roomLeft = () => rs.some((r) => !r.ref.blocked && !r.ref.manualOnly && r.loadEq + 1e-6 < targetEq(r));
+  const SECOND_FULL_MIN_LOOPS = 4.5;
+  if (!hasBrak()) {
+    rebalanceStations();
+    // RUNDA A — krótkie obiegi (< 4,5) do 1,5 koła: 2. połówka@A11.
+    let progA = true;
+    while (progA && roomLeft() && Date.now() <= planDeadline) {
+      progA = false;
+      for (const o of order) {
+        if (effLoops(o) >= SECOND_FULL_MIN_LOOPS) continue;            // ≥4,5 → runda B (cała)
         const cur = assignments[o.id];
-        if (!cur || cur.length !== 1 || cur[0].kind !== "połówka") continue; // dokładamy 2. połówkę → 2×½ = pełna
-        if (addSecond(o, "połówka", cur[0].startT + SPACING_POLOWKI)) progressB = true;
+        if (!cur || cur.length !== 1 || cur.some((a) => !a.reserveId)) continue;
+        if (addSecond(o, "połówka", cur[0].startT + SPACING_POLOWKI)) progA = true;
+      }
+    }
+    // RUNDA B — długodystansowce (≥ 4,5) do 2,0 koła: 2. cała off-A11 (fallback połówka@A11).
+    let progB = true;
+    while (progB && roomLeft() && Date.now() <= planDeadline) {
+      progB = false;
+      for (const o of order) {
+        if (effLoops(o) < SECOND_FULL_MIN_LOOPS) continue;
+        const cur = assignments[o.id];
+        if (!cur || cur.length !== 1 || cur.some((a) => !a.reserveId)) continue;
+        const target = cur[0].startT + SPACING_POLOWKI;
+        if (addSecond(o, "cała", target) || addSecond(o, "połówka", target)) progB = true;
       }
     }
   }
