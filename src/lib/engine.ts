@@ -859,6 +859,48 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // Ręczny crossTrack ustawia planista w edytorze (BreakEditor).
   const opp = (d: Dir): Dir => (d === "Kabaty" ? "Młociny" : "Kabaty");
   const XFER = (opts.xferBufferMin ?? XFER_BUFFER_MIN) * 60; // bufor przeskoku na drugi peron (konfigurowalny)
+
+  // R20b — UWZGLĘDNIJ BUFOR W ROZPLANOWANIU (decyzja użytkownika 2026-06-11: „bufor ma być brany pod uwagę
+  // przy rozplanowaniu, gdy go zmieniam"). Gdy kolejna podmiana rezerwowego wymaga przeskoku na drugi peron
+  // w oknie ≤ bufor, PRZESUŃ ją na inny slot TEGO SAMEGO obiegu (ta sama stacja/rodzaj/rezerwowy), który
+  // poszerza okno (ten sam peron co po oddaniu LUB przerwa > bufor) — bez zmiany obciążenia/pokrycia (wszyscy
+  // nadal po tyle samo kół). Zmiana bufora zmienia plan (inne ciasne pary → inne przesunięcia). Ruszamy tylko
+  // proste, jednoprzerwowe, automatyczne podmiany; pinów/ręcznych/2-przerwowych nie tykamy. Best-effort: gdy
+  // nie ma wolnego slotu rozwiązującego ciasnotę, zostaje (oznaczona ⚠ niżej).
+  if (XFER > 0) {
+    const byRes: Record<string, BreakAssignment[]> = {};
+    for (const list of Object.values(assignments))
+      for (const a of list) if (a.reserveId) (byRes[a.reserveId] ??= []).push(a);
+    for (const jobs of Object.values(byRes)) {
+      jobs.sort((x, y) => x.startT - y.startT);
+      for (let i = 1; i < jobs.length; i++) {
+        const prev = jobs[i - 1], cur = jobs[i], next = jobs[i + 1];
+        if (cur.station === "A1" || cur.station === "A23" || cur.manual) continue;
+        const handoverDir = returnsOppositeTrack(prev.kind) ? opp(prev.dir) : prev.dir;
+        const prevEnd = prev.startT + prev.durationMin * 60;
+        if (!(cur.dir !== handoverDir && cur.startT - prevEnd <= XFER)) continue; // nie ciasny przeskok → zostaw
+        const o = obiegi.find((x) => x.id === cur.obiegId);
+        if (!o || (assignments[o.id]?.length ?? 0) !== 1) continue; // tylko jednoprzerwowe
+        const others = jobs.filter((j) => j !== cur).map((j) => ({ s: j.startT, e: j.startT + j.durationMin * 60 }));
+        const { floor, hi } = coverWindow(o, cur.kind);
+        const cands = candidateSlots(o, cur.kind, floor, hi)
+          .filter((s) => s.station === cur.station && s.startT >= prevEnd) // po oddaniu poprzedniej, w oknie obiegu
+          .sort((a, b) => Math.abs(a.startT - cur.startT) - Math.abs(b.startT - cur.startT)); // najmniejsze przesunięcie
+        for (const ns of cands) {
+          const nS = ns.startT, nE = nS + ns.durationMin * 60;
+          if (others.some((j) => nS < j.e && j.s < nE)) continue;          // kolizja z inną podmianą rezerwowego
+          if (!(ns.dir === handoverDir || nS - prevEnd > XFER)) continue;  // nadal ciasny przeskok → szukaj dalej
+          if (next && next.station !== "A1" && next.station !== "A23") {   // nie twórz NOWEJ ciasnoty z następną
+            const hd2 = returnsOppositeTrack(ns.kind) ? opp(ns.dir) : ns.dir;
+            if (next.dir !== hd2 && next.startT - nE <= XFER) continue;
+          }
+          cur.startT = nS; cur.dir = ns.dir; cur.durationMin = ns.durationMin; // przesuń (obciążenie bez zmian)
+          break;
+        }
+      }
+    }
+  }
+
   const jobsByRes: Record<string, BreakAssignment[]> = {};
   for (const list of Object.values(assignments))
     for (const a of list) if (a.reserveId) (jobsByRes[a.reserveId] ??= []).push(a);
