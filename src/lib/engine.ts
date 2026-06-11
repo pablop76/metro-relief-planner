@@ -62,6 +62,10 @@ const SHIFT2_END = hms(22, 0);     // koniec 2. zmiany — górna granica RĘCZN
 // A11 nie ma już wolnego rezerwowego, cała i tak wejdzie na A11 (nadmiar). 12 h ≫ każdy dystans czasowy.
 const A11_CALA_PENALTY = 12 * 3600;
 
+// Optymalizator MOŻE ściąć obieg na połówkę (downgrade) tylko gdy ma < 4,5 koła. Długodystansowców (≥4,5)
+// nigdy nie krzywdzi połówką (sprawiedliwość wg kół) — gdy nie mieści się jako cała, idzie BRAK → nawrót.
+const OPT_DOWNGRADE_MAX = 4.5;
+
 export interface PlanOptions {
   /** globalny próg „nie wcześniej niż" (sekundy od północy); domyślnie 14:30 */
   earliest?: number;
@@ -86,6 +90,9 @@ export interface PlanOptions {
   entry2ndByObieg?: Record<string, number>;
   /** R20: bufor na przeskok na drugi peron przy kolejnej podmianie (minuty); domyślnie XFER_BUFFER_MIN (5). */
   xferBufferMin?: number;
+  /** WEWNĘTRZNE — wspólny deadline (ms timestamp) na CAŁY plan łącznie z rekurencją nawrotu, by łączny czas
+   *  był ograniczony (UI nie zamarza nawet przy głębokim cięciu w deficycie). Ustawiany automatycznie. */
+  deadline?: number;
 }
 
 /** Deterministyczny PRNG (mulberry32) — ze stałego ziarna ten sam ciąg → powtarzalny wariant planu. */
@@ -216,6 +223,8 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   if (reserves.every((r) => r.blocked)) {
     return { assignments: {}, unassigned: obiegi.map((o) => o.id), reserveLoadMin: {}, reserveCount: {} };
   }
+  // DEADLINE wspólny dla całej rekurencji (nawrót cięcia) — łączny czas planu ograniczony (~700 ms), UI płynne.
+  const planDeadline = opts.deadline ?? Date.now() + 700;
   const earliest = opts.earliest ?? EARLIEST_DEFAULT;
   // próg „nie wcześniej niż": per-stacja nadpisuje globalny (jest też kotwicą rozkładania)
   const stationEarliest = (s: BreakStation) => opts.earliestByStation?.[s] ?? earliest;
@@ -482,7 +491,11 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       const kc = dk(o);
       { const { floor, hi } = coverWindow(o, kc); const src = kc === "cała" ? candidateSlots : autoSlots;
         for (const s of src(o, kc, floor, hi)) if (s.startT >= after) arr.push({ slot: s, dg: 0 }); }
-      if (kc === "cała") { const { floor, hi } = coverWindow(o, "połówka");
+      // DOWNGRADE (cała→połówka) jako opcja TYLKO dla obiegów < 4,5 koła — DŁUGODYSTANSOWCÓW (≥4,5) silnik
+      // NIGDY nie ścina na połówkę (sprawiedliwość wg kół; decyzja użytkownika: „nie krzywdź wysokokołowych").
+      // Bez tego, przy zerowym luzie (cap=demand) optymalizator minimalizujący LICZBĘ downgrade'ów potrafił
+      // ściąć D17/D20 (5,0). Gdy długodystansowiec nie mieści się jako cała → BRAK → nawrót tnie najniżej-kołowy.
+      if (kc === "cała" && effLoops(o) < OPT_DOWNGRADE_MAX) { const { floor, hi } = coverWindow(o, "połówka");
         for (const s of autoSlots(o, "połówka", floor, hi)) if (s.startT >= after) arr.push({ slot: s, dg: 1 }); }
       arr.sort((a, b) => a.dg - b.dg || score(a.slot) - score(b.slot));
       if (arr.length === 0) return false; // obieg bez żadnego slotu → greedy (BRAK + nawrót)
@@ -509,7 +522,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       for (const p of place.get(o.id)!) { if (p.dg >= m) continue; if (elig(p.slot).some((r) => canTake(r, p.slot))) m = p.dg; }
       return m;
     };
-    let nodes = 0, aborted = false; const t0 = Date.now();
+    let nodes = 0, aborted = false;
     // BUDŻET — prymarnie WĘZŁOWY (deterministyczny wynik: ta sama obsada → ten sam plan, niezależnie od
     // szybkości maszyny). Optimum trafia się zwykle natychmiast (REAL 12: dg=2 przy 76 węźle / 10 ms), więc
     // głównym hamulcem jest STALL: gdy przez STALL_NODES nie ma poprawy inkumbenta, kończymy (na łatwych
@@ -518,14 +531,14 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     // STALL_NODES dobrane empirycznie 2026-06-10: optimum trafia się przy ~76 węźle, więc 4000 węzłów bez
     // poprawy wystarcza — TA SAMA jakość co 30 000 (downgr identyczne na wszystkich testach), ale ~70 ms
     // zamiast ~460 ms. Usuwa „zacięcie" przy zmianie opóźnienia/ustawień (regeneracja na żywo).
-    const NODE_BUDGET = 4_000_000, STALL_NODES = 4_000, TIME_BUDGET_MS = 1000;
+    const NODE_BUDGET = 4_000_000, STALL_NODES = 4_000;
     type Pick = { o: Obieg; slot: Slot; rid: string };
     let bestCost = Infinity; let bestChosen: Pick[] | null = null; let lastImprove = 0;
     const cur: Array<{ o: Obieg; slot: Slot; rid: string }> = [];
     const dfs = (i: number, dgSoFar: number): void => {
       if (aborted) return;
       if (++nodes > NODE_BUDGET || (bestChosen && nodes - lastImprove > STALL_NODES) ||
-          ((nodes & 2047) === 0 && Date.now() - t0 > TIME_BUDGET_MS)) { aborted = true; return; }
+          ((nodes & 1023) === 0 && Date.now() > planDeadline)) { aborted = true; return; }
       if (dgSoFar >= bestCost) return; // przycięcie inkumbentem
       if (i === vars.length) { bestCost = dgSoFar; bestChosen = cur.slice(); lastImprove = nodes; return; }
       // DOLNE OGRANICZENIE + forward-check: suma minDg pozostałych; ∞ → branch prowadzi do BRAK (odetnij)
@@ -662,7 +675,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     const nextCut = eligible.filter((o) => !autoPolowka.has(o.id) && dk(o) === "cała")
       .sort((a, b) => a.loops - b.loops || a.firstT - b.firstT)[0];
     if (nextCut) {
-      const retry = planBreaks(obiegi, reserves, { ...opts, forcedKinds: { ...forced, [nextCut.id]: "połówka" } });
+      const retry = planBreaks(obiegi, reserves, { ...opts, deadline: planDeadline, forcedKinds: { ...forced, [nextCut.id]: "połówka" } });
       const retryBrak = obiegi.filter((o) => !(retry.assignments[o.id] ?? []).some((a) => a.reserveId)).length;
       if (retryBrak < brakNow.length) return retry; // cięcie pomogło → użyj planu z nawrotu
     }
