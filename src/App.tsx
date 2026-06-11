@@ -119,6 +119,7 @@ export default function App() {
   const [error, setError] = useState<string>("");
   const [showReset, setShowReset] = useState(false);
   const [showGenConfirm, setShowGenConfirm] = useState(false); // twarde potwierdzenie „Generuj plan"
+  const [copyMsg, setCopyMsg] = useState(""); // komunikat po „kopiuj plan"
 
   // pełny reset: usuń WSZYSTKIE dane aplikacji z localStorage i przeładuj do ustawień domyślnych
   const clearAllMemory = () => {
@@ -303,6 +304,27 @@ export default function App() {
       return next;
     });
 
+  // „Kopiuj plan" — zrzut całego planu (z ręcznymi korektami) do schowka jako tekst, do analizy/przekazania.
+  const copyPlan = () => {
+    const resName = (id: string | null) => (id ? reserves.find((r) => r.id === id)?.name ?? id : "BRAK");
+    const lines: string[] = [];
+    for (const o of ordered) {
+      const list = (assignments[o.id] ?? []).slice().sort((a, b) => a.startT - b.startT);
+      const k = Number.isFinite(o.loops) ? `${o.loops.toFixed(1)} kół` : "całozmianowy";
+      const brk = list.length
+        ? list.map((a) => `${a.kind}@${a.station} ${HHMMSS(a.startT)} ${resName(a.reserveId)}`).join("  |  ")
+        : "— brak —";
+      lines.push(`${o.id} (${k}): ${brk}`);
+    }
+    const eq: Record<string, number> = {};
+    for (const list of Object.values(assignments)) for (const a of list) if (a.reserveId) eq[a.reserveId] = (eq[a.reserveId] ?? 0) + CALA_EQ[a.kind];
+    lines.push("", "— obciążenie rezerwowych (koła) —");
+    for (const r of reserves) lines.push(`${r.station} ${r.name}: ${(eq[r.id] ?? 0).toFixed(1)}/3`);
+    const text = lines.join("\n");
+    navigator.clipboard?.writeText(text).then(() => setCopyMsg("skopiowano ✓"), () => setCopyMsg("błąd kopiowania"));
+    setTimeout(() => setCopyMsg(""), 2500);
+  };
+
   const resetManual = () => {
     setManual({});
     const res = planBreaks(delayed, reserves, { forcedKinds: forceKind, throughShiftOverride: throughShiftBy, earliest: earliestStart, earliestByStation, earliestByObieg });
@@ -485,6 +507,10 @@ export default function App() {
               Reset korekt
             </button>
           )}
+          <button className="btn-reset" onClick={copyPlan} title="skopiuj cały plan (z korektami) do schowka jako tekst">
+            📋 Kopiuj plan
+          </button>
+          {copyMsg && <span className="gen-stamp">{copyMsg}</span>}
           {orderChanged && (
             <button className="btn-reset" onClick={resetOrder} title="przywróć kolejność wg rozkładu">
               Reset kolejności
