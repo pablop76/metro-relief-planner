@@ -224,14 +224,18 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     return { assignments: {}, unassigned: obiegi.map((o) => o.id), reserveLoadMin: {}, reserveCount: {} };
   }
   // DEADLINE wspólny dla całej rekurencji (nawrót cięcia) — łączny czas planu ograniczony (~700 ms), UI płynne.
-  const planDeadline = opts.deadline ?? Date.now() + 700;
+  const planDeadline = opts.deadline ?? Date.now() + 450;
   const earliest = opts.earliest ?? EARLIEST_DEFAULT;
   // próg „nie wcześniej niż": per-stacja nadpisuje globalny (jest też kotwicą rozkładania)
   const stationEarliest = (s: BreakStation) => opts.earliestByStation?.[s] ?? earliest;
   // efektywny próg slotu: override per-obieg > per-stacja > globalny (R2)
   const floorOf = (o: Obieg, s: BreakStation) => opts.earliestByObieg?.[o.id] ?? stationEarliest(s);
-  // scarcity: odepchnij CAŁE z A11 (A11 zostawiamy na połówki — jedyne miejsce, gdzie są możliwe)
-  const scarcity = (s: Slot) => (s.kind === "cała" && s.station === "A11" ? A11_CALA_PENALTY : 0);
+  // scarcity: odepchnij CAŁE z A11 (A11 zostawiamy na połówki — jedyne miejsce, gdzie są możliwe) — ALE
+  // TYLKO gdy połówki REALNIE są (reserveA11ForPolowki, ustawiane po bilansie). Przy 0 połówek (moc =
+  // zapotrzebowanie, wszyscy na całe) A11 jest ZWYKŁĄ stacją całych (kara = 0) — inaczej 12-h kara odpychała
+  // całe z A11, głodziła rezerwowych A1/A7 i zostawiała ich na 2,0–2,5/3 zamiast maksymalnego obciążenia.
+  let reserveA11ForPolowki = false;
+  const scarcity = (s: Slot) => (reserveA11ForPolowki && s.kind === "cała" && s.station === "A11" ? A11_CALA_PENALTY : 0);
   // SCORE (mniejszy = lepszy): po scarcity preferuj start w oknie [„zacznij od", +15 min tolerancji] danej
   // stacji. Próg „zacznij od" = USTAWIENIE „nie wcześniej niż" (opts.earliest / per-stacja) — to ono steruje,
   // kiedy ruszają przerwy (decyzja użytkownika 2026-06-09). Sloty w [próg, próg+15] = score 0 (luz na lepsze
@@ -264,36 +268,36 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     r.maxJobs ?? (r.id === rollingA1Id ? A1_MOBILE_MAX_JOBS : Infinity);
 
 
-  // RODZAJ PRZERWY — BILANS NADRZĘDNY + sprawiedliwość wg kół (decyzja użytkownika 2026-06-08/09):
-  // • Domyślnie KAŻDY obieg dostaje PEŁNĄ przerwę (cała; na A11 — 2 połówki). „Daj jak najwięcej całych."
-  // • TWARDY próg (R10 E3): ≤ 3 koła = POŁÓWKA ZAWSZE (pracuje krótko, pełna by się nie zmieściła / byłaby
-  //   marnotrawstwem). To JEDYNE połówki przy NADWYŻCE mocy — reszta (w tym szczyty 3–4 koła) dostaje pełną.
-  // RACJONOWANIE przy DEFICYCIE: gdy mocy nie starcza na pełne przerwy dla wszystkich >3 kół, TNIEMY całe na
-  // połówki „NAJMNIEJ kół najpierw" — rozszerzamy zbiór połówek W GÓRĘ po kołach (najpierw 4-kołowe szczyty,
-  // potem wyżej), aż zapotrzebowanie (eq) zejdzie do dostępnej mocy. (Bilans nadrzędny: jeśli matematycznie
-  // się mieści — silnik musi upakować; jeśli nie — cięcie wg kół, nie losowo.) Każde cięcie cała→połówka = −0,5 eq.
-  // KLUCZOWE: próg jest BILANSOWY, nie sztywny — przy nadwyżce rezerwowych 4-kołowy szczyt dostaje CAŁĄ
-  // (eliminuje to „obiegi z połówką", gdy moc pozwala na pełne), a dopiero deficyt schodzi na połówki od dołu.
-  const HARD_POL_LOOPS = 4; // < 4 koła = połówka ZAWSZE (twardy próg, decyzja użytkownika 2026-06-10:
-                            // „reszta całe, wyjątek te co robią mniej niż 4 koła"). W danych łapie 4 obiegi
-                            // (S31 3,35 · S34 3,50 · S23 3,73 · S28 3,82); 4,00 NIE jest połówką (chyba że racjonowanie).
+  // RODZAJ PRZERWY — BILANS = MAKSYMALIZUJ OBCIĄŻENIE (decyzja użytkownika 2026-06-11, KLUCZOWA korekta
+  // potwierdzona ręcznym planem: 12 rez × 3 = 36 obiegów → WSZYSCY po 3 CAŁE, 0 połówek):
+  // • Domyślnie KAŻDY obieg = CAŁA (też <4 koła!). Zniesiono dawny twardy próg „<4 koła = połówka ZAWSZE" —
+  //   niepotrzebnie kradł całe ze stacji A1/A7/A23 (np. S31→cała@A1) i wrzucał fragmenty na A11, przez co
+  //   rezerwowi zostawali na 2,0–2,5/3 zamiast pełnych 3,0. Cała daje WIĘCEJ obciążenia niż połówka (1 vs ½),
+  //   więc „jak najwięcej całych" = „maksymalnie obciążeni rezerwowi" (czego chce użytkownik).
+  // • POŁÓWKI TYLKO przy DEFICYCIE (moc < zapotrzebowanie): tniemy całe→połówki NAJMNIEJ-KOŁOWE NAJPIERW
+  //   (S31, S34, S23, S28, …), aż eqDemand ≤ capacity. Cięcie cała→połówka = −0,5 eq. Przy moc ≥ demand —
+  //   ZERO cięć (reszta całymi). To eliminuje „obiegi z połówką, gdy moc pozwala na pełne".
+  // Genuine timing-infeasibility (obieg fizycznie nie zmieści całej — brak powrotu pełną pętlą przed zjazdem)
+  // i tak rozwiązuje PLACEMENT (candidateSlots nie wygeneruje całej → optymalizator zejdzie na połówkę dg=1),
+  // więc bilans NIE musi z góry forsować połówek.
   const eligible = [...obiegi]
     .filter((o) => !forced[o.id] && !isThrough(o) && Number.isFinite(o.loops)) // całozmianowe poza racjonowaniem
-    .sort((a, b) => a.loops - b.loops || a.firstT - b.firstT);
-  // MOC do bilansu = rezerwowi „do pełnej dyspozycji" × 3 koła. Rezerwa ruchowa A1 (Kopyt, rollingA1Id) NIE
-  // wchodzi do mocy — jej 1 koło to bufor pod ręką (R17), nie planowana moc. Dzięki temu bilans = 10×3 = 30
-  // (tak liczy pomocnik instruktora), a bufor Kopyta amortyzuje niedoskonałość pakowania.
+    .sort((a, b) => a.loops - b.loops || a.firstT - b.firstT);                  // najmniej kół = tnij pierwsze
+  // MOC do bilansu = rezerwowi „do pełnej dyspozycji" × 3 koła. Rezerwa ruchowa A1 (rollingA1Id, jeśli jawnie
+  // zaznaczona) NIE wchodzi do mocy — jej 1 koło to bufor pod ręką (R17), nie planowana moc.
   const capacity = reserves.reduce(
     (s, r) => s + (r.blocked || r.id === rollingA1Id ? 0 : Math.min(MAX_RESERVE_LOAD_EQ, capOf(r))), 0
   );
-  const autoPolowka = new Set(eligible.filter((o) => o.loops < HARD_POL_LOOPS).map((o) => o.id));
+  const autoPolowka = new Set<string>();           // START: nikt nie jest połówką (wszyscy całe → max obciążenie)
   // eqDemand respektuje też RĘCZNE/NAWROTOWE cięcia (forced=połówka) — patrz RETRY niżej
   const eqDemand = () => obiegi.reduce((s, o) => s + (forced[o.id] === "połówka" || autoPolowka.has(o.id) ? 0.5 : 1), 0);
-  for (const o of eligible) {
-    if (o.loops < HARD_POL_LOOPS) continue;      // <4 koła już są połówkami (twardy próg)
-    if (eqDemand() <= capacity) break;            // bilans się spina (nadwyżka) → nie tnij więcej, reszta = całe
-    autoPolowka.add(o.id);                         // deficyt: utnij temu (najmniej kół z pozostałych) → połówka
+  for (const o of eligible) {                       // RACJONOWANIE: tnij najmniej-kołowe, dopóki nie zmieści się w mocy
+    if (eqDemand() <= capacity) break;              // moc starcza (nadwyżka) → reszta zostaje CAŁYMI (max obciążenie)
+    autoPolowka.add(o.id);                          // deficyt: utnij najmniej-kołowy z pozostałych → połówka
   }
+  // A11 rezerwujemy na połówki TYLKO gdy jakieś są (deficyt/ręczne/nawrót). Przy 0 połówek kara A11_CALA_PENALTY
+  // znika → A11 to zwykła stacja całych (kluczowe dla balansu: bez tego całe uciekały z A11, głodząc A1/A7).
+  reserveA11ForPolowki = autoPolowka.size > 0 || Object.values(forced).some((k) => k === "połówka");
   const dk = (o: Obieg) => forced[o.id] ?? (autoPolowka.has(o.id) ? "połówka" : "cała"); // ręczny mark > auto
 
   // R3 — okno 1. (głównej) przerwy: najpóźniejszy START = min(18:20, realny_start + 6h).
@@ -516,6 +520,90 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     const canTake = (r: RState, slot: Slot) =>
       load.get(r.ref.id)! + CALA_EQ[slot.kind] <= MAX_RESERVE_LOAD_EQ + 1e-6 &&
       cnt.get(r.ref.id)! < r.cap && free(r.ref.id, slot.startT, slot.startT + slot.durationMin * 60);
+
+    // FAST PATH — pełne dopasowanie BEZ downgrade (augmenting paths / Kuhn). Naiwny B&B niżej NIE znajduje
+    // upakowania przy ZEROWYM luzie (12 rez × 3 = 36 obiegów: 2,6 mln węzłów bez ani jednego pełnego liścia),
+    // bo bez inkumbenta nie ma czym przycinać, a forward-check bada obiegi pojedynczo. Dopasowanie z nawrotami
+    // (ścieżki powiększające) jest UKIERUNKOWANE: każdemu obiegowi szuka jego DOCELOWEGO rodzaju (dg=0),
+    // w razie kolizji RELOKUJĄC już przypisane (rekurencyjnie, jak Kuhn). Sukces (wszyscy dopasowani) ⇒ 0
+    // downgrade = MAKSYMALNE obciążenie (każdy rezerwowy do 3 kół — potwierdzony ręczny plan użytkownika).
+    // Porażka (zostaje nieobsadzony) ⇒ false → B&B/greedy (deficyt, piny itp. — bez zmian). Pomijamy, gdy są
+    // już przypisania na rezerwowych (piny) — wtedy model lokalny nie odzwierciedla obciążenia; idzie B&B.
+    const tryFullMatch = (): boolean => {
+      if (opts.deadline != null) return false; // wywołanie zagnieżdżone (nawrót cięcia) — deficyt, matcher i tak
+                                                // nie złoży pełnego dopasowania; pomijamy, by nie mnożyć kosztu
+      if (rs.some((r) => r.jobs.length > 0)) return false; // piny/preassign → model lokalny nie odda obciążenia → B&B
+      const zeroPlace = new Map<string, Slot[]>();
+      for (const o of toAssign) {
+        const z = place.get(o.id)!.filter((p) => p.dg === 0).map((p) => p.slot);
+        if (z.length === 0) return false; // obieg bez docelowego slotu → nie ma pełnego dopasowania
+        zeroPlace.set(o.id, z);
+      }
+      type AJob = { oid: string; s: number; e: number; slot: Slot };
+      const capN = new Map(rs.map((r) => [r.ref.id, Math.min(MAX_RESERVE_LOAD_EQ, r.cap)] as const)); // cała=1 → ≤3/cap
+      const availOk = (r: RState, s: Slot) =>
+        (r.ref.availFrom == null || s.startT >= r.ref.availFrom) &&
+        (r.ref.availTo == null || s.startT + s.durationMin * 60 <= r.ref.availTo);
+      // augment (Kuhn dla interwałów): umieść `oid` na slocie dg=0. Jeśli rezerwowy jest zajęty czasowo,
+      // RELOKUJ kolidujące obiegi. KLUCZ poprawności+pełności: `oid` wstawiamy NAJPIERW (zajmuje zwolnione
+      // miejsce), POTEM relokujemy kolidujące — skoro nachodzą na slot `oid`, nie mogą wrócić na tego
+      // rezerwowego, więc capacity NIE rośnie powyżej capN (liczba = stara − kolizje + 1), a relokacja zostaje
+      // PEŁNA (mogą iść na innych rezerwowych). Cykle blokuje `moving` (obieg w łańcuchu nie jest relokowany
+      // ponownie). Interwały łamią pełność czystego matchingu, więc przy porażce restart z inną kolejnością.
+      let mnodes = 0; const PER_TRY = 120_000;            // budżet WĘZŁÓW na pojedynczą próbę (reset co restart)
+      let asg = new Map<string, AJob[]>();
+      // `moving` MONOTONICZNE w obrębie jednej próby (jak visited w Kuhn): obieg raz wpisany do łańcucha nie jest
+      // relokowany ponownie → gwarancja zakończenia (≤ N obiegów). Pełność dorównuje restart z inną kolejnością.
+      const augment = (oid: string, moving: Set<string>, depth: number): boolean => {
+        if (++mnodes > PER_TRY || depth > toAssign.length + 2) return false;
+        moving.add(oid);
+        for (const slot of zeroPlace.get(oid)!) {
+          const s = slot.startT, e = slot.startT + slot.durationMin * 60;
+          for (const r of byStation.get(slot.station) ?? []) {
+            const rid = r.ref.id;
+            if (!availOk(r, slot)) continue;
+            const cur = asg.get(rid)!;
+            const conflicts = cur.filter((j) => s < j.e && j.s < e);   // kolizje czasowe na tym rezerwowym
+            if (conflicts.some((c) => moving.has(c.oid))) continue;     // kolizja z obiegiem już w łańcuchu → pomiń
+            if (cur.length - conflicts.length + 1 > capN.get(rid)!) continue; // brak miejsca nawet po relokacji
+            const saved = new Map([...asg].map(([k, v]) => [k, v.slice()] as const)); // pełny snapshot (relokacje mutują wielu)
+            asg.set(rid, [...cur.filter((j) => !(s < j.e && j.s < e)), { oid, s, e, slot }]); // oid NAJPIERW
+            let ok = true;
+            for (const c of conflicts) if (!augment(c.oid, moving, depth + 1)) { ok = false; break; }
+            if (ok) return true;
+            asg = saved;  // pełne cofnięcie nieudanej gałęzi (też zagnieżdżonych relokacji) — bez duplikatów
+          }
+        }
+        return false;
+      };
+      const baseMRV = [...toAssign].sort((a, b) => zeroPlace.get(a.id)!.length - zeroPlace.get(b.id)!.length); // MRV
+      const rngM = mulberry32(((opts.seed ?? 0) | 0) ^ 0x9e3779b9);
+      // Pełne dopasowanie istnieje TYLKO bez deficytu (cap ≥ demand). Przy deficycie matcher i tak nie ma szans
+      // (wszystko-albo-nic) — dajemy mu KRÓTKI budżet (~150 ms) i spadamy do B&B/greedy, by UI nie zamarzło.
+      // W stanie pełnego obciążenia trafia od razu (próba 0, ~3 tys. węzłów / kilkanaście ms).
+      const RESTARTS = 400;
+      const matchDeadline = Math.min(planDeadline, Date.now() + 150);
+      for (let attempt = 0; attempt < RESTARTS; attempt++) {
+        if (Date.now() > matchDeadline) break;
+        mnodes = 0;                                       // świeży budżet na każdą próbę (kolejność może utknąć)
+        asg = new Map(rs.map((r) => [r.ref.id, [] as AJob[]]));
+        // WARIANT (seed): seed=0 → próba 0 = czyste MRV (deterministyczne, niezmienne). seed≠0 → potrząsamy
+        // kolejnością od razu (Fisher–Yates wg seeda) — inny seed = INNE pełne dopasowanie = inny wariant planu
+        // („Generuj plan" daje różne kombinacje, wszystkie po 3 koła). Kolejne próby zawsze potrząsane (gdy 0 utknie).
+        const ord = baseMRV.slice();
+        if (attempt > 0 || vary) for (let i = ord.length - 1; i > 0; i--) { const j = Math.floor(rngM() * (i + 1)); [ord[i], ord[j]] = [ord[j], ord[i]]; }
+        let full = true;
+        for (const o of ord) if (!augment(o.id, new Set(), 0)) { full = false; break; }
+        if (full) {
+          for (const [rid, list] of asg)
+            for (const a of list) commit(obiegi.find((x) => x.id === a.oid)!, a.slot, rs.find((x) => x.ref.id === rid)!);
+          return true;
+        }
+      }
+      return false;
+    };
+    if (tryFullMatch()) return true; // pełne dopasowanie bez downgrade (maks. obciążenie) — pomijamy B&B/greedy
+
     // minimalny downgrade osiągalny dla obiegu w bieżącym stanie (∞ = nie ma gdzie go obsadzić → ten branch BRAK)
     const minDg = (o: Obieg): number => {
       let m = Infinity;
@@ -531,13 +619,18 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     // STALL_NODES dobrane empirycznie 2026-06-10: optimum trafia się przy ~76 węźle, więc 4000 węzłów bez
     // poprawy wystarcza — TA SAMA jakość co 30 000 (downgr identyczne na wszystkich testach), ale ~70 ms
     // zamiast ~460 ms. Usuwa „zacięcie" przy zmianie opóźnienia/ustawień (regeneracja na żywo).
-    const NODE_BUDGET = 4_000_000, STALL_NODES = 4_000;
+    // NO_INCUMBENT_BAIL: stan pełnego obciążenia rozwiązuje już matcher (wyżej). Gdy matcher odpadł (DEFICYT),
+    // B&B zwykle też nie złoży kompletu (to samo zero-luzu) i tylko miele do deadline'u — a wynik i tak da greedy.
+    // Więc gdy po tylu węzłach NIE ma ŻADNEGO inkumbenta, odpuszczamy szybko (greedy) zamiast laga. Łatwe scenariusze
+    // (z luzem) trafiają inkumbenta < 1 tys. węzłów, więc ich to nie dotyczy.
+    const NODE_BUDGET = 4_000_000, STALL_NODES = 4_000, NO_INCUMBENT_BAIL = 20_000;
     type Pick = { o: Obieg; slot: Slot; rid: string };
     let bestCost = Infinity; let bestChosen: Pick[] | null = null; let lastImprove = 0;
     const cur: Array<{ o: Obieg; slot: Slot; rid: string }> = [];
     const dfs = (i: number, dgSoFar: number): void => {
       if (aborted) return;
       if (++nodes > NODE_BUDGET || (bestChosen && nodes - lastImprove > STALL_NODES) ||
+          (!bestChosen && nodes > NO_INCUMBENT_BAIL) ||
           ((nodes & 1023) === 0 && Date.now() > planDeadline)) { aborted = true; return; }
       if (dgSoFar >= bestCost) return; // przycięcie inkumbentem
       if (i === vars.length) { bestCost = dgSoFar; bestChosen = cur.slice(); lastImprove = nodes; return; }

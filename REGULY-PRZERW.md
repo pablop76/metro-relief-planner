@@ -52,12 +52,13 @@ zmienia go ktoś na linii.
 
 ## 2. Rodzaj przerwy (połówka vs cała)
 
-Decyduje liczba kół (`planBreaks`) — **BILANS NADRZĘDNY + sprawiedliwość** (2026-06-08/09):
+Decyduje liczba kół (`planBreaks`) — **BILANS = MAKSYMALIZUJ OBCIĄŻENIE** (2026-06-08/09, **kluczowa korekta
+2026-06-11** potwierdzona ręcznym planem użytkownika: 12 rez × 3 = 36 obiegów → WSZYSCY po 3 całe, 0 połówek):
 
-- **DOMYŚLNIE każdy obieg = PEŁNA PRZERWA (cała).** „Daj jak najwięcej całych." Przy nadwyżce mocy nawet
-  szczyt 3–4 koła dostaje całą (niekoniecznie na A11 — patrz uwaga niżej).
-- **TWARDY próg: ≤ 3 koła = POŁÓWKA ZAWSZE** (`HARD_POL_LOOPS`, R10 E3). To JEDYNE wymuszone połówki przy
-  nadwyżce (w realnych danych zbiór bywa pusty — najniższy szczyt ≈ 3,4 koła → przy nadwyżce wszyscy = cała).
+- **DOMYŚLNIE każdy obieg = PEŁNA PRZERWA (cała) — TAKŻE <4 koła.** „Daj jak najwięcej całych" = „maksymalnie
+  obciążeni rezerwowi" (cała = 1 koło, połówka = ½). **Zniesiono dawny twardy próg „<4 koła = połówka zawsze"**
+  (`HARD_POL_LOOPS`) — niepotrzebnie kradł całe ze stacji A1/A7/A23 i wrzucał fragmenty na A11, zostawiając
+  rezerwowych na 2,0–2,5/3 zamiast pełnych 3,0. Połówki pojawiają się **WYŁĄCZNIE przy DEFICYCIE** (patrz niżej).
 - **CAŁOZMIANOWY = jak całodobowy** (`isThrough`): auto (`throughShift`, zjazd ≥ 21:00, `Infinity`) **lub
   ręczne wskazanie pomocnika** (`throughShiftOverride`, znaczek 🔁 w `ObiegCard`). ZAWSZE cała (wykluczony
   z racjonowania), priorytet pokrycia, kosztem szczytów (uwaga użytkownika: „nie może mieć pół, gdy jest
@@ -69,9 +70,10 @@ Decyduje liczba kół (`planBreaks`) — **BILANS NADRZĘDNY + sprawiedliwość*
   zbiór połówek w górę po kołach od >3), aż `eq ≤ moc`. Najbliższy progu cięty przed prawdziwym
   długodystansowcem. Bilans jest nadrzędny: jeśli matematycznie się mieści — silnik to upakowuje; jeśli nie —
   cięcie wg kół, a w ostateczności BRAK (sygnał „dodać rezerwowego"), **nie** krzywdząca połówka dla wysokokołowego.
-- **„ROZBICIE" całej na A11:** na A11 **automat nie nadaje całych** — pełną przerwę długodystansowca daje jako
-  **2 połówki** (drobniejsze ~45-min bloki = ciaśniejsze pakowanie i więcej opcji podmian). Cała@A11 dopuszczona
-  tylko jako overflow/ostateczność (faza 3) i ręcznie. Połówka jest możliwa **tylko na A11**.
+- **CAŁA@A11 = NORMALNA** (korekta 2026-06-11): A11 jest pełnoprawną stacją całych — w stanie pełnego
+  obciążenia 5 rezerwowych A11 robi po 3 całe (15 całych w 3 falach ~85 min). Kara `A11_CALA_PENALTY`
+  (odpychanie całych z A11) działa **TYLKO gdy są połówki** (deficyt) — wtedy rezerwuje A11 dla nich
+  (`reserveA11ForPolowki`). Połówka jest możliwa **tylko na A11**.
 - **TYLKO całe i połówki w automacie** — godzinka i szczeniak tylko ręcznie (godzinka = ryzyko przy awarii;
   szczeniak za słaby).
 - Ręczny override (`forcedKinds`) > auto. (Nawrót racjonowania używa `forcedKinds` wewnętrznie.)
@@ -188,15 +190,19 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
 - Pakowanie: najpierw dobijamy najczęściej używanego rezerwowego, świeżych zostawiamy na trudniejsze,
   późniejsze obiegi.
 - Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.
-- **PRZYDZIAŁ — OPTYMALIZATOR (branch-and-bound, `optimizeExact`; decyzja użytkownika 2026-06-10):** głównym
-  mechanizmem NIE jest już greedy, tylko przeszukiwanie z nawrotami MINIMALIZUJĄCE liczbę downgrade'ów (obieg
-  `dk=cała` obsłużony połówką). Optimum = każdy dostaje swój docelowy rodzaj → liczba połówek = dokładnie bilans
-  (np. REAL 12: **2 downgrade** zamiast greedy ~9; A11 robi MIX całych i połówek, każdy rezerwowy 3 koła).
-  Placements = docelowy rodzaj (dg=0) + dla całej także połówka (dg=1); **cała@A11 dozwolona**. Przycinanie:
-  inkumbent + dolne ograniczenie (suma `minDg` pozostałych) + dedup pustych rezerwowych + MRV. Budżet WĘZŁOWY
-  (deterministyczny wynik), STALL „brak poprawy przez N węzłów" kończy wcześnie, czas = zabezpieczenie UI.
-  Wynik znajduje się zwykle natychmiast (~10 ms); zwykle ≤ ~0,5 s. **Porażka/budżet/niewykonalność ⇒ fallback
-  do greedy (FAZY niżej).** Pełna cała@A11 znosi dawne rozbijanie nadmiaru na 2×½ (zalewało A11 połówkami).
+- **PRZYDZIAŁ — DOPASOWANIE (ścieżki powiększające / Kuhn) → potem B&B → greedy** (`optimizeExact`):
+  - **FAST PATH — `tryFullMatch` (kluczowe, 2026-06-11):** dopasowanie z nawrotami szuka każdemu obiegowi jego
+    DOCELOWEGO rodzaju (dg=0) bez ani jednego downgrade'u; w razie kolizji czasowej RELOKUJE już przypisane
+    (rekurencyjnie). Sukces ⇒ **0 połówek = maksymalne obciążenie** (12 rez → wszyscy po 3 całe, ~15–30 ms).
+    Dlaczego nie sam B&B: przy ZEROWYM luzie (36 całych = 36 mocy) naiwny branch-and-bound nie znajduje pełnego
+    upakowania (2,6 mln węzłów bez liścia — brak inkumbenta = brak przycinania). Poprawność+pełność dopasowania:
+    `oid` wstawiamy NAJPIERW (zajmuje miejsce), relokowane (nachodzące) nie wracają na tego rezerwowego →
+    capacity ≤ 3; `moving` blokuje cykle; restart z inną kolejnością (seeded → **różne warianty „Generuj plan"**,
+    wszystkie po 3 koła). Pomijany przy pinach i w nawrocie (deficyt). Krótki budżet (~150 ms) → spada do B&B.
+  - **B&B (`dfs`, branch-and-bound):** gdy pełne dopasowanie się nie składa (DEFICYT), przeszukiwanie z nawrotami
+    MINIMALIZUJĄCE liczbę downgrade'ów. Placements = docelowy rodzaj (dg=0) + dla całej połówka (dg=1, tylko
+    <4,5 koła); **cała@A11 dozwolona**. Przycinanie: inkumbent + suma `minDg` + dedup pustych + MRV. Gdy po
+    `NO_INCUMBENT_BAIL` węzłach brak ŻADNEGO rozwiązania (to samo zero-luzu) → szybki fallback do greedy (UI bez laga).
 - **Kolejność greedy (FALLBACK, gdy optymalizator nie znajdzie planu — np. obsada przeciążona co do koła):**
   - **FAZA 1:** CAŁE **poza A11** (A1/A7/A18/A23). W obrębie całych: **CAŁOZMIANOWE/całodobowe pierwsze**
     (`criticalRank`, `isThrough`), potem **MALEJĄCO PO KOŁACH** (`loopKey`). Nadmiar czeka na fazę 3.
