@@ -112,13 +112,14 @@ Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). R16 = pokrycie + **MAK
   rezerwowych najbliższych pełna kosztem najmniej obciążonych **tej samej stacji** (rezerwowy podmienia tylko
   u siebie). Maksymalizuje liczbę rezerwowych na 3,0; nadmiarowi zostają widocznie wolni (do zwolnienia ręcznie).
   Naprawia nierówny rozkład A1/A11 w planach z połówkami. Nie zmienia rodzajów/slotów → nie łamie reguł.
-- **DRABINA DOCIĄŻANIA (drugie przerwy)** — dokładamy, dopóki rezerwowi < `min(3, maxJobs)` (`roomLeft`):
-  - **RUNDA A — obiegi < 4,5 koła → 1,5:** 2. **POŁÓWKA** (możliwa tylko na A11) — dociąża rezerwowych A11.
-  - **RUNDA B — obiegi ≥ 4,5 koła → 2,0:** 2. **CAŁA off-A11** (A1/A7/A18/A23 — połówką ich nie zapełnimy,
-    połówka tylko na A11); fallback przy braku miejsca: połówka@A11. **„dwa nie dla tych co robią < 4,5"**
-    (decyzja użytkownika) — krótkie obiegi kończą na 1,5, długodystansowce mogą mieć 2. pełną przerwę.
-  - Limit `MAX_BREAKS_PER_OBIEG = 2` → każdy obieg dostaje najwyżej JEDNĄ 2. przerwę. Rozsuw ~2,5 h
-    (`SPACING_POLOWKI`). Bez RNG (determinizm), bezpiecznik `planDeadline`.
+- **DRABINA DOCIĄŻANIA (drugie przerwy) — SPRAWIEDLIWIE** (korekta 2026-06-11 wg użytkownika: „najpierw
+  wszyscy do PÓŁTORA koła, i półtora dawaj tym co robią NAJWIĘCEJ kół; dwa koła a u innego jedno — tak nie
+  powinno być"): **JEDNA runda** — każdy obieg dobijamy do **1,5 koła** 2. **POŁÓWKĄ** (możliwa tylko na
+  A11 → dociąża rezerwowych A11), w kolejności **OD NAJWIĘCEJ KÓŁ** (`loopKey` malejąco; całozmianowi = ∞
+  pierwsi). Dopóki `roomLeft` (rezerwowy < `min(3, maxJobs)`). **NIKT nie dostaje 2,0** (2. całej) — to
+  wyrównuje (równo-kołowi traktowani identycznie). Nadwyżkowa moc off-A11 (połówki tam nie wejdą) zostaje
+  **WOLNA** (widoczni wolni rezerwowi do zwolnienia). Limit `MAX_BREAKS_PER_OBIEG = 2` → najwyżej JEDNA
+  2. przerwa/obieg; rozsuw ~2,5 h (`SPACING_POLOWKI`); bez RNG (determinizm), bezpiecznik `planDeadline`.
 - Dokładki tylko **cała / połówka**. **Godzinka i szczeniak NIE są dokładane automatycznie** (patrz niżej).
 
 ---

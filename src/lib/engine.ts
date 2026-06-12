@@ -873,38 +873,24 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       }
     }
   };
-  // DOCIĄŻANIE rezerwowych do min(3, maxJobs) drugimi przerwami (decyzja 2026-06-11 — SUPERSEDUJE PASS A/B
-  // z 2026-06-10). Drabina (MAX_BREAKS_PER_OBIEG=2 → każdy obieg ma najwyżej JEDNĄ 2. przerwę):
-  //  • RUNDA A — obiegi < 4,5 koła do 1,5: 2. POŁÓWKA (możliwa TYLKO na A11) — dociąża rezerwowych A11.
-  //  • RUNDA B — obiegi ≥ 4,5 koła do 2,0: 2. CAŁA off-A11 (autoSlots blokuje cała@A11) — dociąża A1/A7/A18/
-  //    A23 (połówka tam nie wejdzie, więc tylko CAŁE dobiją tamtejszych rezerwowych). Fallback: brak miejsca
-  //    na całą → połówka@A11 (≥4,5 woli rest niż nic). „dwa nie dla tych co robią < 4,5" (decyzja użytkownika).
-  // Bramka roomLeft: nie dokładamy ponad realne zapotrzebowanie rezerwowych. Bez RNG (determinizm), planDeadline.
+  // DOCIĄŻANIE drugimi przerwami — SPRAWIEDLIWIE (korekta 2026-06-11 wg użytkownika: „najpierw wszyscy do
+  // PÓŁTORA koła, i półtora dawaj tym co robią NAJWIĘCEJ kół; dwa koła a u innego jedno — tak nie powinno być").
+  // JEDNA runda (MAX_BREAKS_PER_OBIEG=2 → najwyżej JEDNA 2. przerwa/obieg): każdy obieg dobijamy do 1,5 koła
+  // 2. POŁÓWKĄ (możliwa TYLKO na A11 → dociąża rezerwowych A11), w kolejności OD NAJWIĘCEJ KÓŁ (`loopKey`
+  // malejąco; całozmianowi = ∞ pierwsi). NIKT nie dostaje 2,0 (2. całej) — to wyrównuje (równo-kołowi
+  // traktowani tak samo), a nadwyżkowa moc off-A11 (połówki tam nie wejdą) zostaje WOLNA (widoczni wolni
+  // rezerwowi do zwolnienia). Bramka `roomLeft`: nie dokładamy ponad zapotrzebowanie. Bez RNG (determinizm).
   const roomLeft = () => rs.some((r) => !r.ref.blocked && !r.ref.manualOnly && r.loadEq + 1e-6 < targetEq(r));
-  const SECOND_FULL_MIN_LOOPS = 4.5;
   if (!hasBrak()) {
     rebalanceStations();
-    // RUNDA A — krótkie obiegi (< 4,5) do 1,5 koła: 2. połówka@A11.
-    let progA = true;
-    while (progA && roomLeft() && Date.now() <= planDeadline) {
-      progA = false;
-      for (const o of order) {
-        if (effLoops(o) >= SECOND_FULL_MIN_LOOPS) continue;            // ≥4,5 → runda B (cała)
+    const byLoopsDesc = [...obiegi].sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id));
+    let prog2nd = true;
+    while (prog2nd && roomLeft() && Date.now() <= planDeadline) {
+      prog2nd = false;
+      for (const o of byLoopsDesc) {                                   // NAJWIĘCEJ KÓŁ pierwszy → 1,5
         const cur = assignments[o.id];
-        if (!cur || cur.length !== 1 || cur.some((a) => !a.reserveId)) continue;
-        if (addSecond(o, "połówka", cur[0].startT + SPACING_POLOWKI)) progA = true;
-      }
-    }
-    // RUNDA B — długodystansowce (≥ 4,5) do 2,0 koła: 2. cała off-A11 (fallback połówka@A11).
-    let progB = true;
-    while (progB && roomLeft() && Date.now() <= planDeadline) {
-      progB = false;
-      for (const o of order) {
-        if (effLoops(o) < SECOND_FULL_MIN_LOOPS) continue;
-        const cur = assignments[o.id];
-        if (!cur || cur.length !== 1 || cur.some((a) => !a.reserveId)) continue;
-        const target = cur[0].startT + SPACING_POLOWKI;
-        if (addSecond(o, "cała", target) || addSecond(o, "połówka", target)) progB = true;
+        if (!cur || cur.length !== 1 || cur.some((a) => !a.reserveId)) continue; // już 2 przerwy / BRAK
+        if (addSecond(o, "połówka", cur[0].startT + SPACING_POLOWKI)) prog2nd = true;
       }
     }
   }
