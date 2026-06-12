@@ -12,25 +12,15 @@ interface Props {
   /** override progu per-obieg (undefined = globalny) */
   earliestOverride?: number;
   onEarliestChange?: (sec?: number) => void;
-  /** ręczna godzina rozpoczęcia pracy maszynisty 2. zmiany (override; undefined = wykryty entry2nd) */
-  driverStartOverride?: number;
-  onDriverStartChange?: (sec?: number) => void;
-  /** ręczny koniec pracy maszynisty 2. zmiany („pracuje do"; undefined = zjazd z rozkładu) */
-  workEndOverride?: number;
-  onWorkEndChange?: (sec?: number) => void;
   onChange: (a: BreakAssignment) => void;
   onClose: () => void;
   onRemove?: () => void;
 }
 
-export function BreakEditor({ obieg, assignment, reserves, byReserve, earliestOverride, onEarliestChange, driverStartOverride, onDriverStartChange, workEndOverride, onWorkEndChange, onChange, onClose, onRemove }: Props) {
-  // RĘCZNY wybór: okno = godziny pracy maszynisty 2. zmiany [start (ręczny override ?? wykryty entry2nd), 22:00].
-  // Bez progu „zacznij od". Decyzja użytkownika 2026-06-10.
-  const driverStart = driverStartOverride ?? obieg.entry2nd;
-  const slots = useMemo(
-    () => feasibleSlots(obieg, { entry2ndByObieg: { [obieg.id]: driverStart } }, true),
-    [obieg, driverStart]
-  );
+export function BreakEditor({ obieg, assignment, reserves, byReserve, earliestOverride, onEarliestChange, onChange, onClose, onRemove }: Props) {
+  // RĘCZNY wybór: okno = godziny pracy maszynisty 2. zmiany [entry2nd, 22:00] — „pracuje od/do" jest
+  // ustawiane NA KARCIE obiegu (2026-06-12) i jest już wliczone w obieg (applyWorkHours w App).
+  const slots = useMemo(() => feasibleSlots(obieg, {}, true), [obieg]);
   // rezerwowy tylko z tej samej stacji co przerwa (rezerwowy podmienia tam, gdzie stoi)
   const stationReserves = assignment ? reserves.filter((r) => r.station === assignment.station) : [];
 
@@ -151,52 +141,6 @@ export function BreakEditor({ obieg, assignment, reserves, byReserve, earliestOv
                 className="be-early-clear"
                 onClick={() => onEarliestChange(undefined)}
                 title="wróć do progu globalnego"
-              >
-                ×
-              </button>
-            )}
-          </span>
-        </label>
-      )}
-
-      {onDriverStartChange && (
-        <label title="Godzina rozpoczęcia pracy maszynisty 2. zmiany — pracuje od (np. 13:00/13:30, domyślnie ~14:00). Ustawienie PRZELICZA koła obiegu z rozkładu i jest dolną granicą przerw. Domyślnie wykryta z rozkładu.">
-          Pracuje od (2. zmiana)
-          <span className="be-early">
-            <input
-              type="time"
-              value={HHMMSS(driverStart)}
-              onChange={(e) => onDriverStartChange(hmToSec(e.target.value))}
-            />
-            {driverStartOverride != null && (
-              <button
-                type="button"
-                className="be-early-clear"
-                onClick={() => onDriverStartChange(undefined)}
-                title="wróć do godziny wykrytej z rozkładu"
-              >
-                ×
-              </button>
-            )}
-          </span>
-        </label>
-      )}
-
-      {onWorkEndChange && (
-        <label title="Koniec pracy maszynisty 2. zmiany — pracuje do (np. wcześniejszy zjazd / zmiennik). Ustawienie PRZELICZA koła obiegu z rozkładu w oknie od–do; silnik nie zaplanuje przerwy, z której pociąg wraca po tej godzinie. Godzina ≥ 21:00 = zmiennik na linii → całozmianowy. Domyślnie zjazd z rozkładu.">
-          Pracuje do (2. zmiana)
-          <span className="be-early">
-            <input
-              type="time"
-              value={HHMMSS(workEndOverride ?? Math.min(obieg.lastT, 22 * 3600))}
-              onChange={(e) => onWorkEndChange(hmToSec(e.target.value))}
-            />
-            {workEndOverride != null && (
-              <button
-                type="button"
-                className="be-early-clear"
-                onClick={() => onWorkEndChange(undefined)}
-                title="wróć do zjazdu z rozkładu"
               >
                 ×
               </button>

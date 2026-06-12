@@ -117,6 +117,19 @@ body {
 .be-remove:hover { background: #4a2525; }
 .be-actions .be-close { flex: 1; }
 
+/* --- godziny pracy maszynisty 2. zmiany (od–do) na karcie obiegu — przeliczają koła (applyWorkHours) --- */
+.oc-work { padding: 3px 6px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: center; gap: 3px; flex-wrap: wrap; }
+.oc-work input[type="time"] {
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 2px; font-size: 10px; width: 58px;
+}
+.oc-work input[type="time"]:focus { outline: none; border-color: var(--accent); color: var(--text); }
+.oc-work.is-ovr input[type="time"] { color: var(--text); border-color: var(--olive); font-weight: 600; }
+.oc-work-lbl { font-size: 10px; }
+.oc-work-sep { font-size: 10px; color: var(--muted); }
+.oc-work-clear { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0 2px; line-height: 1; }
+.oc-work-clear:hover { color: var(--red); }
+
 .oc-foot { padding: 6px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: center; gap: 4px; }
 .oc-exit { font-size: 11px; color: var(--muted); }
 .oc-clean { font-size: 11px; color: #6ba4ff; font-weight: 600; }

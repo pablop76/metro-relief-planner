@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { HHMMSS } from "../lib/types";
+import { HHMMSS, hmToSec } from "../lib/types";
 import type { Obieg, StationEvent, BreakAssignment, Reserve, BreakKind } from "../lib/types";
 import { BreakEditor } from "./BreakEditor";
 import { feasibleSlots } from "../lib/engine";
@@ -78,10 +78,9 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
     onBreaksChange(sorted.filter((_, k) => k !== i));
     setEditIdx(null);
   };
-  // ręczny override godziny rozpoczęcia pracy maszynisty 2. zmiany (dla feasibleSlots manual)
-  const manualOpts = { entry2ndByObieg: driverStartOverride != null ? { [obieg.id]: driverStartOverride } : undefined };
+  // obieg.entry2nd ma już wliczone ręczne „pracuje od" (applyWorkHours w App)
   const addBreak = () => {
-    const s = feasibleSlots(obieg, manualOpts, true)[0];
+    const s = feasibleSlots(obieg, {}, true)[0];
     if (!s) return;
     const nb: BreakAssignment = {
       obiegId: obieg.id, station: s.station, dir: s.dir, startT: s.startT,
@@ -180,14 +179,40 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
           byReserve={byReserve}
           earliestOverride={earliestOverride}
           onEarliestChange={onEarliestChange}
-          driverStartOverride={driverStartOverride}
-          onDriverStartChange={onDriverStartChange}
-          workEndOverride={workEndOverride}
-          onWorkEndChange={onWorkEndChange}
           onChange={(a) => updateBreak(editIdx, a)}
           onClose={() => setEditIdx(null)}
           onRemove={() => removeBreak(editIdx)}
         />
+      )}
+
+      {(onDriverStartChange || onWorkEndChange) && (
+        <div
+          className={`oc-work${driverStartOverride != null || workEndOverride != null ? " is-ovr" : ""}`}
+          title="Godziny pracy maszynisty 2. zmiany (drużyna/obieg): pracuje od–do. Ustawienie PRZELICZA koła obiegu z rozkładu w tym oknie i ogranicza przerwy (pociąg wraca przed końcem pracy). Do ≥ 21:00 = całozmianowy. × = wróć do godzin z rozkładu."
+        >
+          <span className="oc-work-lbl">{driverStartOverride != null || workEndOverride != null ? "✋" : "🕐"}</span>
+          <input
+            type="time"
+            value={HHMMSS(driverStartOverride ?? obieg.entry2nd)}
+            onChange={(e) => onDriverStartChange?.(hmToSec(e.target.value))}
+          />
+          <span className="oc-work-sep">–</span>
+          <input
+            type="time"
+            value={HHMMSS(workEndOverride ?? Math.min(obieg.lastT, 22 * 3600))}
+            onChange={(e) => onWorkEndChange?.(hmToSec(e.target.value))}
+          />
+          {(driverStartOverride != null || workEndOverride != null) && (
+            <button
+              type="button"
+              className="oc-work-clear"
+              onClick={() => { onDriverStartChange?.(undefined); onWorkEndChange?.(undefined); }}
+              title="wróć do godzin wykrytych z rozkładu"
+            >
+              ×
+            </button>
+          )}
+        </div>
       )}
 
       <div className="oc-foot">
@@ -195,12 +220,6 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
           <span className="oc-clean">🧹 sprzątanie {exit.station} {HHMMSS(exit.t)}</span>
         ) : (
           <span className="oc-exit">zjazd na STP {HHMMSS(exit.t)}</span>
-        )}
-        {(driverStartOverride != null || workEndOverride != null) && (
-          <span className="oc-exit" title="ręczne godziny pracy maszynisty 2. zmiany — koła przeliczone z rozkładu w tym oknie">
-            {" "}✋ {driverStartOverride != null ? HHMMSS(driverStartOverride) : HHMMSS(obieg.entry2nd)}–
-            {workEndOverride != null ? HHMMSS(workEndOverride) : HHMMSS(exit.t)}
-          </span>
         )}
       </div>
     </div>
