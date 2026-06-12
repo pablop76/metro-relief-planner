@@ -82,14 +82,13 @@ Decyduje liczba kół (`planBreaks`) — **BILANS = MAKSYMALIZUJ OBCIĄŻENIE** 
 
 ## 3. Okna startu przerwy
 
-- **„ZACZNIJ OD" (domyślnie 14:30, `EARLIEST_DEFAULT`)** — CEL startu przerw, nadpisywalny na trzech poziomach:
+- **„ZACZNIJ OD" (domyślnie 14:30, `EARLIEST_DEFAULT`)** — ZALECENIE „nie wcześniej niż" (nie sztywna
+  godzina; decyzja użytkownika 2026-06-12, **usunięto tolerancję +15′**), nadpisywalne na trzech poziomach:
   **globalnie** (`earliest`), **per stacja** (`earliestByStation`) i **per obieg** (`earliestByObieg`).
-  Precedencja: **per-obieg > per-stacja > globalny**. Pola w UI: „⏰ zacznij od (+15′)" + rząd „per stacja".
-  To zarazem **twarda granica** (slotów wcześniej nie ma) i **kotwica rozkładania**.
-- **Rozkładanie od „zacznij od" + TOLERANCJA 15 min** (`START_TOLERANCE`, decyzja użytkownika 2026-06-09):
-  `score` po `scarcity` (patrz §4/§5) traktuje sloty w oknie **[próg, próg + 15 min] jako równie dobre**
-  (score 0 → luz na lepsze upakowanie rezerwowych), a powyżej tolerancji score rośnie liniowo. Moc rezerwowych
-  wypełnia się blisko docelowego startu, a naturalna serializacja rozkłada przerwy po popołudniu.
+  Precedencja: **per-obieg > per-stacja > globalny**. Pola w UI: „⏰ zacznij od" + rząd „per stacja".
+  To **twarda dolna granica** (slotów wcześniej nie ma); w `score` po prostu „wcześniej = lepiej" od progu
+  w górę. Pomocnik steruje wczesnym startem wyłącznie tym inputem — np. próg 14:00 pozwala obiegowi z wjazdem
+  13:00 dostać przerwę tuż po 14:00. Naturalna serializacja rozkłada przerwy po popołudniu.
 - **Dwa okna:**
   - **1. (= JEDYNA gwarantowana) przerwa** — start najpóźniej **18:20** (`LATEST_FIRST`). Reguła: **jedyna
     przerwa NIE może startować po 18:20** (pokrycie = 1 przerwa). Dodatkowo **R3**: `latestFirstOf =
@@ -108,18 +107,25 @@ Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). R16 = pokrycie + **MAK
 **każdy rezerwowy do `min(3 koła, maxJobs)`** — chyba że planista ręcznie ustawi niższy limit (`maxJobs`).
 (decyzja użytkownika 2026-06-11, SUPERSEDUJE 2026-06-10). Bramka: **brak realnego BRAK**. Etapy:
 
+- **BILANS NADWYŻKI Z GÓRY** (decyzja użytkownika 2026-06-12): gdy `moc > zapotrzebowanie`, silnik **od
+  początku** zna liczbę nadmiarowych połówek (`extraHalves = (moc − eq) × 2`) i już przy rozkładaniu całych
+  rezerwuje pod nie A11 (`reserveA11ForPolowki = true` → całe odpychane z A11 wypełniają moc off-A11).
+  Bez tego całe zjadały A11 i nadwyżka nie miała gdzie wejść (rezerwowi off-A11 zostawali np. na 2,0/3).
 - **KROK 0 — REBALANS w obrębie stacji (bez nowych przerw):** pakuje pojedyncze przydziały, dobijając
   rezerwowych najbliższych pełna kosztem najmniej obciążonych **tej samej stacji** (rezerwowy podmienia tylko
   u siebie). Maksymalizuje liczbę rezerwowych na 3,0; nadmiarowi zostają widocznie wolni (do zwolnienia ręcznie).
   Naprawia nierówny rozkład A1/A11 w planach z połówkami. Nie zmienia rodzajów/slotów → nie łamie reguł.
-- **DRABINA DOCIĄŻANIA (drugie przerwy) — SPRAWIEDLIWIE** (korekta 2026-06-11 wg użytkownika: „najpierw
-  wszyscy do PÓŁTORA koła, i półtora dawaj tym co robią NAJWIĘCEJ kół; dwa koła a u innego jedno — tak nie
-  powinno być"): **JEDNA runda** — każdy obieg dobijamy do **1,5 koła** 2. **POŁÓWKĄ** (możliwa tylko na
-  A11 → dociąża rezerwowych A11), w kolejności **OD NAJWIĘCEJ KÓŁ** (`loopKey` malejąco; całozmianowi = ∞
-  pierwsi). Dopóki `roomLeft` (rezerwowy < `min(3, maxJobs)`). **NIKT nie dostaje 2,0** (2. całej) — to
+- **DRABINA DOCIĄŻANIA (nadmiarowe połówki) — SPRAWIEDLIWIE** (2026-06-11, przebudowa 2026-06-12): każdy
+  obieg dobijamy do **1,5 koła** **POŁÓWKĄ** (możliwa tylko na A11 → dociąża rezerwowych A11), w kolejności
+  **OD NAJWIĘCEJ KÓŁ** (`loopKey` malejąco; całozmianowi = ∞ pierwsi). Dopóki `roomLeft` (rezerwowy <
+  `min(3, maxJobs)`). **Połówka NIE musi być druga chronologicznie — może być PIERWSZA** (wczesna, od progu
+  „zacznij od"), a cała później; **zero wymuszonego rozsuwu** (usunięto `SPACING_POLOWKI` ~2,5 h — „może być
+  od razu, jeden maszynista robi od razu półtorej, albo po czasie, ta sama lub inna stacja — pełna dowolność").
+  Jedyny warunek: przerwy obiegu się **nie nakładają**; pierwsza-z-pary mieści się w oknie 1. przerwy
+  (≤ min(18:20, wjazd+6h)). Gdy wczesna połówka koliduje z już ustawioną całą — silnik **przesuwa całą** na
+  inny slot (para planowana łącznie, `addExtraHalf`). **NIKT nie dostaje 2,0** (2. zawsze połówka) — to
   wyrównuje (równo-kołowi traktowani identycznie). Nadwyżkowa moc off-A11 (połówki tam nie wejdą) zostaje
-  **WOLNA** (widoczni wolni rezerwowi do zwolnienia). Limit `MAX_BREAKS_PER_OBIEG = 2` → najwyżej JEDNA
-  2. przerwa/obieg; rozsuw ~2,5 h (`SPACING_POLOWKI`); bez RNG (determinizm), bezpiecznik `planDeadline`.
+  **WOLNA**. Limit `MAX_BREAKS_PER_OBIEG = 2`; bez RNG (determinizm), bezpiecznik `planDeadline`.
 - Dokładki tylko **cała / połówka**. **Godzinka i szczeniak NIE są dokładane automatycznie** (patrz niżej).
 
 ---
@@ -188,10 +194,11 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
   **domyślnie 1** podmianę i zostaje pod ręką (R17). Wskazanie: jawny flag `Reserve.rolling` (checkbox w panelu) >
   pierwszy niezablokowany rezerwowy A1. **Pozostali rezerwowi A1 pracują normalnie do 3 kół**. Inne stacje:
   bez limitu liczby (ogranicza je tylko 3 koła). Ręczny `Reserve.maxJobs` zawsze nadpisuje.
-- **Wykorzystanie nadmiaru (R16):** KROK 0 = REBALANS w obrębie stacji (pakuje istniejące przydziały, bez
-  nowych przerw), potem DRABINA drugich przerw: RUNDA A (obiegi <4,5 → 1,5 = 2. połówka@A11) → RUNDA B
-  (obiegi ≥4,5 → 2,0 = 2. cała off-A11, fallback połówka@A11). Cel: **każdy rezerwowy do `min(3, maxJobs)`**.
-  „dwa nie dla tych co robią <4,5". Patrz §3a (decyzja 2026-06-11, superseduje 2026-06-10).
+- **Wykorzystanie nadmiaru (R16, przebudowa 2026-06-12):** nadwyżka policzona **Z GÓRY w bilansie**
+  (`extraHalves`), A11 zarezerwowane pod nią od startu. KROK 0 = REBALANS w obrębie stacji (pakuje istniejące
+  przydziały, bez nowych przerw), potem DRABINA nadmiarowych połówek (najwięcej-kołowi pierwsi, do 1,5;
+  połówka może być PIERWSZA, bez rozsuwu, z relokacją kolidującej całej). Cel: **każdy rezerwowy do
+  `min(3, maxJobs)`**. Patrz §3a.
 - Pakowanie: najpierw dobijamy najczęściej używanego rezerwowego, świeżych zostawiamy na trudniejsze,
   późniejsze obiegi.
 - Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.

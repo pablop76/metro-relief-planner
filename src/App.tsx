@@ -454,8 +454,8 @@ export default function App() {
             />
             min
           </label>
-          <label className="delay-ctl" title="ZACZNIJ OD tej godziny (cel startu przerw, tolerancja +15 min); próg globalny — per-stacja niżej, override per-obieg w edytorze przerwy">
-            ⏰ zacznij od <small>(+15′)</small>
+          <label className="delay-ctl" title="ZACZNIJ OD tej godziny — zalecenie: nie wcześniej niż (nie sztywna godzina); próg globalny — per-stacja niżej, override per-obieg w edytorze przerwy">
+            ⏰ zacznij od
             <input
               type="time"
               value={HHMMSS(earliestStart)}
@@ -480,7 +480,7 @@ export default function App() {
             />
             nie zaczynaj od szczytów
           </label>
-          <div className="station-earliest" title="zacznij od — PER STACJA (cel startu, tolerancja +15 min); puste pole = jak globalny">
+          <div className="station-earliest" title="zacznij od — PER STACJA (zalecenie: nie wcześniej niż); puste pole = jak globalny">
             <span className="se-lbl">per stacja:</span>
             {BREAK_STATIONS.map((s) => (
               <label key={s} className="se-item">
