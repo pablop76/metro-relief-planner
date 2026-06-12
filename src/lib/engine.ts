@@ -152,6 +152,8 @@ function candidateSlots(o: Obieg, kind: BreakKind, earliest: number | ((s: Break
       }
     }
     if (returnT < 0) continue; // pociąg nie wraca już na tę stację (zjazd) → ta przerwa niemożliwa
+    // „pracuje do" (workEnd, 2026-06-12): maszynista musi ODEBRAĆ pociąg przed końcem swojej pracy
+    if (o.workEnd != null && returnT > o.workEnd) continue;
     out.push({
       station: ev.station, dir: ev.dir, startT: ev.t, kind, durationMin: Math.round((returnT - ev.t) / 60),
     });
@@ -231,8 +233,10 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const earliest = opts.earliest ?? EARLIEST_DEFAULT;
   // próg „nie wcześniej niż": per-stacja nadpisuje globalny (jest też kotwicą rozkładania)
   const stationEarliest = (s: BreakStation) => opts.earliestByStation?.[s] ?? earliest;
-  // efektywny próg slotu: override per-obieg > per-stacja > globalny (R2)
-  const floorOf = (o: Obieg, s: BreakStation) => opts.earliestByObieg?.[o.id] ?? stationEarliest(s);
+  // efektywny próg slotu: override per-obieg > per-stacja > globalny (R2); nie schodzi poniżej startu
+  // pracy maszynisty (entry2nd — może być ręcznie ustawiony jako „pracuje od", 2026-06-12)
+  const floorOf = (o: Obieg, s: BreakStation) =>
+    Math.max(opts.earliestByObieg?.[o.id] ?? stationEarliest(s), o.entry2nd ?? 0);
   // scarcity: odepchnij CAŁE z A11 (A11 zostawiamy na połówki — jedyne miejsce, gdzie są możliwe) — ALE
   // TYLKO gdy połówki REALNIE są (reserveA11ForPolowki, ustawiane po bilansie). Przy 0 połówek (moc =
   // zapotrzebowanie, wszyscy na całe) A11 jest ZWYKŁĄ stacją całych (kara = 0) — inaczej 12-h kara odpychała
@@ -308,6 +312,11 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // połówek kara A11_CALA_PENALTY znika → A11 to zwykła stacja całych (inaczej całe uciekały z A11, głodząc A1/A7).
   reserveA11ForPolowki = autoPolowka.size > 0 || extraHalves > 0 || Object.values(forced).some((k) => k === "połówka");
   const dk = (o: Obieg) => forced[o.id] ?? (autoPolowka.has(o.id) ? "połówka" : "cała"); // ręczny mark > auto
+  // RĘCZNE wymuszenie rodzaju jest TWARDE (fix 2026-06-12): obieg z `forced` dostaje TYLKO ten rodzaj —
+  // bez downgrade'u. Wcześniej tryAssign/tryCover/B&B potrafiły wymuszoną CAŁĄ ściąć na połówkę (przy
+  // deficycie wymuszenie „nie działało" — plan wychodził identyczny). Teraz: wymuszona cała → cała albo BRAK.
+  const kindsFor = (o: Obieg): BreakKind[] =>
+    forced[o.id] ? [forced[o.id]] : AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o)));
 
   // R3 — okno 1. (głównej) przerwy: najpóźniejszy START = min(18:20, realny_start + 6h).
   const latestFirstOf = (o: Obieg) => Math.min(LATEST_FIRST, o.entry2nd + MAX_CONTINUOUS);
@@ -362,7 +371,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const typeRank = (o: Obieg) => (o.type === "S" ? 0 : o.type === "full" ? 1 : 2);
   const numOf = (id: string) => parseInt(id.replace(/\D/g, ""), 10) || 0;
   const slotCount = (o: Obieg) =>
-    AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o))).reduce((n, k) => {
+    kindsFor(o).reduce((n, k) => {
       const { floor, hi } = coverWindow(o, k);
       return n + autoSlots(o, k, floor, hi).length;
     }, 0);
@@ -407,7 +416,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const tryAssign = (o: Obieg, allowA11Cala = false): boolean => {
     const after = driverFreeAt[o.id] ?? 0; // próg startu egzekwuje candidateSlots (per stacja/rodzaj)
     const src = allowA11Cala ? candidateSlots : autoSlots; // faza 3: dopuść cała@A11 (pełna przerwa overflow)
-    for (const kind of AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o)))) {
+    for (const kind of kindsFor(o)) {
       const { floor, hi } = coverWindow(o, kind);
       const slots = src(o, kind, floor, hi)
         .filter((s) => s.startT >= after)
@@ -427,7 +436,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // jedyna przerwa nie może być później), tylko z pełnym downgrade rodzaju. Lepszy krótszy break niż BRAK.
   const tryCover = (o: Obieg): boolean => {
     const after = driverFreeAt[o.id] ?? 0;
-    for (const kind of AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o)))) {
+    for (const kind of kindsFor(o)) {
       const { floor, hi } = coverWindow(o, kind);
       const slots = autoSlots(o, kind, floor, hi)
         .filter((s) => s.startT >= after)
@@ -448,7 +457,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       if (!o) continue;
       const after = driverFreeAt[o.id] ?? 0;
       let done = false;
-      for (const kind of AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o)))) {
+      for (const kind of kindsFor(o)) {
         const slots = candidateSlots(o, kind, (s) => floorOf(o, s), LATEST_SECOND)
           .filter((s) => s.station === r.station && s.startT >= after)
           .sort((a, b) => score(a) - score(b));
@@ -471,7 +480,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // ograniczone) nie są wypierane z A11 przez nadmiar całych, a całodobowe mają pierwszeństwo poza A11.
   const fallbackBrak = (o: Obieg) => {
     let fb: Slot | null = null;
-    for (const kind of AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o)))) {
+    for (const kind of kindsFor(o)) {
       const { floor: ffloor, hi: fhi } = coverWindow(o, kind);
       const s = autoSlots(o, kind, ffloor, fhi).sort((a, b) => score(a) - score(b))[0];
       if (s) { fb = s; break; }
@@ -517,7 +526,8 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       // NIGDY nie ścina na połówkę (sprawiedliwość wg kół; decyzja użytkownika: „nie krzywdź wysokokołowych").
       // Bez tego, przy zerowym luzie (cap=demand) optymalizator minimalizujący LICZBĘ downgrade'ów potrafił
       // ściąć D17/D20 (5,0). Gdy długodystansowiec nie mieści się jako cała → BRAK → nawrót tnie najniżej-kołowy.
-      if (kc === "cała" && effLoops(o) < OPT_DOWNGRADE_MAX) { const { floor, hi } = coverWindow(o, "połówka");
+      // RĘCZNIE wymuszony rodzaj (forced) jest TWARDY — bez opcji downgrade (fix 2026-06-12).
+      if (kc === "cała" && !forced[o.id] && effLoops(o) < OPT_DOWNGRADE_MAX) { const { floor, hi } = coverWindow(o, "połówka");
         for (const s of autoSlots(o, "połówka", floor, hi)) if (s.startT >= after) arr.push({ slot: s, dg: 1 }); }
       // „nie zaczynaj od szczytów": szczyt woli PÓŹNIEJSZY slot (sort malejąco po czasie) — matcher/B&B najpierw
       // próbują dla niego późnych slotów, więc wczesne zostają dla długodystansowców (miękko, nie psuje upakowania).

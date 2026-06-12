@@ -56,6 +56,9 @@ export interface Obieg {
   /** realny start maszynisty 2. zmiany (sekundy od północy) — wjazd z rozkładu albo start z grafiku.
    *  Podstawa R3 (max 6h ciągłej pracy: 1. przerwa najpóźniej start+6h). */
   entry2nd: number;
+  /** RĘCZNY koniec pracy maszynisty 2. zmiany („pracuje do", sekundy od północy) — ustawia pomocnik
+   *  (applyWorkHours). Silnik nie planuje przerwy, z której pociąg wraca PO tej godzinie. Brak = zjazd. */
+  workEnd?: number;
 }
 
 /** Maszynista (stała lista wszystkich) — z pliku maszynisci.json, edytowalny. */

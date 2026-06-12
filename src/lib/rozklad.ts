@@ -114,8 +114,12 @@ function countLoops2nd(id: string, ev: StationEvent[], lapSec: number): number {
   // równo (D17–D20 = 5,0). Obieg z POSTOJEM (afternoonEntry ≠ null, np. S33 z Młocin, S28 z A7, S23 z A11) ma
   // ŚWIEŻY start ze stacji re-wjazdu → ułamek za odcinek doliczamy („dolicz te odcinki"; decyzja 2026-06-09).
   const reliefOnLine = afternoonEntry(ev) == null;
-  const start = shift2Start(id, ev);
-  const zjazd = Math.min(lastT, SHIFT2_END);
+  return countLoopsWindow(ev, lapSec, shift2Start(id, ev), Math.min(lastT, SHIFT2_END), reliefOnLine);
+}
+
+/** Koła w ZADANYM oknie pracy [start, zjazd] — wspólny rdzeń countLoops2nd i applyWorkHours
+ *  (półpętle kraniec↔kraniec = 0,5; ułamki za odcinki brzegowe tylko przy świeżym starcie). */
+function countLoopsWindow(ev: StationEvent[], lapSec: number, start: number, zjazd: number, reliefOnLine: boolean): number {
   const seg = ev.filter((e) => e.t >= start - 60 && e.t <= zjazd);
   if (seg.length < 2) return 0;
   const isTerm = (s: BreakStation) => s === "A1" || s === "A23";
@@ -132,6 +136,23 @@ function countLoops2nd(id: string, ev: StationEvent[], lapSec: number): number {
   const lead = reliefOnLine ? 0 : (visits[0] - seg[0].t) / lapSec;
   const tail = reliefOnLine ? 0 : (seg[seg.length - 1].t - visits[visits.length - 1]) / lapSec;
   return full + lead + tail;
+}
+
+/** RĘCZNE godziny pracy maszynisty 2. zmiany (od–do) per obieg — decyzja użytkownika 2026-06-12.
+ *  Zwraca KOPIĘ obiegu z PRZELICZONYMI z rozkładu: kołami (w oknie [od, do]), `entry2nd` (= od) i
+ *  `throughShift` (do ≥ 21:00 = zmiennik na linii → całozmianowy/∞), oraz `workEnd` (= do; silnik nie
+ *  planuje przerwy, z której pociąg wraca po tej godzinie). Brak obu godzin → obieg bez zmian. */
+export function applyWorkHours(o: Obieg, from?: number, to?: number): Obieg {
+  if (from == null && to == null) return o;
+  const start = from ?? o.entry2nd;
+  const endRaw = to ?? o.lastT;
+  const through = endRaw >= RELIEF_ON_LINE;
+  // ułamki brzegowe jak w auto: obieg ciągły (przejęcie na linii) bez ułamków, start po postoju — z ułamkami
+  const reliefOnLine = afternoonEntry(o.events) == null;
+  const loops = through
+    ? Infinity
+    : countLoopsWindow(o.events, o.lapMin * 60, start, Math.min(endRaw, SHIFT2_END), reliefOnLine);
+  return { ...o, entry2nd: start, throughShift: through, loops, workEnd: to };
 }
 
 /** Parsuje workbook SheetJS -> lista obiegów dla danego arkusza (typ dnia). */

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { parseObiegi, readWorkbook } from "./lib/rozklad";
+import { parseObiegi, readWorkbook, applyWorkHours } from "./lib/rozklad";
 import { planBreaks } from "./lib/engine";
 import type { Obieg, Reserve, BreakAssignment, Driver, BreakKind, BreakStation } from "./lib/types";
 import { HHMMSS, hmToSec, CALA_EQ, BREAK_STATIONS } from "./lib/types";
@@ -29,6 +29,7 @@ const LS = {
   earliestStation: "pm_earliest_station",
   earliestObieg: "pm_earliest_obieg",
   entry2ndObieg: "pm_entry2nd_obieg",
+  workEndObieg: "pm_workend_obieg",
   xferBuffer: "pm_xfer_buffer",
   peaksNotFirst: "pm_peaks_not_first",
   layout: "pm_layout",
@@ -100,10 +101,13 @@ export default function App() {
   const [earliestByStation, setEarliestByStation] = useState<Partial<Record<BreakStation, number>>>(() =>
     loadLS<Partial<Record<BreakStation, number>>>(LS.earliestStation, {})
   );
-  // ręczna godzina rozpoczęcia pracy maszynisty 2. zmiany per obieg (13:00/13:30/14:00) — dolna granica
-  // RĘCZNEGO wstawiania przerwy (feasibleSlots manual). Pusta = wykryty entry2nd.
+  // ręczne GODZINY PRACY maszynisty 2. zmiany per obieg (od–do). „Od" (entry2ndByObieg) i „do"
+  // (workEndByObieg) przeliczają obiegowi KOŁA z rozkładu (applyWorkHours) i ograniczają sloty przerw.
   const [entry2ndByObieg, setEntry2ndByObieg] = useState<Record<string, number>>(() =>
     loadLS<Record<string, number>>(LS.entry2ndObieg, {})
+  );
+  const [workEndByObieg, setWorkEndByObieg] = useState<Record<string, number>>(() =>
+    loadLS<Record<string, number>>(LS.workEndObieg, {})
   );
   // R20: konfigurowalny bufor na przeskok na drugi peron (minuty); domyślnie 5
   const [xferBufferMin, setXferBufferMin] = useState<number>(() => loadLS<number>(LS.xferBuffer, 5));
@@ -193,9 +197,15 @@ export default function App() {
   }, [wb, sheet]);
 
   // opóźnienie linii (globalne) → przesunięta oś czasu wszystkich obiegów
-  const delayed = useMemo(
+  const shifted = useMemo(
     () => (globalDelay ? obiegi.map((o) => shift(o, globalDelay * 60)) : obiegi),
     [obiegi, globalDelay]
+  );
+  // ręczne godziny pracy od–do per obieg → PRZELICZONE koła/entry2nd/throughShift z rozkładu w tym oknie
+  // (applyWorkHours). Zmiana godzin automatycznie przelicza plan (useEffect niżej zależy od `delayed`).
+  const delayed = useMemo(
+    () => shifted.map((o) => applyWorkHours(o, entry2ndByObieg[o.id], workEndByObieg[o.id])),
+    [shifted, entry2ndByObieg, workEndByObieg]
   );
 
   // kolejność wyświetlania (ręczna, drag & drop) — nie wpływa na sam plan
@@ -287,6 +297,7 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.earliestStation, JSON.stringify(earliestByStation)), [earliestByStation]);
   useEffect(() => localStorage.setItem(LS.earliestObieg, JSON.stringify(earliestByObieg)), [earliestByObieg]);
   useEffect(() => localStorage.setItem(LS.entry2ndObieg, JSON.stringify(entry2ndByObieg)), [entry2ndByObieg]);
+  useEffect(() => localStorage.setItem(LS.workEndObieg, JSON.stringify(workEndByObieg)), [workEndByObieg]);
   useEffect(() => localStorage.setItem(LS.xferBuffer, JSON.stringify(xferBufferMin)), [xferBufferMin]);
   useEffect(() => localStorage.setItem(LS.peaksNotFirst, JSON.stringify(peaksNotFirst)), [peaksNotFirst]);
   useEffect(() => localStorage.setItem(LS.sbW, JSON.stringify(sidebarWidth)), [sidebarWidth]);
@@ -329,10 +340,11 @@ export default function App() {
     setTimeout(() => setCopyMsg(""), 2500);
   };
 
+  // reset ręcznych korekt + pełne przeliczenie tymi samymi opcjami co generate (fix 2026-06-12 —
+  // wcześniej pomijał xferBufferMin/peaksNotFirst/seed i plan po resecie różnił się od „Generuj")
   const resetManual = () => {
     setManual({});
-    const res = planBreaks(delayed, reserves, { forcedKinds: forceKind, throughShiftOverride: throughShiftBy, earliest: earliestStart, earliestByStation, earliestByObieg });
-    setAssignments(res.assignments);
+    generate({});
   };
 
   const resetOrder = () => setOrder(defaultOrder(obiegi));
@@ -616,6 +628,14 @@ export default function App() {
                 Ręczne korekty (✎) <strong>zostają</strong> zachowane. Operacji nie cofniesz inaczej
                 niż kolejnym przeliczeniem.
               </p>
+              {Object.keys(manual).length > 0 && (
+                <p className="confirm-note">
+                  ⚠ Masz <strong>{Object.keys(manual).length}</strong>{" "}
+                  {Object.keys(manual).length === 1 ? "obieg z ręczną korektą" : "obiegów z ręcznymi korektami"} —
+                  ich przerwy <strong>nie zmienią się</strong> mimo przeliczenia (wymuszenia rodzaju, bufor itd.
+                  ich nie dotyczą). Pełne przeliczenie: najpierw „Reset korekt".
+                </p>
+              )}
             </div>
             <div className="confirm-actions">
               <button className="btn-reset" onClick={() => setShowGenConfirm(false)}>
@@ -684,6 +704,15 @@ export default function App() {
                   driverStartOverride={entry2ndByObieg[o.id]}
                   onDriverStartChange={(sec) =>
                     setEntry2ndByObieg((m) => {
+                      const n = { ...m };
+                      if (sec == null) delete n[o.id];
+                      else n[o.id] = sec;
+                      return n;
+                    })
+                  }
+                  workEndOverride={workEndByObieg[o.id]}
+                  onWorkEndChange={(sec) =>
+                    setWorkEndByObieg((m) => {
                       const n = { ...m };
                       if (sec == null) delete n[o.id];
                       else n[o.id] = sec;

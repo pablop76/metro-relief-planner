@@ -76,9 +76,20 @@ Decyduje liczba kół (`planBreaks`) — **BILANS = MAKSYMALIZUJ OBCIĄŻENIE** 
   (`reserveA11ForPolowki`). Połówka jest możliwa **tylko na A11**.
 - **TYLKO całe i połówki w automacie** — godzinka i szczeniak tylko ręcznie (godzinka = ryzyko przy awarii;
   szczeniak za słaby).
-- Ręczny override (`forcedKinds`) > auto. (Nawrót racjonowania używa `forcedKinds` wewnętrznie.)
+- Ręczny override (`forcedKinds`) > auto i jest **TWARDY** (fix 2026-06-12): obieg z wymuszonym rodzajem
+  dostaje TYLKO ten rodzaj — bez downgrade'u w tryAssign/tryCover/B&B (wymuszona cała → cała albo BRAK;
+  wcześniej przy deficycie bywała ścinana na połówkę i wymuszenie „nie działało"). (Nawrót racjonowania
+  używa `forcedKinds` wewnętrznie.)
 
 ---
+
+### 1b. Ręczne godziny pracy per obieg (od–do, 2026-06-12)
+
+Pomocnik może obiegowi ustawić **„pracuje od" / „pracuje do"** (edytor przerwy; `entry2ndByObieg` /
+`workEndByObieg` w App, `applyWorkHours` w `rozklad.ts`). Ustawienie **przelicza koła z rozkładu** w oknie
+[od, do] (te same półpętle kraniec↔kraniec), nadpisuje `entry2nd` (dolna granica przerw, R3) i ustawia
+`workEnd` — silnik **nie planuje przerwy, z której pociąg wraca po końcu pracy**. „Do" ≥ 21:00 = zmiennik
+na linii → **całozmianowy** (∞, zawsze cała). Zmiana godzin od razu przelicza plan. Znacznik ✋ w stopce karty.
 
 ## 3. Okna startu przerwy
 

@@ -48,9 +48,13 @@ interface Props {
   /** ręczna godzina rozpoczęcia pracy maszynisty 2. zmiany (override; undefined = wykryty entry2nd) */
   driverStartOverride?: number;
   onDriverStartChange?: (sec?: number) => void;
+  /** ręczny koniec pracy maszynisty 2. zmiany („pracuje do"; undefined = zjazd z rozkładu) —
+   *  razem z „od" przelicza koła obiegu (applyWorkHours w App) */
+  workEndOverride?: number;
+  onWorkEndChange?: (sec?: number) => void;
 }
 
-export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, trainNo, onTrainChange, forceKind, onCycleKind, throughShiftOverride, onToggleThroughShift, earliestOverride, onEarliestChange, driverStartOverride, onDriverStartChange }: Props) {
+export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, trainNo, onTrainChange, forceKind, onCycleKind, throughShiftOverride, onToggleThroughShift, earliestOverride, onEarliestChange, driverStartOverride, onDriverStartChange, workEndOverride, onWorkEndChange }: Props) {
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const entry = afternoonEntry(obieg.events);
   const exit = obieg.events[obieg.events.length - 1];
@@ -178,6 +182,8 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
           onEarliestChange={onEarliestChange}
           driverStartOverride={driverStartOverride}
           onDriverStartChange={onDriverStartChange}
+          workEndOverride={workEndOverride}
+          onWorkEndChange={onWorkEndChange}
           onChange={(a) => updateBreak(editIdx, a)}
           onClose={() => setEditIdx(null)}
           onRemove={() => removeBreak(editIdx)}
@@ -189,6 +195,12 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
           <span className="oc-clean">🧹 sprzątanie {exit.station} {HHMMSS(exit.t)}</span>
         ) : (
           <span className="oc-exit">zjazd na STP {HHMMSS(exit.t)}</span>
+        )}
+        {(driverStartOverride != null || workEndOverride != null) && (
+          <span className="oc-exit" title="ręczne godziny pracy maszynisty 2. zmiany — koła przeliczone z rozkładu w tym oknie">
+            {" "}✋ {driverStartOverride != null ? HHMMSS(driverStartOverride) : HHMMSS(obieg.entry2nd)}–
+            {workEndOverride != null ? HHMMSS(workEndOverride) : HHMMSS(exit.t)}
+          </span>
         )}
       </div>
     </div>
