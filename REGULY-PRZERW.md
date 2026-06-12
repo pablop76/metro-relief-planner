@@ -126,6 +126,27 @@ Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). R16 = pokrycie + **MAK
   rezerwowych najbliższych pełna kosztem najmniej obciążonych **tej samej stacji** (rezerwowy podmienia tylko
   u siebie). Maksymalizuje liczbę rezerwowych na 3,0; nadmiarowi zostają widocznie wolni (do zwolnienia ręcznie).
   Naprawia nierówny rozkład A1/A11 w planach z połówkami. Nie zmienia rodzajów/slotów → nie łamie reguł.
+- **KROK 0b — PROMOTE połówek → CAŁA (fix 2026-06-12):** przy ciasnym upakowaniu (np. indywidualne
+  `maxJobs`) nawrót tnie WIĘCEJ obiegów niż bilans i rezerwowi stacji „od całych" (A1/A7/A18/A23) zostają
+  niedociążeni, bo połówka możliwa tylko na A11. AUTOMATYCZNE połówki obiegu (najbardziej kołowi pierwsi —
+  odwracamy cięcie od góry) zamieniane na **CAŁĄ** u wolnego rezerwowego; zwolniona moc A11 wraca do puli
+  (drabina dołoży z niej 2. połówki). Wymuszonych (`forced`) i ręcznych (✎) nie rusza; netto obciążenie
+  tylko rośnie. Całe R16 ma **gwarantowany świeży budżet ~150 ms** (`r16Deadline`) — głęboki nawrót zjadał
+  `planDeadline` i zwycięski plan wychodził bez dociążenia.
+- **KROK 0c — SPRAWIEDLIWA ZAMIANA OFIAR CIĘCIA (`swapCutVictims`, 2026-06-12, skarga „D16 pół, D19 pół"):**
+  pokrycie awaryjne/eviction potrafi pociąć obieg WYSOKOKOŁOWY, choć niżej-kołowy trzyma całą. Naprawa:
+  obieg na samotnej połówce (eq<1, auto) dostaje CAŁĄ, a **najmniej-kołowy** posiadacz auto-całej schodzi
+  na połówkę@A11 (staje się ofiarą zgodną z bilansem „tnij najmniej kół"). Pełny rollback przy porażce.
+  Odpalany dwa razy: po PROMOTE i po drabinie. **REBALANS, PROMOTE i ZAMIANA działają także przy BRAK**
+  (nie dokładają 2. przerw — tylko pakują/przestawiają rodzaje wg porządku kół); same dokładki (PASS A/B/C
+  niżej) wciąż TYLKO przy 0 BRAK.
+- **DOKŁADKI — TRZY PASSY (przebudowa 2026-06-12, sprawiedliwość):**
+  **PASS A** — najpierw WSZYSCY DO PEŁNEJ: obieg z samą połówką (0,5) dostaje 2. połówkę (2×½ = pełna),
+  zanim ktokolwiek dostanie 1,5 (skarga „D16 pół, a całodobowe półtora"); wysokokołowi pierwsi.
+  **PASS B** — dopiero potem 1,5: obiegi z całą dobijane 2. połówką OD NAJWIĘCEJ KÓŁ (drabina jak dotąd).
+  **PASS C** — REDYSTRYBUCJA: jeśli mimo PASS A ktoś tkwi na 0,5, a inny ma 1,5 — zabierz 2. połówkę
+  (auto) najmniej-kołowemu z 1,5 (próbując KAŻDĄ jego połówkę — wczesna z pary zwalnia inną moc niż późna)
+  i dobij nią obieg na 0,5; nie wyszło → przywróć (0,5 zostaje tylko, gdy fizyka okien nie pozwala inaczej).
 - **DRABINA DOCIĄŻANIA (nadmiarowe połówki) — SPRAWIEDLIWIE** (2026-06-11, przebudowa 2026-06-12): każdy
   obieg dobijamy do **1,5 koła** **POŁÓWKĄ** (możliwa tylko na A11 → dociąża rezerwowych A11), w kolejności
   **OD NAJWIĘCEJ KÓŁ** (`loopKey` malejąco; całozmianowi = ∞ pierwsi). Dopóki `roomLeft` (rezerwowy <
@@ -214,14 +235,19 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
   późniejsze obiegi.
 - Okno dostępności rezerwowego (`availFrom`/`availTo`, R18) i autoryzacje taboru są respektowane.
 - **PRZYDZIAŁ — DOPASOWANIE (ścieżki powiększające / Kuhn) → potem B&B → greedy** (`optimizeExact`):
-  - **FAST PATH — `tryFullMatch` (kluczowe, 2026-06-11):** dopasowanie z nawrotami szuka każdemu obiegowi jego
-    DOCELOWEGO rodzaju (dg=0) bez ani jednego downgrade'u; w razie kolizji czasowej RELOKUJE już przypisane
-    (rekurencyjnie). Sukces ⇒ **0 połówek = maksymalne obciążenie** (12 rez → wszyscy po 3 całe, ~15–30 ms).
-    Dlaczego nie sam B&B: przy ZEROWYM luzie (36 całych = 36 mocy) naiwny branch-and-bound nie znajduje pełnego
-    upakowania (2,6 mln węzłów bez liścia — brak inkumbenta = brak przycinania). Poprawność+pełność dopasowania:
-    `oid` wstawiamy NAJPIERW (zajmuje miejsce), relokowane (nachodzące) nie wracają na tego rezerwowego →
-    capacity ≤ 3; `moving` blokuje cykle; restart z inną kolejnością (seeded → **różne warianty „Generuj plan"**,
-    wszystkie po 3 koła). Pomijany przy pinach i w nawrocie (deficyt). Krótki budżet (~150 ms) → spada do B&B.
+  - **FAST PATH — `tryFullMatch` (kluczowe, 2026-06-11; wzmocnienia 2026-06-12):** dopasowanie z nawrotami
+    szuka każdemu obiegowi jego DOCELOWEGO rodzaju (dg=0) bez ani jednego downgrade'u; w razie kolizji
+    czasowej RELOKUJE już przypisane (rekurencyjnie). Sukces ⇒ **0 połówek = maksymalne obciążenie** (12 rez
+    → wszyscy po 3 całe, ~15–30 ms). Dlaczego nie sam B&B: przy ZEROWYM luzie (36 całych = 36 mocy) naiwny
+    branch-and-bound nie znajduje pełnego upakowania (2,6 mln węzłów bez liścia — brak inkumbenta = brak
+    przycinania). Poprawność+pełność dopasowania: `oid` wstawiamy NAJPIERW (zajmuje miejsce), relokowane
+    (nachodzące) nie wracają na tego rezerwowego; `moving` blokuje cykle; restart z inną kolejnością (seeded
+    → **różne warianty „Generuj plan"**, wszystkie po 3 koła). **Limity rezerwowego = DWA OSOBNE (2026-06-12):
+    RÓWNOWARTOŚĆ ≤ 3,0 eq + LICZBA podmian (maxJobs/rolling)** — dawny wspólny cap `min(3, maxJobs)` liczył
+    sztuki, nie eq (2 całe + 2 połówki = 4 sztuki = legalne 3,0). **Relokacja także z powodu POJEMNOŚCI**
+    (nie tylko kolizji czasowej): gdy eq/liczba blokuje, wypierane są największe-eq podmiany. Dwie kolejności
+    bazowe (MRV + najtrudniejsi-najpierw, na przemian). Pomijany przy pinach i w nawrocie (deficyt). Budżet
+    ~250 ms → spada do B&B.
   - **B&B (`dfs`, branch-and-bound):** gdy pełne dopasowanie się nie składa (DEFICYT), przeszukiwanie z nawrotami
     MINIMALIZUJĄCE liczbę downgrade'ów. Placements = docelowy rodzaj (dg=0) + dla całej połówka (dg=1, tylko
     <4,5 koła); **cała@A11 dozwolona**. Przycinanie: inkumbent + suma `minDg` + dedup pustych + MRV. Gdy po

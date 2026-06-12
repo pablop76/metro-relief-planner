@@ -49,6 +49,85 @@ const v1 = planBreaks(obiegi, reserves, { ...OPTS, seed: 1 });
 const v2 = planBreaks(obiegi, reserves, { ...OPTS, seed: 2 });
 console.log(`\nseed 1 vs 2 (baza): ${sig(v1) === sig(v2) ? "IDENTYCZNY (brak wariantów!)" : "RÓŻNE warianty"}`);
 
+// 4b. MAKS. OBCIĄŻENIE przy indywidualnych limitach (skarga 2026-06-12: „12 rezerwowych, jeden na
+// Kabatach może zrobić tylko jedną podmianę → reszta nie ma pełnego obciążenia")
+const loadOf = (p: ReturnType<typeof planBreaks>) => {
+  const eq: Record<string, number> = {};
+  for (const list of Object.values(p.assignments))
+    for (const a of list) if (a.reserveId) eq[a.reserveId] = (eq[a.reserveId] ?? 0) + (a.kind === "cała" ? 1 : a.kind === "połówka" ? 0.5 : a.kind === "godzinka" ? 2 / 3 : 1 / 3);
+  return eq;
+};
+const limScenarios: Array<[string, Reserve[]]> = [
+  ["A1 Żeńca maxJobs=1", reserves.map((r) => (r.id === "Żeńca" ? { ...r, maxJobs: 1 } : { ...r }))],
+  ["A1 Żeńca rolling",   reserves.map((r) => (r.id === "Żeńca" ? { ...r, rolling: true } : { ...r }))],
+  ["A11 Kępa maxJobs=2", reserves.map((r) => (r.id === "Kępa" ? { ...r, maxJobs: 2 } : { ...r }))],
+  ["13 rez, A1-E maxJobs=1", [...reserves.map((r) => ({ ...r })), { id: "A1-E", name: "A1-E", station: "A1" as const, maxJobs: 1 }]],
+];
+console.log("\n=== LIMITY INDYWIDUALNE — maks. obciążenie reszty ===");
+for (const [label, rv] of limScenarios) {
+  const p = planBreaks(obiegi, rv, OPTS);
+  const eq = loadOf(p);
+  const brak = obiegi.filter((o) => !(p.assignments[o.id] ?? []).some((a) => a.reserveId)).length;
+  const rows = rv.map((r) => {
+    const cap = r.rolling ? 1 : Math.min(3, r.maxJobs ?? 3);
+    const e = eq[r.id] ?? 0;
+    return { r, e, cap, under: e < cap - 1e-6 && !r.rolling };
+  });
+  const under = rows.filter((x) => x.under);
+  console.log(`— ${label}: BRAK ${brak} · niedociążeni: ${under.length}` +
+    `${under.length ? " [" + under.map((x) => `${x.r.station}:${x.r.id}=${x.e.toFixed(2)}/${x.cap}`).join(" ") + "]" : " ✓ wszyscy do limitu"}`);
+}
+
+// 4c. SWEEP — różne liczby rezerwowych i limity: maks. obsadzenie + SPRAWIEDLIWOŚĆ
+// Reguły sprawdzane: (1) gdy moc ≤ zapotrzebowanie (36), KAŻDY rezerwowy bez własnego limitu = 3,0;
+// (2) nikt nie siedzi na samej połówce (0,5), gdy inny obieg dostał 1,5 (najpierw wszyscy do pełnej);
+// (3) BRAK tylko przy realnym niedoborze.
+const pool = (spec: Partial<Record<BreakStation, number>>, mods: Array<[string, Partial<Reserve>]> = []): Reserve[] => {
+  const out: Reserve[] = [];
+  for (const [st, n] of Object.entries(spec) as Array<[BreakStation, number]>)
+    for (let i = 1; i <= n; i++) out.push(R(`${st}-${i}`, st));
+  for (const [id, m] of mods) { const r = out.find((x) => x.id === id); if (r) Object.assign(r, m); }
+  return out;
+};
+const sweeps: Array<[string, Reserve[]]> = [
+  ["8  (2/1/3/1/1)", pool({ A1: 2, A7: 1, A11: 3, A18: 1, A23: 1 })],
+  ["9  (2/1/4/1/1)", pool({ A1: 2, A7: 1, A11: 4, A18: 1, A23: 1 })],
+  ["10 (3/1/4/1/1)", pool({ A1: 3, A7: 1, A11: 4, A18: 1, A23: 1 })],
+  ["11 (3/1/4/2/1)", pool({ A1: 3, A7: 1, A11: 4, A18: 2, A23: 1 })],
+  ["12 (3/1/5/2/1)", pool({ A1: 3, A7: 1, A11: 5, A18: 2, A23: 1 })],
+  ["12 + maxJobs=1 na A1", pool({ A1: 3, A7: 1, A11: 5, A18: 2, A23: 1 }, [["A1-1", { maxJobs: 1 }]])],
+  ["12 + maxJobs=2 na A11", pool({ A1: 3, A7: 1, A11: 5, A18: 2, A23: 1 }, [["A11-3", { maxJobs: 2 }]])],
+  ["13 (3/2/5/2/1)", pool({ A1: 3, A7: 2, A11: 5, A18: 2, A23: 1 })],
+  ["14 (4/2/5/2/1)", pool({ A1: 4, A7: 2, A11: 5, A18: 2, A23: 1 })],
+  ["14 + 2×maxJobs (A1=1, A11=2)", pool({ A1: 4, A7: 2, A11: 5, A18: 2, A23: 1 }, [["A1-2", { maxJobs: 1 }], ["A11-5", { maxJobs: 2 }]])],
+  ["16 (4/2/6/3/1)", pool({ A1: 4, A7: 2, A11: 6, A18: 3, A23: 1 })],
+];
+console.log("\n=== SWEEP liczebności rezerwy (moc vs 36 obiegów) ===");
+for (const [label, rv] of sweeps) {
+  const cap = rv.reduce((s, r) => s + (r.rolling ? 0 : Math.min(3, r.maxJobs ?? 3)), 0);
+  const p = planBreaks(obiegi, rv, OPTS);
+  const eq = loadOf(p);
+  const brak = obiegi.filter((o) => !(p.assignments[o.id] ?? []).some((a) => a.reserveId)).length;
+  const under = rv.filter((r) => !r.rolling && r.maxJobs == null && (eq[r.id] ?? 0) < 3 - 1e-6);
+  // SPRAWIEDLIWOŚĆ wg reguł: ofiary cięcia (eq<1) muszą być NAJMNIEJ kołowe — złamanie = obieg na 0,5,
+  // gdy obieg o MNIEJSZEJ liczbie kół trzyma ≥1,0; plus żaden wysokokołowy (≥4,5) na <1,0.
+  // (1,5 dla najbardziej kołowych przy szczytach na 0,5 jest ZGODNE z drabiną „od najwięcej kół".)
+  const oEq = (o: (typeof obiegi)[number]) =>
+    (p.assignments[o.id] ?? []).filter((a) => a.reserveId).reduce((s, a) => s + (a.kind === "cała" ? 1 : a.kind === "połówka" ? 0.5 : a.kind === "godzinka" ? 2 / 3 : 1 / 3), 0);
+  const lk = (o: (typeof obiegi)[number]) => (Number.isFinite(o.loops) ? o.loops : 1e9);
+  const stuckHalf = obiegi.filter((o) => { const e = oEq(o); return e > 0 && e < 1 - 1e-6; });
+  const orderViol = stuckHalf.filter((x) => obiegi.some((z) => oEq(z) >= 1 - 1e-6 && lk(z) < lk(x) - 0.05));
+  const bigViol = stuckHalf.filter((x) => Number.isFinite(x.loops) && x.loops >= 4.5);
+  const viol = [...new Set([...orderViol, ...bigViol])];
+  const fair = viol.length
+    ? `✗ ZŁY PORZĄDEK CIĘCIA [${viol.map((o) => `${o.id}(${o.loops.toFixed(1)})`).join(",")} na 0,5 przy pełnych niżej-kołowych]`
+    : `✓${stuckHalf.length ? ` (ofiary bilansu: ${stuckHalf.map((o) => o.id).join(",")})` : ""}`;
+  const full = brak > 0
+    ? "(BRAK — dodać rezerwowych; wolna moc nie pasuje do okien)"
+    : cap <= 36 ? (under.length ? `✗ niedociążeni: ${under.map((r) => `${r.id}=${(eq[r.id] ?? 0).toFixed(2)}`).join(" ")}` : "✓ wszyscy 3,0") : "(nadwyżka)";
+  console.log(`— ${label.padEnd(30)} moc=${cap} · BRAK ${brak} · pełne obciążenie: ${full} · sprawiedliwość: ${fair}`);
+}
+
 // 5. godziny pracy od–do (applyWorkHours) — przeliczenie kół + cap slotów
 const { applyWorkHours } = await import("../src/lib/rozklad.ts");
 const { HHMMSS } = await import("../src/lib/types.ts");

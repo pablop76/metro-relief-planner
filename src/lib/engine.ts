@@ -230,6 +230,10 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   }
   // DEADLINE wspólny dla całej rekurencji (nawrót cięcia) — łączny czas planu ograniczony (~700 ms), UI płynne.
   const planDeadline = opts.deadline ?? Date.now() + 450;
+  // Osobny deadline DOCIĄŻANIA (R16: rebalans/promote/drabina) — ustawiany na świeży minimalny budżet w
+  // chwili startu R16 (fix 2026-06-12): głęboki nawrót cięcia zjadał cały planDeadline i zwycięski plan
+  // wychodził BEZ dociążenia (rezerwowi A11 na 2,5 mimo wolnej mocy). Płaci tylko plan z 0 BRAK (kandydat).
+  let r16Deadline = planDeadline;
   const earliest = opts.earliest ?? EARLIEST_DEFAULT;
   // próg „nie wcześniej niż": per-stacja nadpisuje globalny (jest też kotwicą rozkładania)
   const stationEarliest = (s: BreakStation) => opts.earliestByStation?.[s] ?? earliest;
@@ -570,7 +574,12 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
         zeroPlace.set(o.id, z);
       }
       type AJob = { oid: string; s: number; e: number; slot: Slot };
-      const capN = new Map(rs.map((r) => [r.ref.id, Math.min(MAX_RESERVE_LOAD_EQ, r.cap)] as const)); // cała=1 → ≤3/cap
+      // LIMITY rezerwowego w dopasowaniu (fix 2026-06-12): DWA OSOBNE — RÓWNOWARTOŚĆ (≤ 3,0 eq) i LICZBA
+      // podmian (maxJobs/rolling). Dawny wspólny cap `min(3, maxJobs)` liczył SZTUKI, nie eq — przy
+      // połówkach (deficyt z indywidualnymi limitami, np. maxJobs=2 na A11) zaniżał pojemność (2 całe +
+      // 2 połówki = 4 sztuki = LEGALNE 3,0 eq), matcher nie składał planu i spadało do greedy/nawrotu,
+      // który tnął za dużo i zostawiał resztę rezerwowych na 2,0–2,5 (skarga użytkownika 2026-06-12).
+      const capCnt = new Map(rs.map((r) => [r.ref.id, r.cap] as const));
       const availOk = (r: RState, s: Slot) =>
         (r.ref.availFrom == null || s.startT >= r.ref.availFrom) &&
         (r.ref.availTo == null || s.startT + s.durationMin * 60 <= r.ref.availTo);
@@ -597,20 +606,41 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       };
       // `moving` MONOTONICZNE w obrębie jednej próby (jak visited w Kuhn): obieg raz wpisany do łańcucha nie jest
       // relokowany ponownie → gwarancja zakończenia (≤ N obiegów). Pełność dorównuje restart z inną kolejnością.
+      // zpCur/bsCur — źródła slotów/rezerwowych bieżącej próby (późne próby tasują je dla pełności, patrz pętla)
+      let zpCur = zeroPlace, bsCur = byStation;
       const augment = (oid: string, moving: Set<string>, depth: number): boolean => {
         if (++mnodes > PER_TRY || depth > toAssign.length + 2) return false;
         moving.add(oid);
-        for (const slot of zeroPlace.get(oid)!) {
+        for (const slot of zpCur.get(oid)!) {
           const s = slot.startT, e = slot.startT + slot.durationMin * 60;
           const nb = { s, e, slot };
-          for (const r of byStation.get(slot.station) ?? []) {
+          for (const r of bsCur.get(slot.station) ?? []) {
             const rid = r.ref.id;
             if (!availOk(r, slot)) continue;
             const cur = asg.get(rid)!;
             // KONFLIKT = kolizja czasowa LUB zbyt ciasny przeskok toru (bufor) na tym rezerwowym
-            const conflicts = cur.filter((j) => (s < j.e && j.s < e) || crossTight(j, nb, r.ref.station));
-            if (conflicts.some((c) => moving.has(c.oid))) continue;     // konflikt z obiegiem już w łańcuchu → pomiń
-            if (cur.length - conflicts.length + 1 > capN.get(rid)!) continue; // brak miejsca nawet po relokacji
+            const baseConf = cur.filter((j) => (s < j.e && j.s < e) || crossTight(j, nb, r.ref.station));
+            if (baseConf.some((c) => moving.has(c.oid))) continue;      // konflikt z obiegiem już w łańcuchu → pomiń
+            // RELOKACJA Z POWODU POJEMNOŚCI (fix 2026-06-12): gdy po odjęciu kolizji czasowych nowy slot
+            // i tak nie mieści się w limicie EQ (≤3,0) lub LICZBY podmian (maxJobs/rolling), wytypuj do
+            // relokacji DODATKOWE podmiany (nie-moving, największe eq pierwsze = najmniej relokacji).
+            // Bez tego matcher umiał wypierać tylko kolizje czasowe i nie składał ciasnych planów z
+            // połówkami (deficyt z indywidualnymi limitami) → spadał do greedy/nawrotu, który tnął za
+            // dużo i zostawiał resztę rezerwowych na 2,0–2,5 (skarga użytkownika).
+            const keep = cur.filter((j) => !baseConf.includes(j));
+            let eqKeep = keep.reduce((q, j) => q + CALA_EQ[j.slot.kind], 0) + CALA_EQ[slot.kind];
+            let cntKeep = keep.length + 1;
+            const extra: AJob[] = [];
+            if (eqKeep > MAX_RESERVE_LOAD_EQ + 1e-6 || cntKeep > capCnt.get(rid)!) {
+              const movable = keep.filter((j) => !moving.has(j.oid))
+                .sort((a, b) => CALA_EQ[b.slot.kind] - CALA_EQ[a.slot.kind]);
+              for (const j of movable) {
+                if (eqKeep <= MAX_RESERVE_LOAD_EQ + 1e-6 && cntKeep <= capCnt.get(rid)!) break;
+                extra.push(j); eqKeep -= CALA_EQ[j.slot.kind]; cntKeep -= 1;
+              }
+              if (eqKeep > MAX_RESERVE_LOAD_EQ + 1e-6 || cntKeep > capCnt.get(rid)!) continue; // nie zmieści się
+            }
+            const conflicts = [...baseConf, ...extra];
             const cset = new Set(conflicts);
             const saved = new Map([...asg].map(([k, v]) => [k, v.slice()] as const)); // pełny snapshot (relokacje mutują wielu)
             asg.set(rid, [...cur.filter((j) => !cset.has(j)), { oid, s, e, slot }]); // oid NAJPIERW (zajmuje miejsce)
@@ -623,21 +653,29 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
         return false;
       };
       const baseMRV = [...toAssign].sort((a, b) => zeroPlace.get(a.id)!.length - zeroPlace.get(b.id)!.length); // MRV
+      // STRATEGIA 2 (fix 2026-06-12): NAJTRUDNIEJSI NAJPIERW — całozmianowi/najwięcej kół na przedzie (jak
+      // `order` w greedy). MRV stawia całozmianowych (najwięcej slotów) na KOŃCU — przy pełnej saturacji z
+      // połówkami (indywidualne limity) padali ostatni, bo kaskadowych relokacji broni monotoniczne `moving`.
+      // Wstawieni PIERWSI zajmują moc bez relokacji, a elastyczne obiegi i tak się dopasują.
+      const baseHard = [...toAssign].sort(
+        (a, b) => criticalRank(a) - criticalRank(b) || loopKey(b) - loopKey(a) ||
+                  zeroPlace.get(a.id)!.length - zeroPlace.get(b.id)!.length
+      );
       const rngM = mulberry32(((opts.seed ?? 0) | 0) ^ 0x9e3779b9);
-      // Pełne dopasowanie istnieje TYLKO bez deficytu (cap ≥ demand). Przy deficycie matcher i tak nie ma szans
-      // (wszystko-albo-nic) — dajemy mu KRÓTKI budżet (~150 ms) i spadamy do B&B/greedy, by UI nie zamarzło.
-      // W stanie pełnego obciążenia trafia od razu (próba 0, ~3 tys. węzłów / kilkanaście ms).
+      // Budżet ~250 ms: stan pełnego obciążenia trafia od razu (próba 0, ~3 tys. węzłów / kilkanaście ms);
+      // ciasne plany z połówkami (po racjonowaniu = zero-luz z limitami) potrzebują kilkudziesięciu restartów.
       const RESTARTS = 400;
-      const matchDeadline = Math.min(planDeadline, Date.now() + 150);
+      const matchDeadline = Math.min(planDeadline, Date.now() + 250);
       for (let attempt = 0; attempt < RESTARTS; attempt++) {
         if (Date.now() > matchDeadline) break;
         mnodes = 0;                                       // świeży budżet na każdą próbę (kolejność może utknąć)
         asg = new Map(rs.map((r) => [r.ref.id, [] as AJob[]]));
-        // WARIANT (seed): seed=0 → próba 0 = czyste MRV (deterministyczne, niezmienne). seed≠0 → potrząsamy
-        // kolejnością od razu (Fisher–Yates wg seeda) — inny seed = INNE pełne dopasowanie = inny wariant planu
-        // („Generuj plan" daje różne kombinacje, wszystkie po 3 koła). Kolejne próby zawsze potrząsane (gdy 0 utknie).
-        const ord = baseMRV.slice();
-        if (attempt > 0 || vary) for (let i = ord.length - 1; i > 0; i--) { const j = Math.floor(rngM() * (i + 1)); [ord[i], ord[j]] = [ord[j], ord[i]]; }
+        // WARIANT (seed): seed=0 → próba 0 = czyste MRV, próba 1 = najtrudniejsi-najpierw (deterministyczne).
+        // seed≠0 → potrząsamy od razu (Fisher–Yates wg seeda) — inny seed = INNE pełne dopasowanie = inny
+        // wariant planu („Generuj plan"). Kolejne próby potrząsane, na przemian z obu kolejności bazowych.
+        const ord = (attempt % 2 === 0 ? baseMRV : baseHard).slice();
+        if (attempt > 1 || vary) for (let i = ord.length - 1; i > 0; i--) { const j = Math.floor(rngM() * (i + 1)); [ord[i], ord[j]] = [ord[j], ord[i]]; }
+        zpCur = zeroPlace; bsCur = byStation;
         let full = true;
         for (const o of ord) if (!augment(o.id, new Set(), 0)) { full = false; break; }
         if (full) {
@@ -903,7 +941,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       (groups.get(r.station) ?? groups.set(r.station, []).get(r.station)!).push(r);
     for (const group of groups.values()) {
       let moved = true, guard = 0;
-      while (moved && guard++ < 1000 && Date.now() <= planDeadline) {
+      while (moved && guard++ < 1000 && Date.now() <= r16Deadline) {
         moved = false;
         const fill = group.filter((r) => r.loadEq + 1e-6 < targetEq(r)).sort((a, b) => b.loadEq - a.loadEq)[0];
         if (!fill) break;                                              // wszyscy na stacji pełni → koniec
@@ -933,11 +971,118 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // (równo-kołowi traktowani tak samo), a nadwyżkowa moc off-A11 (połówki tam nie wejdą) zostaje WOLNA
   // (widoczni wolni rezerwowi do zwolnienia). Bramka `roomLeft`: nie dokładamy ponad moc. Bez RNG (determinizm).
   const roomLeft = () => rs.some((r) => !r.ref.blocked && !r.ref.manualOnly && r.loadEq + 1e-6 < targetEq(r));
+  // PROMOTE połówek → CAŁA (fix 2026-06-12, skarga „przy indywidualnych limitach reszta nie ma pełnego
+  // obciążenia"): przy ciasnym upakowaniu (matcher nie składa, B&B pada) nawrót tnie WIĘCEJ obiegów, niż
+  // wynika z bilansu — rezerwowi stacji „od całych" (np. A1) zostają na 2,0 mimo wolnej mocy, bo połówka
+  // możliwa tylko na A11. Naprawa: AUTOMATYCZNE połówki obiegu (najbardziej kołowi pierwsi — odwracamy
+  // cięcie od góry) zamieniamy na CAŁĄ u wolnego rezerwowego (pickReserve), o ile jest na nią moc;
+  // zwolniona moc A11 wraca do puli (drabina niżej dołoży z niej 2. połówki). Wymuszonych (forced) i
+  // ręcznych (manual) nie ruszamy. Netto obciążenie tylko rośnie (cała 1,0 ≥ zdjęte połówki).
+  const promoteToCala = () => {
+    const byLoops = [...obiegi].sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id));
+    let prog = true;
+    while (prog && Date.now() <= r16Deadline) {
+      prog = false;
+      for (const o of byLoops) {
+        if (forced[o.id]) continue;                       // twarde wymuszenie rodzaju — nie zmieniamy
+        const cur = assignments[o.id] ?? [];
+        if (!cur.length || cur.some((a) => !a.reserveId || a.manual || a.kind !== "połówka")) continue;
+        const { floor, hi } = coverWindow(o, "cała");
+        const slots = candidateSlots(o, "cała", floor, hi).sort((a, b) => score(a) - score(b));
+        if (!slots.length) continue;
+        const olds = cur.map((a) => ({ a, r: rs.find((x) => x.ref.id === a.reserveId)! }));
+        for (const { a, r } of olds) removeJob(r, a);      // zdejmij połówki (do ewentualnego przywrócenia)
+        assignments[o.id] = [];
+        let placed = false;
+        for (const slot of slots) {
+          const r = pickReserve(rs, slot);
+          if (r) { commit(o, slot, r); placed = true; break; }
+        }
+        if (placed) { prog = true; continue; }
+        assignments[o.id] = olds.map((x) => x.a);          // nie wyszło — przywróć połówki bez zmian
+        for (const { a, r } of olds) {
+          r.jobs.push({ s: a.startT, e: a.startT + a.durationMin * 60, obiegId: a.obiegId });
+          r.loadMin += a.durationMin; r.loadEq += CALA_EQ[a.kind]; r.count += 1;
+        }
+      }
+    }
+  };
+  // KROK 0c — SPRAWIEDLIWA ZAMIANA OFIAR CIĘCIA (2026-06-12, skarga „D16 pół, D19 pół"): pokrycie
+  // awaryjne (tryCover) i eviction potrafią pociąć obieg WYSOKOKOŁOWY na połówkę, choć NIŻEJ-kołowy
+  // trzyma całą — łamie to porządek „tnij najmniej kół najpierw". Naprawa: obieg na samotnej połówce
+  // (eq<1, auto) dostaje CAŁĄ, a najmniej-kołowy posiadacz auto-całej schodzi na połówkę@A11 (staje
+  // się ofiarą zgodną z bilansem). Obie strony tylko AUTO (bez forced/manual/całozmianowych). Pełny
+  // rollback, gdy któraś strona zamiany się nie mieści.
+  const swapCutVictims = () => {
+    const byLoops = [...obiegi].sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id));
+    const eqOf = (o: Obieg) => (assignments[o.id] ?? []).filter((a) => a.reserveId).reduce((s, a) => s + CALA_EQ[a.kind], 0);
+    let prog = true;
+    while (prog && Date.now() <= r16Deadline) {
+      prog = false;
+      const victims = byLoops.filter((o) =>
+        !forced[o.id] && !isThrough(o) && eqOf(o) > 0 && eqOf(o) < 1 - 1e-6 &&
+        (assignments[o.id] ?? []).every((a) => a.reserveId && !a.manual && a.kind === "połówka"));
+      for (const x of victims) {
+        const donors = [...obiegi]
+          .filter((z) => z !== x && !forced[z.id] && !isThrough(z) && loopKey(z) < loopKey(x) &&
+            (assignments[z.id] ?? []).length === 1 &&
+            (assignments[z.id] ?? []).every((a) => a.reserveId && !a.manual && a.kind === "cała"))
+          .sort((a, b) => loopKey(a) - loopKey(b) || numOf(a.id) - numOf(b.id)); // najmniej kół oddaje całą pierwszy
+        let swapped = false;
+        for (const z of donors) {
+          const ax = (assignments[x.id] ?? []).map((a) => ({ a, r: rs.find((q) => q.ref.id === a.reserveId)! }));
+          const az = (assignments[z.id] ?? []).map((a) => ({ a, r: rs.find((q) => q.ref.id === a.reserveId)! }));
+          for (const { a, r } of [...ax, ...az]) removeJob(r, a);
+          assignments[x.id] = []; assignments[z.id] = [];
+          let okX = false;
+          { const { floor, hi } = coverWindow(x, "cała");
+            for (const s of candidateSlots(x, "cała", floor, hi).sort((p, q) => score(p) - score(q))) {
+              const r = pickReserve(rs, s); if (r) { commit(x, s, r); okX = true; break; } } }
+          let okZ = false;
+          if (okX) { const { floor, hi } = coverWindow(z, "połówka");
+            for (const s of autoSlots(z, "połówka", floor, hi).sort((p, q) => score(p) - score(q))) {
+              const r = pickReserve(rs, s); if (r) { commit(z, s, r); okZ = true; break; } } }
+          if (okX && okZ) { swapped = true; break; }
+          // rollback: zdejmij co weszło, przywróć oryginały obu stron
+          for (const o2 of [x, z]) {
+            for (const a of (assignments[o2.id] ?? [])) { const r = rs.find((q) => q.ref.id === a.reserveId); if (r) removeJob(r, a); }
+            assignments[o2.id] = [];
+          }
+          for (const { a, r } of [...ax, ...az]) {
+            (assignments[a.obiegId] ??= []).push(a);
+            r.jobs.push({ s: a.startT, e: a.startT + a.durationMin * 60, obiegId: a.obiegId });
+            r.loadMin += a.durationMin; r.loadEq += CALA_EQ[a.kind]; r.count += 1;
+          }
+        }
+        if (swapped) { prog = true; break; }                           // od nowa — listy ofiar/dawców się zmieniły
+      }
+    }
+  };
+  // Porządkowanie planu (świeży minimalny budżet — nawrót mógł zjeść planDeadline). REBALANS, PROMOTE
+  // i ZAMIANA OFIAR działają TAKŻE przy BRAK (nie dokładają 2. przerw — tylko pakują/przestawiają rodzaje
+  // wg porządku kół; przy deficycie wysokokołowi też nie mogą tkwić na 0,5, gdy niżej-kołowy trzyma całą).
+  r16Deadline = Math.max(planDeadline, Date.now() + 150);
+  rebalanceStations();
+  promoteToCala();
+  swapCutVictims();
   if (!hasBrak()) {
-    rebalanceStations();
     const byLoopsDesc = [...obiegi].sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id));
+    // PASS A — NAJPIERW WSZYSCY DO PEŁNEJ (sprawiedliwość, przywrócone 2026-06-12 po skardze „D16 pół,
+    // D19 pół, a całodobowe półtora"): obieg z samą połówką (0,5 — pocięty/awaryjny) dostaje 2. POŁÓWKĘ
+    // → 2×½ = pełna przerwa, ZANIM ktokolwiek dostanie 1,5. Wysokokołowi pierwsi (byLoopsDesc).
+    let progA = true;
+    while (progA && roomLeft() && Date.now() <= r16Deadline) {
+      progA = false;
+      for (const o of byLoopsDesc) {
+        const cur = assignments[o.id];
+        if (!cur || cur.length !== 1 || cur.some((a) => !a.reserveId)) continue;
+        if (CALA_EQ[cur[0].kind] >= 1 - 1e-6) continue;                // ma już pełną — to kandydat do 1,5 (PASS B)
+        if (addExtraHalf(o)) progA = true;
+      }
+    }
+    // PASS B — dopiero teraz 1,5: obiegi z CAŁĄ dobijane 2. połówką, OD NAJWIĘCEJ KÓŁ.
     let prog2nd = true;
-    while (prog2nd && roomLeft() && Date.now() <= planDeadline) {
+    while (prog2nd && roomLeft() && Date.now() <= r16Deadline) {
       prog2nd = false;
       for (const o of byLoopsDesc) {                                   // NAJWIĘCEJ KÓŁ pierwszy → 1,5
         const cur = assignments[o.id];
@@ -945,6 +1090,39 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
         if (addExtraHalf(o)) prog2nd = true;
       }
     }
+    // PASS C — REDYSTRYBUCJA SPRAWIEDLIWOŚCI (2026-06-12, skarga „D16 pół, D19 pół, a całodobowe
+    // półtora"): jeśli mimo PASS A jakiś obieg tkwi na samej połówce (0,5 — jego okno nie zgrało się
+    // z wolną mocą A11), a ktoś inny dostał 1,5 — ZABIERZ 2. połówkę (auto) obiegowi z 1,5 (od
+    // najmniej kołowych z 1,5) i spróbuj dobić nią obieg na 0,5. Nie wyszło → przywróć. NIKT nie
+    // powinien siedzieć poniżej pełnej, gdy inni dostają dodatki.
+    const oEq = (o: Obieg) => (assignments[o.id] ?? []).filter((a) => a.reserveId).reduce((s, a) => s + CALA_EQ[a.kind], 0);
+    const stuck = () => byLoopsDesc.filter((o) => { const e = oEq(o); return e > 0 && e < 1 - 1e-6; });
+    const donors15 = () => [...obiegi]
+      .filter((o) => {
+        const cur = assignments[o.id] ?? [];
+        return oEq(o) >= 1.5 - 1e-6 && cur.length === 2 && cur.every((a) => a.reserveId) &&
+               cur.some((a) => a.kind === "połówka" && !a.manual);
+      })
+      .sort((a, b) => loopKey(a) - loopKey(b) || numOf(a.id) - numOf(b.id)); // najmniej kołowi z 1,5 oddają pierwsi
+    outer: for (const x of stuck()) {
+      if (Date.now() > r16Deadline) break;
+      for (const y of donors15()) {
+        // próbuj KAŻDĄ auto-połówkę dawcy (wczesna z pary może zwalniać dokładnie tę moc, której
+        // potrzebuje okno obiegu x — zdjęcie tylko późnej często nic nie daje)
+        const halves = (assignments[y.id] ?? []).filter((a) => a.kind === "połówka" && !a.manual && a.reserveId)
+          .sort((a, b) => a.startT - b.startT);
+        for (const ay of halves) {
+          const ry = rs.find((r) => r.ref.id === ay.reserveId)!;
+          removeJob(ry, ay);
+          assignments[y.id] = (assignments[y.id] ?? []).filter((a) => a !== ay);
+          if (addExtraHalf(x)) continue outer;                         // x dobity do pełnej — y wraca do 1,0
+          assignments[y.id] = [...(assignments[y.id] ?? []), ay];      // nie pomogło — przywróć dawcy
+          ry.jobs.push({ s: ay.startT, e: ay.startT + ay.durationMin * 60, obiegId: ay.obiegId });
+          ry.loadMin += ay.durationMin; ry.loadEq += CALA_EQ[ay.kind]; ry.count += 1;
+        }
+      }                                                                // żaden dawca nie pasuje → x zostaje 0,5 (fizyka)
+    }
+    swapCutVictims();  // egzekwuj porządek „tnij najmniej kół" także po dobitkach (PASS A–C mogły go zmienić)
   }
 
   // R20 — auto-wykrycie „łapania pociągu z drugiej strony peronu na kolejną podmianę".
