@@ -55,7 +55,7 @@ interface Props {
 }
 
 export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, trainNo, onTrainChange, forceKind, onCycleKind, throughShiftOverride, onToggleThroughShift, earliestOverride, onEarliestChange, driverStartOverride, onDriverStartChange, workEndOverride, onWorkEndChange }: Props) {
-  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [editKey, setEditKey] = useState<string | null>(null);
   const entry = afternoonEntry(obieg.events);
   const exit = obieg.events[obieg.events.length - 1];
   const isFull = obieg.type === "full";
@@ -63,31 +63,38 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
   // efektywny „całozmianowy": ręczny override pomocnika ma pierwszeństwo nad auto-wykryciem (zjazd ≥21:00)
   const effThrough = throughShiftOverride ?? obieg.throughShift;
   const sorted = [...breaks].sort((a, b) => a.startT - b.startT);
+  // STABILNY klucz przerwy w obrębie obiegu — edytujemy po TOŻSAMOŚCI, nie po indeksie sortowanej listy.
+  // (Indeks był zawodny: nowa/edytowana przerwa zmienia startT → lista się przesortowuje → indeks wskazywał
+  // INNĄ przerwę i edycja „drugiej" psuła „pierwszą". startT|stacja|rodzaj jest jednoznaczne dla obiegu.)
+  const brkKey = (a: BreakAssignment) => `${a.startT}|${a.station}|${a.kind}`;
+  const editing = editKey != null ? sorted.find((a) => brkKey(a) === editKey) ?? null : null;
   // KOLOR wg kół: całozmianowy/całodobowy = osobny (niebieski); ≤ 4 koła = szczyt/kandydat na połówkę
   // (czerwony); > 4 koła = zielony. (decyzja użytkownika 2026-06-09)
   const loopClass = effThrough
     ? "loops-through"
     : obieg.loops <= 4 ? "loops-few" : "loops-many";
 
-  const updateBreak = (i: number, a: BreakAssignment) => {
-    const next = sorted.slice();
-    next[i] = a;
+  const updateBreak = (a: BreakAssignment) => {
+    const next = sorted.map((b) => (brkKey(b) === editKey ? a : b));
+    setEditKey(brkKey(a)); // slot/rodzaj mógł się zmienić → przesuń edycję na NOWĄ tożsamość (nie zgub przerwy)
     onBreaksChange(next);
   };
-  const removeBreak = (i: number) => {
-    onBreaksChange(sorted.filter((_, k) => k !== i));
-    setEditIdx(null);
+  const removeBreak = () => {
+    onBreaksChange(sorted.filter((b) => brkKey(b) !== editKey));
+    setEditKey(null);
   };
-  // obieg.entry2nd ma już wliczone ręczne „pracuje od" (applyWorkHours w App)
+  // obieg.entry2nd ma już wliczone ręczne „pracuje od" (applyWorkHours w App). Nowa przerwa = pierwszy WOLNY
+  // slot (nie kolidujący kluczem z już dodaną), żeby DODAĆ kolejną, a nie nadpisać/zdublować istniejącą.
   const addBreak = () => {
-    const s = feasibleSlots(obieg, {}, true)[0];
+    const used = new Set(sorted.map(brkKey));
+    const s = feasibleSlots(obieg, {}, true).find((x) => !used.has(`${x.startT}|${x.station}|${x.kind}`));
     if (!s) return;
     const nb: BreakAssignment = {
       obiegId: obieg.id, station: s.station, dir: s.dir, startT: s.startT,
       kind: s.kind, durationMin: s.durationMin, reserveId: null, manual: true,
     };
     onBreaksChange([...sorted, nb]);
-    setEditIdx(sorted.length);
+    setEditKey(brkKey(nb));
   };
 
   return (
@@ -139,7 +146,8 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
 
       <div className="oc-breaks">
         {sorted.length === 0 && <span className="oc-placeholder">— brak —</span>}
-        {sorted.map((a, i) => {
+        {sorted.map((a) => {
+          const bkey = brkKey(a);
           const reserve = a.reserveId ? reserves.find((r) => r.id === a.reserveId) : null;
           const brak = !a.reserveId;
           const cross = !!a.crossTrack; // R20 — auto (kolejna podmiana z przeciwnego toru ≤5 min) lub ręcznie
@@ -147,9 +155,9 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
           const durTitle = `${a.kind} ~${DURATION[a.kind]}′ (realnie ${a.durationMin}′)`;
           return (
             <div
-              key={i}
-              className={`oc-brk kind-${a.kind}${brak ? " is-brak" : ""}${editIdx === i ? " open" : ""}${cross ? " is-cross" : ""}`}
-              onClick={() => setEditIdx(editIdx === i ? null : i)}
+              key={bkey}
+              className={`oc-brk kind-${a.kind}${brak ? " is-brak" : ""}${editKey === bkey ? " open" : ""}${cross ? " is-cross" : ""}`}
+              onClick={() => setEditKey(editKey === bkey ? null : bkey)}
               title={`${durTitle}${cross ? "\n" + XFER_TITLE : ""}\nkliknij, aby edytować`}
             >
               <div className="oc-brk-top">
@@ -171,17 +179,17 @@ export function ObiegCard({ obieg, breaks, reserves, byReserve, onBreaksChange, 
         <button className="oc-add" onClick={addBreak} title="dodaj kolejną przerwę">+ przerwa</button>
       </div>
 
-      {editIdx !== null && sorted[editIdx] && (
+      {editing && (
         <BreakEditor
           obieg={obieg}
-          assignment={sorted[editIdx]}
+          assignment={editing}
           reserves={reserves}
           byReserve={byReserve}
           earliestOverride={earliestOverride}
           onEarliestChange={onEarliestChange}
-          onChange={(a) => updateBreak(editIdx, a)}
-          onClose={() => setEditIdx(null)}
-          onRemove={() => removeBreak(editIdx)}
+          onChange={updateBreak}
+          onClose={() => setEditKey(null)}
+          onRemove={removeBreak}
         />
       )}
 
