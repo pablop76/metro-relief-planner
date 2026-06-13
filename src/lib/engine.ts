@@ -258,13 +258,14 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     return scarcity(s) + dirPenalty(s) + (over > 0 ? over : 0);
   };
   const forced = opts.forcedKinds ?? {};
-  // CAŁOZMIANOWY (throughShift) — auto z rozkładu (zjazd ≥ 21:00 → loops=∞) LUB ręczne wskazanie pomocnika
-  // (override). Taki obieg traktujemy jak całodobowy: ZAWSZE cała (wykluczony z racjonowania), priorytet
-  // pokrycia (criticalRank), a do sortowania „najdłuższe pierwsze" jego efektywne koła = ∞.
+  // CAŁOZMIANOWY (throughShift) — auto z rozkładu (zjazd ≥ 21:00) LUB ręczne wskazanie pomocnika (override).
+  // ZAWSZE cała (wykluczony z racjonowania/cięcia), ale do RANKINGU używa REALNYCH kół (~4,5 dla całodobowych,
+  // liczone do 20:45 — korekta 2026-06-13: „w praktyce robią 4,5, mniej niż 5-kołowe"). NIE jest już ∞ — przez
+  // to D17–D20 (5,0) mają pierwszeństwo przed całodobowymi.
   const isThrough = (o: Obieg) => opts.throughShiftOverride?.[o.id] ?? o.throughShift;
-  const effLoops = (o: Obieg) => (isThrough(o) ? Infinity : o.loops);
-  // klucz sortowania malejąco po kołach (∞ → największy); dwa ∞ = remis (rozstrzyga dalszy tie-break)
-  const loopKey = (o: Obieg) => (Number.isFinite(effLoops(o)) ? effLoops(o) : 1e9);
+  // klucz sortowania malejąco po kołach; obroniony przed ∞ (gdyby gdzieś zostało) — wtedy 4,5 jako sensowne koła
+  const loopKey = (o: Obieg) => (Number.isFinite(o.loops) ? o.loops : 4.5);
+  const effLoops = loopKey; // alias zgodności: dawniej ∞ dla throughShift, teraz realne koła
 
   // R17 — rezerwa ruchowa A1 (limit 1 koło) TYLKO gdy pomocnik JAWNIE zaznaczy `rolling` (checkbox).
   // Decyzja użytkownika 2026-06-10: „dawaj WSZYSTKIM maksymalny limit; rezerwę ruchową / standby / tylko-moje
@@ -339,7 +340,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // (wszyscy nadal po 3 całe), tylko zmienia KTO bierze wczesny slot.
   const PEAK_NOT_FIRST_LOOPS = 4.5;
   const isPeakLate = (o: Obieg) =>
-    !!opts.peaksNotFirst && Number.isFinite(effLoops(o)) && effLoops(o) < PEAK_NOT_FIRST_LOOPS;
+    !!opts.peaksNotFirst && !isThrough(o) && effLoops(o) < PEAK_NOT_FIRST_LOOPS; // całodobowy to nie szczyt
   // `relax` (2026-06-12) — POKRYCIE > jakość: w passach ratunkowych (fairBrakSwap) znosimy regułę „połówka
   // ≥3,5 koła nie pierwsza" (POL_LATE), bo lepiej dać wysokokołowemu wczesną połówkę niż zostawić go BRAK.
   const coverWindow = (o: Obieg, kind: BreakKind, relax = false): { floor: number; hi: number } => {
@@ -370,7 +371,10 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // przez to całodobowe trafiały na sam koniec i szły na BRAK, a szczyty dostawały po 2 przerwy.)
   // Połówki na A11 i tak pilnuje scarcity (A11_CALA_PENALTY odpycha całe) + coverWindow (§4a krok4).
   const kindRank = (o: Obieg) => (dk(o) === "cała" ? 0 : 1); // CAŁA przed połówką (krok2 przed krok3)
-  const criticalRank = (o: Obieg) => (isThrough(o) || !Number.isFinite(o.loops) ? 0 : 1); // całozmianowe najpierw
+  // CAŁODOBOWE NIE idą już na sam przód (korekta 2026-06-13): robią ~4,5 koła, więc D17–D20 (5,0) mają
+  // pierwszeństwo. criticalRank = TIE-BREAK: przy RÓWNYCH kołach całodobowy ustępuje zwykłemu obiegowi
+  // („potem całodobowe" — preferencja użytkownika). Główny porządek daje loopKey (malejąco po realnych kołach).
+  const criticalRank = (o: Obieg) => (isThrough(o) ? 1 : 0); // równe koła: zwykły przed całodobowym
   const typeRank = (o: Obieg) => (o.type === "S" ? 0 : o.type === "full" ? 1 : 2);
   const numOf = (id: string) => parseInt(id.replace(/\D/g, ""), 10) || 0;
   const slotCount = (o: Obieg) =>
@@ -384,8 +388,8 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const order = [...obiegi].sort(
     (a, b) =>
       kindRank(a) - kindRank(b) ||
-      criticalRank(a) - criticalRank(b) ||
-      loopKey(b) - loopKey(a) ||
+      loopKey(b) - loopKey(a) ||          // NAJWIĘCEJ KÓŁ pierwszy (5,0 przed całodobowymi 4,5)
+      criticalRank(a) - criticalRank(b) || // równe koła: zwykły przed całodobowym
       slotCount(a) - slotCount(b) ||
       a.lastT - b.lastT ||
       typeRank(a) - typeRank(b) ||
@@ -530,7 +534,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       // Bez tego, przy zerowym luzie (cap=demand) optymalizator minimalizujący LICZBĘ downgrade'ów potrafił
       // ściąć D17/D20 (5,0). Gdy długodystansowiec nie mieści się jako cała → BRAK → nawrót tnie najniżej-kołowy.
       // RĘCZNIE wymuszony rodzaj (forced) jest TWARDY — bez opcji downgrade (fix 2026-06-12).
-      if (kc === "cała" && !forced[o.id] && effLoops(o) < OPT_DOWNGRADE_MAX) { const { floor, hi } = coverWindow(o, "połówka");
+      if (kc === "cała" && !forced[o.id] && !isThrough(o) && effLoops(o) < OPT_DOWNGRADE_MAX) { const { floor, hi } = coverWindow(o, "połówka");
         for (const s of autoSlots(o, "połówka", floor, hi)) if (s.startT >= after) arr.push({ slot: s, dg: 1 }); }
       // „nie zaczynaj od szczytów": szczyt woli PÓŹNIEJSZY slot (sort malejąco po czasie) — matcher/B&B najpierw
       // próbują dla niego późnych slotów, więc wczesne zostają dla długodystansowców (miękko, nie psuje upakowania).
@@ -657,7 +661,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       // połówkami (indywidualne limity) padali ostatni, bo kaskadowych relokacji broni monotoniczne `moving`.
       // Wstawieni PIERWSI zajmują moc bez relokacji, a elastyczne obiegi i tak się dopasują.
       const baseHard = [...toAssign].sort(
-        (a, b) => criticalRank(a) - criticalRank(b) || loopKey(b) - loopKey(a) ||
+        (a, b) => loopKey(b) - loopKey(a) || criticalRank(a) - criticalRank(b) ||
                   zeroPlace.get(a.id)!.length - zeroPlace.get(b.id)!.length
       );
       const rngM = mulberry32(((opts.seed ?? 0) | 0) ^ 0x9e3779b9);

@@ -33,8 +33,12 @@ function classify(id: string): ObiegType {
 const SHIFT2_END = 22 * 3600;           // górna granica okna 2. zmiany
 const SHIFT2_DEFAULT_START = 14 * 3600; // domyślny start maszynisty 2. zmiany (gdy brak w grafiku)
 // Zjazd po tej godzinie = zmiennik na linii / 3. zmiana / całodobowy → maszynista NIE dowozi na zjazd
-// sam, pracuje pełną zmianę → zawsze cała (nieliczone). Próg = deklarowana zmiana na linii ~21:00.
+// sam, pracuje pełną zmianę → zawsze cała (priorytet). Próg = deklarowana zmiana na linii ~21:00.
 const RELIEF_ON_LINE = 21 * 3600;
+// REALNE przejęcie przez 3. zmianę (decyzja użytkownika 2026-06-13): całodobowych podmienia maszynista
+// 3. zmiany TROCHĘ wcześniej niż z planu — ~20:45. Dlatego ich koła liczymy DO 20:45 (nie ∞), przez co
+// wychodzi ~4,5 i są MNIEJ obciążeni niż D17–D20 (5,0). Nadal zawsze cała (flaga `throughShift` = priorytet).
+const THIRD_SHIFT_RELIEF = 20 * 3600 + 45 * 60;
 
 // Start maszynisty 2. zmiany wg grafiku (drużyna=obieg) — TYLKO dla obiegów jadących ciągiem
 // (bez postoju w dzień), bo rozkład sam nie mówi, kiedy maszynista wsiada. Źródło: DRUZYNY-GODZINY.md.
@@ -104,17 +108,20 @@ function shift2Start(id: string, ev: StationEvent[]): number {
  *  użytkownika 2026-06-09). Przykłady: S33 rusza z Młocin (A23), kończy na Kabatach (A1) → 9 półpętli = 4,5;
  *  D17 rusza i kończy na A1 → 10 półpętli = 5,0; S28 rusza z A7 → +0,3 za odcinek A7→kraniec.
  *  (Dawna metryka czas/koło dawała 5,07–5,21 dla bliźniaczych D17–D20, bo zliczała postoje/przesunięcie w
- *  sekwencji, choć przejeżdżają tyle samo.) Zmiennik na linii / całodobowy (jazda po 21:00) → Infinity. */
+ *  sekwencji, choć przejeżdżają tyle samo.) Całodobowy (jazda po 21:00) → koła liczone DO 20:45 (~4,5), nie ∞. */
 function countLoops2nd(id: string, ev: StationEvent[], lapSec: number): number {
   const lastT = ev[ev.length - 1].t;
-  if (lastT >= RELIEF_ON_LINE) return Infinity;     // zmiennik na linii / całodobowy → nie liczymy
+  // CAŁODOBOWY (zjazd ≥ 21:00): 3. zmiana przejmuje go ~20:45, więc koła liczymy DO 20:45 (decyzja
+  // użytkownika 2026-06-13) — wychodzi ~4,5, MNIEJ niż D17–D20 (5,0). Flaga `throughShift` (zawsze cała,
+  // priorytet) ustawiana osobno w parseObiegi; tu zwracamy realną, SKOŃCZONĄ liczbę kół do rankingu.
   // PRZEJĘCIE NA LINII vs START PO POSTOJU: obieg CIĄGŁY (brak postoju >60 min → afternoonEntry == null, np.
   // D17–D20) ma 2. zmianę PRZEJMOWANĄ od 1. zmiany na linii — punkt przejęcia jest przypadkowy (D20 łapie się
   // na A7), więc NIE doliczamy ułamka dojazdu/zjazdu: liczą się PEŁNE półpętle i bliźniacze obiegi wychodzą
   // równo (D17–D20 = 5,0). Obieg z POSTOJEM (afternoonEntry ≠ null, np. S33 z Młocin, S28 z A7, S23 z A11) ma
   // ŚWIEŻY start ze stacji re-wjazdu → ułamek za odcinek doliczamy („dolicz te odcinki"; decyzja 2026-06-09).
   const reliefOnLine = afternoonEntry(ev) == null;
-  return countLoopsWindow(ev, lapSec, shift2Start(id, ev), Math.min(lastT, SHIFT2_END), reliefOnLine);
+  const cap = lastT >= RELIEF_ON_LINE ? THIRD_SHIFT_RELIEF : SHIFT2_END; // całodobowy → 20:45; reszta → 22:00
+  return countLoopsWindow(ev, lapSec, shift2Start(id, ev), Math.min(lastT, cap), reliefOnLine);
 }
 
 /** Koła w ZADANYM oknie pracy [start, zjazd] — wspólny rdzeń countLoops2nd i applyWorkHours
@@ -140,8 +147,9 @@ function countLoopsWindow(ev: StationEvent[], lapSec: number, start: number, zja
 
 /** RĘCZNE godziny pracy maszynisty 2. zmiany (od–do) per obieg — decyzja użytkownika 2026-06-12.
  *  Zwraca KOPIĘ obiegu z PRZELICZONYMI z rozkładu: kołami (w oknie [od, do]), `entry2nd` (= od) i
- *  `throughShift` (do ≥ 21:00 = zmiennik na linii → całozmianowy/∞), oraz `workEnd` (= do; silnik nie
- *  planuje przerwy, z której pociąg wraca po tej godzinie). Brak obu godzin → obieg bez zmian. */
+ *  `throughShift` (do ≥ 21:00 = zmiennik na linii → całozmianowy, ZAWSZE cała), oraz `workEnd` (= do; silnik
+ *  nie planuje przerwy, z której pociąg wraca po tej godzinie). Brak obu godzin → obieg bez zmian.
+ *  Całozmianowy ma koła liczone do 20:45 (THIRD_SHIFT_RELIEF) — jak auto (korekta 2026-06-13), nie ∞. */
 export function applyWorkHours(o: Obieg, from?: number, to?: number): Obieg {
   if (from == null && to == null) return o;
   const start = from ?? o.entry2nd;
@@ -149,9 +157,8 @@ export function applyWorkHours(o: Obieg, from?: number, to?: number): Obieg {
   const through = endRaw >= RELIEF_ON_LINE;
   // ułamki brzegowe jak w auto: obieg ciągły (przejęcie na linii) bez ułamków, start po postoju — z ułamkami
   const reliefOnLine = afternoonEntry(o.events) == null;
-  const loops = through
-    ? Infinity
-    : countLoopsWindow(o.events, o.lapMin * 60, start, Math.min(endRaw, SHIFT2_END), reliefOnLine);
+  const cap = through ? THIRD_SHIFT_RELIEF : SHIFT2_END; // całozmianowy → 20:45 (~4,5 koła), nie ∞
+  const loops = countLoopsWindow(o.events, o.lapMin * 60, start, Math.min(endRaw, cap), reliefOnLine);
   return { ...o, entry2nd: start, throughShift: through, loops, workEnd: to };
 }
 
