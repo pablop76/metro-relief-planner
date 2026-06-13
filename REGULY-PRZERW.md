@@ -29,10 +29,10 @@ koła = (zjazd − wjazd) / czas_koła
 O rodzaju przerwy decyduje długość pracy maszynisty 2. zmiany: czy sam dowozi pociąg na zjazd, czy
 zmienia go ktoś na linii.
 
-| Kryterium (ostatnie zdarzenie obiegu)        | Koła           | Kto |
-| --- | --- | --- |
-| **zjazd ≥ 21:00** — zmiennik na linii / 3. zmiana / całodobowy | `Infinity`, zawsze cała (`throughShift`) | 1–13, D14, D15, D21 |
-| **zjazd < 21:00** — maszynista sam zjeżdża na STP | liczone | wszystkie S, D16, D17–D20, D22 |
+| Kryterium (ostatnie zdarzenie obiegu)                          | Koła                                     | Kto                            |
+| -------------------------------------------------------------- | ---------------------------------------- | ------------------------------ |
+| **zjazd ≥ 21:00** — zmiennik na linii / 3. zmiana / całodobowy | `Infinity`, zawsze cała (`throughShift`) | 1–13, D14, D15, D21            |
+| **zjazd < 21:00** — maszynista sam zjeżdża na STP              | liczone                                  | wszystkie S, D16, D17–D20, D22 |
 
 - Detekcja: `lastT >= RELIEF_ON_LINE` (21:00) → cała (nieliczone). Próg = deklarowana zmiana na
   linii „nie później niż 21:00".
@@ -41,12 +41,16 @@ zmienia go ktoś na linii.
 
 **Przykłady zweryfikowane (2026-06-07):**
 
-| Obieg | Wjazd | Zjazd | Koła |
-| --- | --- | --- | --- |
-| S23 | A11 14:41 | 19:54 | 3,73 |
-| S31 | A18 14:32 | 19:17 | ~3,5 |
-| S34 | — | A23 (zjazd/sprzątanie) | ~3,45 |
-| D20 | 13:00 | 20:17 | ~4,5 |
+| Obieg | Wjazd     | Zjazd                  | Koła |
+| ----- | --------- | ---------------------- | ---- |
+| S22   |           | 19:19                  | 4    |
+| S23   | A11 14:41 | 19:54                  | 3,73 |
+| S31   | A18 14:32 | 19:17                  | ~3,3 |
+| S34   | —         | A23 (zjazd/sprzątanie) | 3,5  |
+| D17   |           | 20:17                  | 5    |
+| D18   |           | 20:17                  | 5    |
+| D19   |           | 20:17                  | 5    |
+| D20   |           | 20:17                  | 5    |
 
 ---
 
@@ -94,16 +98,16 @@ na linii → **całozmianowy** (∞, zawsze cała). Zmiana godzin od razu przeli
 ## 3. Okna startu przerwy
 
 - **„ZACZNIJ OD" (domyślnie 14:30, `EARLIEST_DEFAULT`)** — ZALECENIE „nie wcześniej niż" (nie sztywna
-  godzina; decyzja użytkownika 2026-06-12, **usunięto tolerancję +15′**), nadpisywalne na trzech poziomach:
-  **globalnie** (`earliest`), **per stacja** (`earliestByStation`) i **per obieg** (`earliestByObieg`).
-  Precedencja: **per-obieg > per-stacja > globalny**. Pola w UI: „⏰ zacznij od" + rząd „per stacja".
+  godzina; decyzja użytkownika 2026-06-12, **usunięto tolerancję +15′**), nadpisywalne na dwóch poziomach:
+  **globalnie** (`earliest`) i **per obieg** (`earliestByObieg`). Precedencja: **per-obieg > globalny**.
+  Pole w UI: „⏰ zacznij od" (poziom per stacja usunięty — decyzja użytkownika 2026-06-12).
   To **twarda dolna granica** (slotów wcześniej nie ma); w `score` po prostu „wcześniej = lepiej" od progu
   w górę. Pomocnik steruje wczesnym startem wyłącznie tym inputem — np. próg 14:00 pozwala obiegowi z wjazdem
   13:00 dostać przerwę tuż po 14:00. Naturalna serializacja rozkłada przerwy po popołudniu.
 - **Dwa okna:**
   - **1. (= JEDYNA gwarantowana) przerwa** — start najpóźniej **18:20** (`LATEST_FIRST`). Reguła: **jedyna
     przerwa NIE może startować po 18:20** (pokrycie = 1 przerwa). Dodatkowo **R3**: `latestFirstOf =
-    min(18:20, entry2nd + 6 h)`. To samo okno obowiązuje w pokryciu awaryjnym (`tryCover`).
+min(18:20, entry2nd + 6 h)`. To samo okno obowiązuje w pokryciu awaryjnym (`tryCover`).
   - **2. (dodatkowa) przerwa** — okno dłuższe, do **20:00** (`LATEST_SECOND`); realnie limituje ją
     zjazd pociągu (musi wrócić, zanim zjedzie — patrz §1).
 - **§4a krok 4** (`coverWindow`, próg `POL_LATE_LOOPS = 3,5`): **samotna połówka obiegu ≥ 3,5 koła NIE może
@@ -166,13 +170,13 @@ Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). R16 = pokrycie + **MAK
 
 Konfiguracja w [`src/lib/stations.ts`](src/lib/stations.ts) / `data/stations.json`:
 
-| Stacja          | Rodzaje przerw          | Kierunek          |
-| --------------- | ----------------------- | ----------------- |
-| A1 (Kabaty)     | cała                    | oba (krańcówka)   |
-| A7 (Wilanowska) | cała, godzinka, szczeniak | godzinka ↑ Młociny, szczeniak ↓ Kabaty |
-| A11 (Politechnika) | cała, połówka        | oba               |
+| Stacja             | Rodzaje przerw            | Kierunek                               |
+| ------------------ | ------------------------- | -------------------------------------- |
+| A1 (Kabaty)        | cała                      | oba (krańcówka)                        |
+| A7 (Wilanowska)    | cała, godzinka, szczeniak | godzinka ↑ Młociny, szczeniak ↓ Kabaty |
+| A11 (Politechnika) | cała, połówka             | oba                                    |
 | A18 (Plac Wilsona) | cała, godzinka, szczeniak | godzinka ↓ Kabaty, szczeniak ↑ Młociny |
-| A23 (Młociny)   | cała                    | oba (krańcówka)   |
+| A23 (Młociny)      | cała                      | oba (krańcówka)                        |
 
 Rodzaje wg długości: **cała** (~90 min, pełna pętla) > **godzinka** (~1h, jazda do dalszego krańca
 i powrót) > **połówka** (~45 min) > **szczeniak** (~30 min, krótki nawrót do bliższego krańca).
@@ -186,8 +190,8 @@ pokrycie lub znacząco lepszy czas startu.
 > ręcznie** w edytorze. Godzinka: większy wysiłek planistyczny i ryzyko przy awarii; szczeniak: za słaby.
 > Gdy całą/połówką się nie da → BRAK (sygnał do ręcznej obsady), nie godzinka/szczeniak. A11 uciągnie nawet
 > ~30 połówek na 5 maszynistów, więc całe trzymamy poza A11, a połówki na A11.
-„godzinka" liczona jak połówka/szczeniak (powrót w przeciwnym kierunku), ale do dalszego krańca:
-A7→Młociny ≈ 58 min, A18→Kabaty ≈ 62–66 min (realnie z rozkładu).
+> „godzinka" liczona jak połówka/szczeniak (powrót w przeciwnym kierunku), ale do dalszego krańca:
+> A7→Młociny ≈ 58 min, A18→Kabaty ≈ 62–66 min (realnie z rozkładu).
 
 Długość przerwy liczona z **realnego rozkładu** (czas od wejścia w obieg do powrotu pociągu na tę
 stację), nie ze sztywnych 90/45/30 min. Wartości 90/60/45/30 (`DURATION`) pokazujemy pomocnikowi jako
@@ -197,6 +201,7 @@ stację), nie ze sztywnych 90/45/30 min. Wartości 90/60/45/30 (`DURATION`) poka
 między podmianami** jednego rezerwowego: po oddaniu pociągu musi czasem **przejść na drugą stronę toru**, by
 zdążyć na kolejną podmianę (częste „łapanie pociągu z drugiej strony peronu na kolejną podmianę", żeby nie
 rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
+
 - **Krańcówki bez przeskoku:** na **A1 (Kabaty)** i **A23 (Młociny)** oba kierunki odjeżdżają z krańca
   (pociąg tam zawraca) — nie ma „drugiego toru". `crossTrack` **nie zapala się**, gdy kolejna podmiana wsiada
   na krańcówce.
