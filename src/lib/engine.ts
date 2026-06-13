@@ -1359,27 +1359,94 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   } // koniec sekcji porządkowania/dokładek (pomijanej przy scanOnly)
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════════
-  // „NIE ZACZYNAJ OD SZCZYTÓW" — DOCIĄŻANIE DEFICYTU DUBLETAMI (metoda pomocnika, 2026-06-13). Po pełnym
-  // pokryciu (matcher silnika = maks. obsadzenie), gdy `peaksNotFirst` ON i jest WOLNA MOC: wysokokołowy
-  // obieg, który bilans chciał PEŁNY (`dk === "cała"`), ale pokrycie ścięło go do POJEDYNCZEJ połówki, dostaje
-  // 2. POŁÓWKĘ (DUBLET) z wolnego rezerwowego — najwięcej kół pierwsze. Naprawia „D17/D18 jako wczesna
-  // pojedyncza połówka" → stają się pełne (dwie połówki, druga PÓŹNO). TYLKO DODAJE przerwy (pickReserve =
-  // wolny rezerwowy) → POKRYCIE/OBCIĄŻENIE NIE SPADA. Bez pinów/ręcznych. ⚠ KROK CZĄSTKOWY: pełne odtworzenie
-  // ręcznej metody (cała@A11, więcej dubletów, pojedyncze realnie późno) wymaga matcher-owego allocatora —
-  // naiwny greedy pokrywa gorzej niż silnik (28 vs 35), więc tu tylko bezpieczne dociążenie wolnej mocy.
+  // TOR DEFICYTOWY „nie zaczynaj od szczytów" (metoda pomocnika, 2026-06-13) — MATCHER-OWY ALLOCATOR (ścieżki
+  // powiększające), opt-in, z fallbackiem. Tylko gdy `peaksNotFirst` ON, REALNY deficyt i BRAK pinów/ręcznych.
+  // KLUCZ: pełny obieg na A11 = DUBLET (2 połówki 2×45min), nie cała (85min) — pakuje się gęściej, dlatego
+  // mieści więcej (plan pomocnika: 0 BRAK tam, gdzie silnik zostawia 1). FAZA A: pokrycie (1 przerwa/obieg;
+  // full = cała off-A11 LUB połówka@A11; single = połówka@A11) przez augment. FAZA B: dla full z połówką@A11
+  // dodaj 2. połówkę (dublet). Adoptujemy TYLKO gdy pokrycie ≥ planu normalnego (inaczej fallback).
   if (!opts.scanOnly && opts.peaksNotFirst &&
       obiegi.every((o) => !(assignments[o.id] ?? []).some((a) => a.manual))) {
-    const upgradable = obiegi
-      .filter((o) => dk(o) === "cała")
-      .filter((o) => { const l = (assignments[o.id] ?? []).filter((a) => a.reserveId); return l.length === 1 && l[0].kind === "połówka"; })
-      .sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id)); // najwięcej kół pierwsze
-    for (const o of upgradable) {
-      const have = (assignments[o.id] ?? []).filter((a) => a.reserveId)[0];
-      const { floor } = coverWindow(o, "połówka");
-      const slots = candidateSlots(o, "połówka", floor, LATEST_SECOND)
-        .filter((s) => !(s.startT < have.startT + have.durationMin * 60 && have.startT < s.startT + s.durationMin * 60)) // bez nakładania na 1. połówkę
-        .sort((a, b) => b.startT - a.startT); // 2. połówka PÓŹNO
-      for (const s of slots) { const r = pickReserve(rs, s); if (r) { commit(o, s, r); break; } }
+    const active = rs.filter((r) => !r.ref.blocked && !r.ref.manualOnly);
+    const cap = active.reduce((s, r) => s + Math.min(MAX_RESERVE_LOAD_EQ, capOf(r.ref)), 0);
+    if (active.length && obiegi.length > cap + 1e-6) {
+      const cuts = Math.max(0, Math.round((obiegi.length - cap) * 2));
+      const single = new Set<string>();                                  // pojedyncze = najmniej kół (też całodobowe — E)
+      for (const o of [...obiegi].filter((o) => forced[o.id] !== "cała").sort((a, b) => loopKey(a) - loopKey(b) || numOf(a.id) - numOf(b.id))) {
+        if (single.size >= cuts) break; single.add(o.id);
+      }
+      for (const o of obiegi) if (forced[o.id] === "połówka") single.add(o.id);
+      type LR = { ref: Reserve; station: BreakStation; cap: number; capEq: number; jobs: { s: number; e: number; nid: string; kind: BreakKind }[] };
+      const lrs: LR[] = active.map((r) => ({ ref: r.ref, station: r.station, cap: r.cap, capEq: Math.min(MAX_RESERVE_LOAD_EQ, capOf(r.ref)), jobs: [] }));
+      const byStation = new Map<BreakStation, LR[]>();
+      for (const l of lrs) (byStation.get(l.station) ?? byStation.set(l.station, []).get(l.station)!).push(l);
+      const eqOf = (l: LR) => l.jobs.reduce((q, j) => q + CALA_EQ[j.kind], 0);
+      const placeN = new Map<string, Slot[]>();                          // nid → sloty kandydujące
+      const owner = new Map<string, string>();                           // nid → obieg
+      const mkNeed = (o: Obieg, n: number, kinds: ("cała" | "połówka")[], late: boolean) => {
+        const nid = `${o.id}#${n}`; owner.set(nid, o.id);
+        const slots: Slot[] = [];
+        for (const k of kinds) { const w = coverWindow(o, k); for (const s of candidateSlots(o, k, w.floor, k === "połówka" && n === 2 ? LATEST_SECOND : w.hi))
+          if (k === "cała" ? s.station !== "A11" : s.station === "A11") slots.push(s); } // cała TYLKO off-A11 (85min na A11 pakuje źle), połówka TYLKO A11
+        slots.sort((a, b) => (a.kind === "cała" ? 0 : 1) - (b.kind === "cała" ? 0 : 1) || (late ? b.startT - a.startT : score(a) - score(b)));
+        placeN.set(nid, slots);
+        return nid;
+      };
+      const match = new Map<string, { l: LR; slot: Slot }>();
+      let nodes = 0;
+      const aug = (nid: string, moving: Set<string>): boolean => {
+        if (++nodes > 500_000 || Date.now() > r16Deadline) return false;
+        moving.add(nid);
+        const oid = owner.get(nid)!;
+        for (const slot of placeN.get(nid)!) {
+          const e = slot.startT + slot.durationMin * 60;
+          const sibs = [...match].filter(([n, m]) => n !== nid && owner.get(n) === oid &&
+            slot.startT < m.slot.startT + m.slot.durationMin * 60 && m.slot.startT < e).map(([n]) => n); // rodzeństwo (ten sam obieg) nie może się nakładać
+          if (sibs.some((s) => moving.has(s))) continue;
+          for (const l of byStation.get(slot.station) ?? []) {
+            if (l.ref.availFrom != null && slot.startT < l.ref.availFrom) continue;
+            if (l.ref.availTo != null && e > l.ref.availTo) continue;
+            const conf = l.jobs.filter((j) => slot.startT < j.e && j.s < e);
+            const allC = [...new Set([...conf.map((c) => c.nid), ...sibs])];
+            if (allC.some((c) => moving.has(c))) continue;
+            const evEq = conf.reduce((q, c) => q + CALA_EQ[c.kind], 0);
+            if (eqOf(l) - evEq + CALA_EQ[slot.kind] > l.capEq + 1e-6) continue;
+            if (l.jobs.length - conf.length + 1 > l.cap) continue;
+            const savedJobs = new Map(lrs.map((x) => [x, x.jobs.slice()] as const));
+            const savedMatch = new Map(match);                           // PEŁNY snapshot (zagnieżdżone augmenty zmieniają wiele wpisów)
+            for (const s of sibs) { const m = match.get(s)!; m.l.jobs = m.l.jobs.filter((j) => j.nid !== s); match.delete(s); }
+            l.jobs = [...l.jobs.filter((j) => !conf.includes(j)), { s: slot.startT, e, nid, kind: slot.kind }];
+            for (const c of conf) match.delete(c.nid);
+            match.set(nid, { l, slot });
+            let ok = true;
+            for (const c of allC) if (!aug(c, moving)) { ok = false; break; }
+            if (ok) return true;
+            for (const [x, j] of savedJobs) x.jobs = j;                   // rollback PEŁNY: jobs + match
+            match.clear(); for (const [k, v] of savedMatch) match.set(k, v);
+          }
+        }
+        return false;
+      };
+      const loopOf = (nid: string) => loopKey(obiegi.find((o) => o.id === owner.get(nid))!);
+      // FAZA A — POKRYCIE: 1 przerwa na obieg, KAŻDY = cała off-A11 LUB połówka@A11 (elastyczność jak silnik;
+      // single/full rozróżniamy dopiero w FAZIE B). Najwięcej kół pierwsze → wysokokołowy zajmuje miejsce.
+      const needA = obiegi.map((o) => mkNeed(o, 1, ["cała", "połówka"], false));
+      for (const nid of [...needA].sort((a, b) => loopOf(b) - loopOf(a) || placeN.get(a)!.length - placeN.get(b)!.length))
+        aug(nid, new Set());
+      // FAZA B — dublety: full z połówką@A11 dostaje 2. połówkę@A11 (najwięcej kół pierwsze)
+      const fullHalf = obiegi.filter((o) => !single.has(o.id) && match.get(`${o.id}#1`)?.slot.kind === "połówka")
+        .sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id));
+      for (const o of fullHalf) { const nid = mkNeed(o, 2, ["połówka"], true); aug(nid, new Set()); }
+      const coveredCur = obiegi.filter((o) => (assignments[o.id] ?? []).some((a) => a.reserveId)).length;
+      const coveredNew = new Set([...match.keys()].map((n) => owner.get(n))).size;
+      if (coveredNew >= coveredCur) {                                     // ADOPTUJ (nie regresuje pokrycia; przy równym daje strukturę pomocnika)
+        for (const r of rs) { r.jobs = []; r.loadMin = 0; r.loadEq = 0; r.count = 0; }
+        for (const o of obiegi) assignments[o.id] = [];
+        for (const k of Object.keys(driverFreeAt)) delete driverFreeAt[k];
+        for (const [nid, m] of match) commit(obiegi.find((o) => o.id === owner.get(nid))!, m.slot, rs.find((r) => r.ref.id === m.l.ref.id)!);
+        unassigned.length = 0;
+        for (const o of obiegi) if (!(assignments[o.id] ?? []).some((a) => a.reserveId)) unassigned.push(o.id);
+      }
     }
   }
 
