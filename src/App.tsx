@@ -106,8 +106,8 @@ export default function App() {
   const [workEndByObieg, setWorkEndByObieg] = useState<Record<string, number>>(() =>
     loadLS<Record<string, number>>(LS.workEndObieg, {})
   );
-  // R20: konfigurowalny bufor na przeskok na drugi peron (minuty); domyślnie 5
-  const [xferBufferMin, setXferBufferMin] = useState<number>(() => loadLS<number>(LS.xferBuffer, 5));
+  // R20: konfigurowalny bufor na przeskok na drugi peron (minuty); domyślnie 7 (korekta 2026-06-13)
+  const [xferBufferMin, setXferBufferMin] = useState<number>(() => loadLS<number>(LS.xferBuffer, 7));
   const [peaksNotFirst, setPeaksNotFirst] = useState<boolean>(() => loadLS<boolean>(LS.peaksNotFirst, false));
   // TRYB SYMULACJI (domyślnie OFF): pozwala automatowi dobierać godzinki/szczeniaki (A7/A18) jako
   // ostateczność pokrycia przy deficycie. OFF = stary automat (tylko cała/połówka).

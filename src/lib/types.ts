@@ -148,7 +148,7 @@ export interface BreakAssignment {
 export const MAX_BREAKS_PER_OBIEG = 2;
 
 /** R20: zakładany bufor na przejście między peronami przy podmianie „po przeciwnym torze" (minuty). */
-export const XFER_BUFFER_MIN = 5;
+export const XFER_BUFFER_MIN = 7;
 /** Geometria powrotu: czy pociąg wraca na stację PRZECIWNYM torem (peron po drugiej stronie).
  *  „cała" (pełna pętla) wraca tym samym torem; połówka/godzinka/szczeniak zawracają na krańcu i wracają
  *  przeciwnym torem. UWAGA: sam powrót drugim torem NIE jest alarmem (maszynista ma całą przerwę na
