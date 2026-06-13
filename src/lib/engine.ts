@@ -12,6 +12,11 @@ const hms = (h: number, m: number) => h * 3600 + m * 60;
 // Strategia: całe na wszystkich stacjach oprócz A11, a na A11 połówki + całe (A11 uciągnie nawet ~30 połówek
 // na 5 maszynistów). Godzinkę/szczeniaka można wybrać tylko ręcznie w edytorze.
 const AUTO_KINDS: BreakKind[] = DOWNGRADE.filter((k) => k === "cała" || k === "połówka");
+// TRYB SYMULACJI (opt-in, decyzja użytkownika 2026-06-13): po normalnej drabinie cała → połówka@A11
+// dokładamy GODZINKĘ i SZCZENIAKA (możliwe TYLKO na A7/A18) jako OSTATECZNOŚĆ pokrycia przed BRAK.
+// Kolejność = drabina pokrycia (NIE wg długości): połówka@A11 PRZED godzinką — A11 to podstawowe wąskie
+// gardło racjonowania, a godzinka/szczeniak na A7/A18 to „dodatkowy wysiłek" sięgany na końcu.
+const AUTO_KINDS_SIM: BreakKind[] = ["cała", "połówka", "godzinka", "szczeniak"];
 
 // R17 — rezerwa ruchowa A1 (Kabaty): na A1 stoi pociąg rezerwy ruchowej; JEDEN maszynista z obsady
 // może zostać pod ręką, by wprowadzić skład za pociąg, który uległ awarii / wymaga sprzątania. Ten robi
@@ -90,6 +95,11 @@ export interface PlanOptions {
    *  koła) NIE może być PIERWSZĄ podmianą — jego przerwa startuje dopiero po 1. pełnym kole, więc wczesne sloty
    *  (pierwsza fala) zajmują długodystansowcy/całozmianowi, a szczyt wchodzi po pierwszej podmianie. */
   peaksNotFirst?: boolean;
+  /** TRYB SYMULACJI (decyzja użytkownika 2026-06-13, opt-in „pomocnik chce takiej symulacji"): dopuść
+   *  GODZINKĘ i SZCZENIAKA w automacie jako OSTATECZNOŚĆ pokrycia (A7/A18) — po wyczerpaniu normalnej
+   *  drabiny cała → połówka@A11 → ratunek A11 3,5. Bez tej flagi (domyślnie) godzinka/szczeniak są tylko
+   *  ręczne, a skrajny deficyt zostawia BRAK jako sygnał „dodać rezerwowego". */
+  simulate?: boolean;
   /** WEWNĘTRZNE — wspólny deadline (ms timestamp) na CAŁY plan łącznie z rekurencją nawrotu, by łączny czas
    *  był ograniczony (UI nie zamarza nawet przy głębokim cięciu w deficycie). Ustawiany automatycznie. */
   deadline?: number;
@@ -319,8 +329,10 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // RĘCZNE wymuszenie rodzaju jest TWARDE (fix 2026-06-12): obieg z `forced` dostaje TYLKO ten rodzaj —
   // bez downgrade'u. Wcześniej tryAssign/tryCover/B&B potrafiły wymuszoną CAŁĄ ściąć na połówkę (przy
   // deficycie wymuszenie „nie działało" — plan wychodził identyczny). Teraz: wymuszona cała → cała albo BRAK.
+  // SYMULACJA: rozszerzona drabina (cała → połówka → godzinka → szczeniak); domyślnie tylko cała → połówka.
+  const autoKinds = opts.simulate ? AUTO_KINDS_SIM : AUTO_KINDS;
   const kindsFor = (o: Obieg): BreakKind[] =>
-    forced[o.id] ? [forced[o.id]] : AUTO_KINDS.slice(AUTO_KINDS.indexOf(dk(o)));
+    forced[o.id] ? [forced[o.id]] : autoKinds.slice(autoKinds.indexOf(dk(o)));
 
   // R3 — okno 1. (głównej) przerwy: najpóźniejszy START = min(18:20, realny_start + 6h).
   const latestFirstOf = (o: Obieg) => Math.min(LATEST_FIRST, o.entry2nd + MAX_CONTINUOUS);
