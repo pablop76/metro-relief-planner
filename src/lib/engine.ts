@@ -1358,6 +1358,31 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   }
   } // koniec sekcji porządkowania/dokładek (pomijanej przy scanOnly)
 
+  // ════════════════════════════════════════════════════════════════════════════════════════════════════
+  // „NIE ZACZYNAJ OD SZCZYTÓW" — DOCIĄŻANIE DEFICYTU DUBLETAMI (metoda pomocnika, 2026-06-13). Po pełnym
+  // pokryciu (matcher silnika = maks. obsadzenie), gdy `peaksNotFirst` ON i jest WOLNA MOC: wysokokołowy
+  // obieg, który bilans chciał PEŁNY (`dk === "cała"`), ale pokrycie ścięło go do POJEDYNCZEJ połówki, dostaje
+  // 2. POŁÓWKĘ (DUBLET) z wolnego rezerwowego — najwięcej kół pierwsze. Naprawia „D17/D18 jako wczesna
+  // pojedyncza połówka" → stają się pełne (dwie połówki, druga PÓŹNO). TYLKO DODAJE przerwy (pickReserve =
+  // wolny rezerwowy) → POKRYCIE/OBCIĄŻENIE NIE SPADA. Bez pinów/ręcznych. ⚠ KROK CZĄSTKOWY: pełne odtworzenie
+  // ręcznej metody (cała@A11, więcej dubletów, pojedyncze realnie późno) wymaga matcher-owego allocatora —
+  // naiwny greedy pokrywa gorzej niż silnik (28 vs 35), więc tu tylko bezpieczne dociążenie wolnej mocy.
+  if (!opts.scanOnly && opts.peaksNotFirst &&
+      obiegi.every((o) => !(assignments[o.id] ?? []).some((a) => a.manual))) {
+    const upgradable = obiegi
+      .filter((o) => dk(o) === "cała")
+      .filter((o) => { const l = (assignments[o.id] ?? []).filter((a) => a.reserveId); return l.length === 1 && l[0].kind === "połówka"; })
+      .sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id)); // najwięcej kół pierwsze
+    for (const o of upgradable) {
+      const have = (assignments[o.id] ?? []).filter((a) => a.reserveId)[0];
+      const { floor } = coverWindow(o, "połówka");
+      const slots = candidateSlots(o, "połówka", floor, LATEST_SECOND)
+        .filter((s) => !(s.startT < have.startT + have.durationMin * 60 && have.startT < s.startT + s.durationMin * 60)) // bez nakładania na 1. połówkę
+        .sort((a, b) => b.startT - a.startT); // 2. połówka PÓŹNO
+      for (const s of slots) { const r = pickReserve(rs, s); if (r) { commit(o, s, r); break; } }
+    }
+  }
+
   // R20 — auto-wykrycie „łapania pociągu z drugiej strony peronu na kolejną podmianę".
   // Liczy się NIE sam powrót pociągu z przerwy, tylko MOMENT MIĘDZY podmianami: rezerwowy oddaje
   // pociąg (koniec poprzedniej) → musi przejść na drugą stronę toru → zdążyć na wsiadanie do następnej.
