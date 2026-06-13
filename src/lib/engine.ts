@@ -358,14 +358,14 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // najwcześniej, by się zmieściło (decyzja użytkownika 2026-06-09: „zostaw, chyba że < 10 rezerwowych").
   const POL_LATE_LOOPS = 3.5;
   const enoughReserves = reserves.filter((r) => !r.blocked).length >= 10;
-  // OPCJA „nie zaczynaj od szczytów" (decyzja użytkownika 2026-06-11): szczyt = obieg < 4,5 koła (nie
-  // całozmianowy). NIE twardy próg czasowy (ścinał pełne obciążenie do połówek), tylko MIĘKKIE PRZESUNIĘCIE:
-  // szczyt woli PÓŹNIEJSZY slot (sortowanie placements malejąco po czasie), więc wczesne sloty zajmują
-  // długodystansowcy/całozmianowi, a szczyt wchodzi po pierwszej podmianie. Miękko = nie psuje upakowania
-  // (wszyscy nadal po 3 całe), tylko zmienia KTO bierze wczesny slot.
-  const PEAK_NOT_FIRST_LOOPS = 4.5;
-  const isPeakLate = (o: Obieg) =>
-    !!opts.peaksNotFirst && !isThrough(o) && effLoops(o) < PEAK_NOT_FIRST_LOOPS; // całodobowy to nie szczyt
+  // OPCJA „nie zaczynaj od szczytów" — kryterium DOCELOWY RODZAJ (doprecyzowanie użytkownika 2026-06-13):
+  // na późny slot spychamy TYLKO obieg z POJEDYNCZĄ POŁÓWKĄ (`dk === "połówka"` — racjonowany w deficycie
+  // albo ręcznie wymuszony), gdy inni dostają całe. Obieg z CAŁĄ albo DWIEMA POŁÓWKAMI (`dk === "cała"`, też
+  // cała rozbita na A11) może startować wcześnie LUB kiedykolwiek (pełne obłożenie = wczesna nie krzywdzi).
+  // Dawne kryterium „koła < 4,5" było błędne — przy PEŁNEJ obsadzie pchało na późno także pełne CAŁE szczytów.
+  // Działa w `optimizeExact` (sort slotów); pełne odtworzenie metody pomocnika w głębokim deficycie wymaga
+  // osobno cięcia całodobowych i cała@A11 (TODO — patrz REGULY-PRZERW.md / pamięć projektu).
+  const isPeakLate = (o: Obieg) => !!opts.peaksNotFirst && dk(o) === "połówka";
   // `relax` (2026-06-12) — POKRYCIE > jakość: w passach ratunkowych (fairBrakSwap) znosimy regułę „połówka
   // ≥3,5 koła nie pierwsza" (POL_LATE), bo lepiej dać wysokokołowemu wczesną połówkę niż zostawić go BRAK.
   const coverWindow = (o: Obieg, kind: BreakKind, relax = false): { floor: number; hi: number } => {
