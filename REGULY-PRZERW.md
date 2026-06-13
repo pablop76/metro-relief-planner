@@ -263,8 +263,19 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
   - **FAZA 2:** dedykowane **POŁÓWKI szczytów na A11** — zajmują A11, zanim wejdzie tam nadmiar całych.
   - **FAZA 3:** nadmiar całych → cała off-A11; gdy brak → **CAŁA@A11** (a11 też może być cała); ostatecznie
     połówka@A11 → BRAK.
-  - **NAWRÓT (cięcie wg kół):** jeśli mimo to został BRAK, tnij następnego najmniej-kołowego z całych na połówkę
-    (`forcedKinds`) i przelicz od nowa; bierz wynik tylko, gdy zmniejsza BRAK.
+  - **NAWRÓT — ITERACYJNY Z LOOKAHEAD (przebudowa 2026-06-12):** przy BRAK tniemy kolejnych NAJMNIEJ-KOŁOWYCH
+    z całych na połówki (kumulatywnie, GŁĘBIEJ o 1 na iterację) i bierzemy NAJLEPSZY plan (najmniej BRAK). Każda
+    próba to szybki SKAN (`scanOnly` — tylko pokrycie, bez dokładek). Przechodzi przez PLATEAU (cięcie chwilowo
+    nie zmniejsza BRAK), bo bilans eq nie widzi OKIEN czasowych (A11 mieści w oknie ≤18:20 ~5 połówek). Stop:
+    0 BRAK / `STALL_CUTS=12` bez poprawy / deadline. Zwycięskie cięcia przeliczone w pełni.
+  - **MAKSYMALNE POKRYCIE Z PRIORYTETEM KÓŁ (`maxCoverMatch`, 2026-06-12):** gdy po greedy/nawrocie został BRAK,
+    budujemy DOPASOWANIE ścieżkami powiększającymi (Kuhn) na świeżym modelu, przetwarzając obiegi **OD NAJWIĘCEJ
+    KÓŁ** — wysokokołowy zajmuje miejsce pierwszy i augmentacja go NIE wypycha, więc nieobsadzeni to NAJMNIEJ
+    kołowi (`D19/5,0 NIGDY nie BRAK, gdy niżej-kołowy ma przerwę`). Placements wszystkich rodzajów sort po SCORE
+    (pokrycie nadrzędne — preferowanie całych zmniejszałoby liczbę pokrytych). Limity eq≤3 i liczby podmian
+    respektowane. **Adoptujemy TYLKO gdy pokrywa WIĘCEJ** obiegów (nie regresuje). Kind-fairness (wysokokołowy=
+    cała) poprawia potem `swapCutVictims`; w głębokim deficycie część cała@A11↔połówka@A11 bywa nieprzestawialna
+    (geometria czasów A11) — oba i tak POKRYTE.
 - **Pokrycie (R9) jest nadrzędne:** każdy obieg dostaje ≥ 1 przerwę. Najpierw `tryAssign` (preferowany rodzaj,
   okno ≤ 18:20). Gdy nie złapie wolnego rezerwowego — **pokrycie awaryjne** (`tryCover`): zejście na krótszy
   rodzaj (**połówka** — bez godzinki i szczeniaka), **to samo okno ≤ 18:20** (jedyna przerwa nie później).

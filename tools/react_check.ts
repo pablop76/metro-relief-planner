@@ -92,8 +92,15 @@ const pool = (spec: Partial<Record<BreakStation, number>>, mods: Array<[string, 
 const sweeps: Array<[string, Reserve[]]> = [
   ["8  (2/1/3/1/1)", pool({ A1: 2, A7: 1, A11: 3, A18: 1, A23: 1 })],
   ["9  (2/1/4/1/1)", pool({ A1: 2, A7: 1, A11: 4, A18: 1, A23: 1 })],
+  ["9  (1/1/5/1/1)", pool({ A1: 1, A7: 1, A11: 5, A18: 1, A23: 1 })],
+  ["9  (2/1/5/1/0)", pool({ A1: 2, A7: 1, A11: 5, A18: 1 })],
+  ["9  (2/2/3/1/1)", pool({ A1: 2, A7: 2, A11: 3, A18: 1, A23: 1 })],
+  ["9  (3/1/3/1/1)", pool({ A1: 3, A7: 1, A11: 3, A18: 1, A23: 1 })],
+  ["9  (1/1/4/2/1)", pool({ A1: 1, A7: 1, A11: 4, A18: 2, A23: 1 })],
   ["10 (3/1/4/1/1)", pool({ A1: 3, A7: 1, A11: 4, A18: 1, A23: 1 })],
+  ["10 (2/1/5/1/1)", pool({ A1: 2, A7: 1, A11: 5, A18: 1, A23: 1 })],
   ["11 (3/1/4/2/1)", pool({ A1: 3, A7: 1, A11: 4, A18: 2, A23: 1 })],
+  ["11 (2/1/5/2/1)", pool({ A1: 2, A7: 1, A11: 5, A18: 2, A23: 1 })],
   ["12 (3/1/5/2/1)", pool({ A1: 3, A7: 1, A11: 5, A18: 2, A23: 1 })],
   ["12 + maxJobs=1 na A1", pool({ A1: 3, A7: 1, A11: 5, A18: 2, A23: 1 }, [["A1-1", { maxJobs: 1 }]])],
   ["12 + maxJobs=2 na A11", pool({ A1: 3, A7: 1, A11: 5, A18: 2, A23: 1 }, [["A11-3", { maxJobs: 2 }]])],
@@ -116,10 +123,15 @@ for (const [label, rv] of sweeps) {
     (p.assignments[o.id] ?? []).filter((a) => a.reserveId).reduce((s, a) => s + (a.kind === "cała" ? 1 : a.kind === "połówka" ? 0.5 : a.kind === "godzinka" ? 2 / 3 : 1 / 3), 0);
   const lk = (o: (typeof obiegi)[number]) => (Number.isFinite(o.loops) ? o.loops : 1e9);
   const stuckHalf = obiegi.filter((o) => { const e = oEq(o); return e > 0 && e < 1 - 1e-6; });
+  const brakList = obiegi.filter((o) => oEq(o) === 0);
   const orderViol = stuckHalf.filter((x) => obiegi.some((z) => oEq(z) >= 1 - 1e-6 && lk(z) < lk(x) - 0.05));
+  // BRAK na wyżej-kołowym, gdy NIŻEJ-kołowy ma jakąkolwiek przerwę = najcięższe złamanie (skarga: D19 BRAK)
+  const brakViol = brakList.filter((x) => obiegi.some((z) => oEq(z) > 0 && lk(z) < lk(x) - 0.05));
   const bigViol = stuckHalf.filter((x) => Number.isFinite(x.loops) && x.loops >= 4.5);
   const viol = [...new Set([...orderViol, ...bigViol])];
-  const fair = viol.length
+  const fair = brakViol.length
+    ? `✗✗ BRAK NA WYSOKOKOŁOWYM [${brakViol.map((o) => `${o.id}(${Number.isFinite(o.loops) ? o.loops.toFixed(1) : "∞"})`).join(",")} bez przerwy przy obsadzonych niżej-kołowych]`
+    : viol.length
     ? `✗ ZŁY PORZĄDEK CIĘCIA [${viol.map((o) => `${o.id}(${o.loops.toFixed(1)})`).join(",")} na 0,5 przy pełnych niżej-kołowych]`
     : `✓${stuckHalf.length ? ` (ofiary bilansu: ${stuckHalf.map((o) => o.id).join(",")})` : ""}`;
   const full = brak > 0

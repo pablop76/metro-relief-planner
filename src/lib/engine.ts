@@ -1098,15 +1098,18 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     assignments[x.id] = fbX ?? [];
     return false;
   };
+  // SPRAWIEDLIWA ZAMIANA BRAK (pairwise): wysokokołowy x bez przerwy przejmuje pokrycie od niżej-kołowego z
+  // (single-break, auto) — zdejmij przerwę z, obsadź x na ZWOLNIONYM slocie; z próbuje się przenieść gdzie
+  // indziej, inaczej to ON zostaje BRAK (ofiara wg porządku kół). NIE zmienia LICZBY pokrytych (czysta
+  // zamiana) → bez ryzyka regresji pokrycia. Okno x/z RELAX (pokrycie wysokokołowego > jakość połówki).
   const fairBrakSwap = () => {
     let prog = true, guard = 0;
-    while (prog && guard++ < 64 && Date.now() <= r16Deadline) {
+    while (prog && guard++ < 80 && Date.now() <= r16Deadline) {
       prog = false;
       const brakOb = obiegi.filter((o) => !(assignments[o.id] ?? []).some((a) => a.reserveId))
-        .sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id));
+        .sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id)); // wysokokołowi pierwsi
       for (const x of brakOb) {
-        // 1) WOLNA MOC najpierw — obsadź bez zabierania (relax okno połówki)
-        if (tryPlaceRelaxed(x)) { prog = true; break; }
+        if (tryPlaceRelaxed(x)) { prog = true; break; }              // 1) wolna moc (zysk pokrycia)
         const donors = obiegi
           .filter((z) => loopKey(z) < loopKey(x) &&
             (assignments[z.id] ?? []).length === 1 &&
@@ -1155,15 +1158,112 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       }
     }
   };
+  // MAKSYMALNE POKRYCIE Z PRIORYTETEM KÓŁ (`maxCoverMatch`, 2026-06-12, skarga „D19 BRAK, inne mają całe"):
+  // gdy greedy/nawrót zostawił BRAK, budujemy DOPASOWANIE ścieżkami powiększającymi (Kuhn) na świeżym modelu
+  // lokalnym, przetwarzając obiegi OD NAJWIĘCEJ KÓŁ — wysokokołowy zajmuje miejsce pierwszy, a augmentacja
+  // (relokacja kolidujących) NIE wypycha go później, więc nieobsadzeni to NAJMNIEJ kołowi (overflow). Placements
+  // = dk + downgrade (relax okno: pokrycie > „połówka nie pierwsza"); limity eq≤3 i liczby podmian respektowane.
+  // Adoptujemy wynik TYLKO gdy pokrywa WIĘCEJ obiegów niż bieżący (nie regresuje), potem pełne dokładki/porządki.
+  const maxCoverMatch = (): boolean => {
+    const pinnedIds = new Set(rs.flatMap((r) => r.jobs.map((j) => j.obiegId))
+      .filter((id) => (assignments[id] ?? []).some((a) => a.manual)));
+    const cand = obiegi.filter((o) => !pinnedIds.has(o.id) && !(assignments[o.id] ?? []).some((a) => a.manual));
+    type M = { rid: string; slot: Slot };
+    // POKRYCIE jest nadrzędne (100% gdy fizycznie możliwe): placements wszystkich rodzajów, sort po SCORE
+    // (nie po downgrade) — preferowanie całych (większy blok, 1,0 eq) ZMNIEJSZAŁOby liczbę pokrytych, a użytkownik
+    // chce maks. pokrycia. Sprawiedliwość RODZAJU (wysokokołowy=cała) naprawia osobny pass swapCutVictims PO
+    // dopasowaniu, bez zmiany liczby pokrytych.
+    const place = new Map<string, Slot[]>();
+    for (const o of cand) {
+      const slots: Slot[] = [];
+      for (const kind of kindsFor(o)) {
+        const { floor, hi } = coverWindow(o, kind, true);
+        const src = kind === "cała" ? candidateSlots : autoSlots;
+        for (const s of src(o, kind, floor, hi)) slots.push(s);
+      }
+      slots.sort((a, b) => score(a) - score(b));
+      place.set(o.id, slots);
+    }
+    // model lokalny rezerwowych (piny/manual już zajmują miejsce — wliczone w startowe jobs/eq/cnt)
+    const seats = new Map<string, Array<{ s: number; e: number; oid: string; kind: BreakKind }>>();
+    const eqM = new Map<string, number>(), cntM = new Map<string, number>();
+    for (const r of rs) {
+      seats.set(r.ref.id, r.jobs.filter((j) => (assignments[j.obiegId] ?? []).some((a) => a.manual))
+        .map((j) => ({ s: j.s, e: j.e, oid: j.obiegId, kind: (assignments[j.obiegId] ?? [])[0]?.kind ?? "cała" })));
+      const base = seats.get(r.ref.id)!;
+      eqM.set(r.ref.id, base.reduce((q, j) => q + CALA_EQ[j.kind], 0));
+      cntM.set(r.ref.id, base.length);
+    }
+    const byStation = new Map<BreakStation, RState[]>();
+    for (const r of rs) if (!r.ref.blocked && !r.ref.manualOnly) (byStation.get(r.station) ?? byStation.set(r.station, []).get(r.station)!).push(r);
+    const matchOf = new Map<string, M>();
+    let mnodes = 0;
+    const augment = (oid: string, moving: Set<string>): boolean => {
+      if (++mnodes > 200_000 || Date.now() > r16Deadline) return false;
+      moving.add(oid);
+      for (const slot of place.get(oid)!) {
+        const e = slot.startT + slot.durationMin * 60;
+        for (const r of byStation.get(slot.station) ?? []) {
+          if (r.ref.availFrom != null && slot.startT < r.ref.availFrom) continue;
+          if (r.ref.availTo != null && e > r.ref.availTo) continue;
+          const rid = r.ref.id;
+          const conflicts = seats.get(rid)!.filter((j) => slot.startT < j.e && j.s < e);
+          if (conflicts.some((c) => moving.has(c.oid))) continue;
+          const evEq = conflicts.reduce((q, c) => q + CALA_EQ[c.kind], 0);
+          if (eqM.get(rid)! - evEq + CALA_EQ[slot.kind] > MAX_RESERVE_LOAD_EQ + 1e-6) continue;
+          if (cntM.get(rid)! - conflicts.length + 1 > r.cap) continue;
+          const saved = seats.get(rid)!.slice();
+          const savedM = conflicts.map((c) => [c.oid, matchOf.get(c.oid)] as const);
+          seats.set(rid, [...saved.filter((j) => !conflicts.includes(j)), { s: slot.startT, e, oid, kind: slot.kind }]);
+          eqM.set(rid, eqM.get(rid)! - evEq + CALA_EQ[slot.kind]);
+          cntM.set(rid, cntM.get(rid)! - conflicts.length + 1);
+          for (const c of conflicts) matchOf.delete(c.oid);
+          matchOf.set(oid, { rid, slot });
+          let ok = true;
+          for (const c of conflicts) if (!augment(c.oid, moving)) { ok = false; break; }
+          if (ok) return true;
+          // rollback
+          seats.set(rid, saved);
+          eqM.set(rid, saved.reduce((q, j) => q + CALA_EQ[j.kind], 0));
+          cntM.set(rid, saved.length);
+          matchOf.delete(oid);
+          for (const [cid, m] of savedM) if (m) matchOf.set(cid, m);
+        }
+      }
+      return false;
+    };
+    const ordDesc = [...cand].sort((a, b) => loopKey(b) - loopKey(a) ||
+      place.get(a.id)!.length - place.get(b.id)!.length || numOf(a.id) - numOf(b.id));
+    for (const o of ordDesc) augment(o.id, new Set());
+    const curCovered = obiegi.filter((o) => (assignments[o.id] ?? []).some((a) => a.reserveId)).length;
+    const newCovered = matchOf.size + pinnedIds.size;
+    if (newCovered <= curCovered) return false;                       // nie poprawia pokrycia → zostaw greedy
+    // ADOPTUJ: wyczyść auto-przydziały, odtwórz z dopasowania (piny/manual zostają)
+    for (const r of rs) { r.jobs = r.jobs.filter((j) => (assignments[j.obiegId] ?? []).some((a) => a.manual)); }
+    for (const r of rs) { r.loadMin = 0; r.loadEq = 0; r.count = 0;
+      for (const j of r.jobs) { const a = (assignments[j.obiegId] ?? [])[0]; if (a) { r.loadMin += a.durationMin; r.loadEq += CALA_EQ[a.kind]; r.count++; } } }
+    for (const o of cand) { assignments[o.id] = (assignments[o.id] ?? []).filter((a) => a.manual); }
+    unassigned.length = 0;
+    for (const o of cand) {
+      const m = matchOf.get(o.id);
+      if (m) commit(o, m.slot, rs.find((r) => r.ref.id === m.rid)!);
+      else fallbackBrak(o);
+    }
+    return true;
+  };
+
   // Porządkowanie planu (świeży minimalny budżet — nawrót mógł zjeść planDeadline). FAIR-BRAK, REBALANS,
   // PROMOTE i ZAMIANA OFIAR działają TAKŻE przy BRAK (nie dokładają 2. przerw — tylko pakują/przestawiają
   // rodzaje wg porządku kół; przy deficycie wysokokołowi nie mogą tkwić na 0,5/BRAK, gdy niżej-kołowy ma
   // przerwę). `scanOnly` (szybki skan lookahead) pomija CAŁĄ tę sekcję — liczy się tylko pokrycie.
   if (!opts.scanOnly) {
-  r16Deadline = Math.max(planDeadline, Date.now() + 150);
+  r16Deadline = Math.max(planDeadline, Date.now() + 200);
+  if (hasBrak()) maxCoverMatch();                 // maks. pokrycie z priorytetem kół (deficyt)
+  r16Deadline = Math.max(planDeadline, Date.now() + 200); // świeży budżet na porządkowanie po dopasowaniu
   fairBrakSwap();
   rebalanceStations();
   promoteToCala();
+  r16Deadline = Math.max(planDeadline, Date.now() + 200); // świeży budżet na zamianę ofiar (kind-fairness)
   swapCutVictims();
   if (!hasBrak()) {
     const byLoopsDesc = [...obiegi].sort((a, b) => loopKey(b) - loopKey(a) || numOf(a.id) - numOf(b.id));
