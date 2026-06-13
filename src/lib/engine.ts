@@ -53,6 +53,9 @@ const LATEST_FIRST = hms(18, 20);  // 1. (a zarazem JEDYNA gwarantowana) przerwa
                                    // Reguła: jedyna przerwa NIE może startować po 18:20 (pokrycie = 1 przerwa).
 const LATEST_SECOND = hms(20, 0);  // DRUGA (dodatkowa) przerwa: dłuższe okno (realnie limituje R7/zjazd)
 const SHIFT2_END = hms(22, 0);     // koniec 2. zmiany — górna granica RĘCZNEGO wyboru slotu (feasibleSlots)
+// REGUŁA 14:55 (krok 4, tylko tryb symulacji godzinek): rezerwowy może mieć ŁAŃCUCH 4 godzinek wyłącznie,
+// gdy NAJWCZEŚNIEJSZA z nich startuje ≥14:55. Inaczej: rezerwowy z którąkolwiek godzinką <14:55 = max 3.
+const GODZINKA_CHAIN_FLOOR = hms(14, 55);
 
 // ROZKŁADANIE startów (R2): preferujemy NAJWCZEŚNIEJSZY slot od progu startu w górę (earliest globalny;
 // domyślnie 14:30 — użytkownik ustawia próg sam). Moc rezerwowych wypełnia się od dołu,
@@ -196,16 +199,22 @@ interface RState {
   loadMin: number;  // realne minuty (informacyjnie / do wyświetlania)
   loadEq: number;   // równowartość całych (limit pracy = 3) — cała=1, połówka=0,5, szczeniak=⅓
   count: number;
-  jobs: Array<{ s: number; e: number; obiegId: string }>; // zajęte interwały (+id obiegu) — sprawdzamy realne
-                                         // NAKŁADANIE, nie pojedynczy „busyUntil"; dzięki temu rezerwowy może brać
+  jobs: Array<{ s: number; e: number; obiegId: string; kind: BreakKind }>; // zajęte interwały (+id obiegu/rodzaj) — sprawdzamy
+                                         // realne NAKŁADANIE, nie pojedynczy „busyUntil"; dzięki temu rezerwowy może brać
                                          // podmiany w DOWOLNEJ kolejności czasowej (np. wczesną CAŁĄ po późnej
                                          // POŁÓWCE) — kluczowe dla wolnej mocy przy bottleneck-first. obiegId → pass naprawczy.
+                                         // kind → reguła 14:55 (łańcuch 4 godzinek).
   station: BreakStation;
   cap: number;      // limit liczby podmian (R17: rezerwa ruchowa A1 = 1; reszta = Infinity / 3 koła)
 }
 
 /** Czy rezerwowy jest wolny w całym przedziale [s, e) (brak nakładania z żadną już przypisaną podmianą). */
 const freeAt = (r: RState, s: number, e: number): boolean => !r.jobs.some((j) => s < j.e && j.s < e);
+
+/** Reguła 14:55 (krok 4): łańcuch 4 godzinek dozwolony tylko gdy NAJWCZEŚNIEJSZA startuje ≥14:55.
+ *  `chainStarts` = starty już przypisanych godzinek, `startT` = dodawana godzinka. Przy <4 łącznie — wolne. */
+const godzinkaChainOk = (chainStarts: number[], startT: number): boolean =>
+  chainStarts.length < 3 || Math.min(startT, ...chainStarts) >= GODZINKA_CHAIN_FLOOR;
 
 /** Wybór rezerwowego do slotu: TYLKO z tej samej stacji co slot (rezerwowy podmienia tam, gdzie stoi),
  *  wolny czasowo (bez nakładania), w limicie 4,5h (R13) i limicie własnym (cap/maxJobs), nie zablokowany.
@@ -222,6 +231,8 @@ function pickReserve(rs: RState[], slot: Slot, rescue = false): RState | null {
       (r.ref.availFrom == null || slot.startT >= r.ref.availFrom) && // R18: okno dostępności rezerwowego
       (r.ref.availTo == null || slot.startT + slot.durationMin * 60 <= r.ref.availTo) &&
       fitsLoad(r.loadEq, slot.kind, rescue && r.station === "A11" ? A11_RESCUE_LOAD_EQ : MAX_RESERVE_LOAD_EQ) && // limit 3 całe (R13); A11 ratunkowo 3,5
+      (slot.kind !== "godzinka" ||
+        godzinkaChainOk(r.jobs.filter((j) => j.kind === "godzinka").map((j) => j.s), slot.startT)) && // reguła 14:55
       r.count < r.cap // limit liczby podmian: rezerwa ruchowa A1 = 1, reszta = bez limitu (R17)
   );
   if (eligible.length === 0) return null;
@@ -419,7 +430,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const unassigned: string[] = [];
 
   const commit = (o: Obieg, slot: Slot, r: RState, manual = false) => {
-    r.jobs.push({ s: slot.startT, e: slot.startT + slot.durationMin * 60, obiegId: o.id });
+    r.jobs.push({ s: slot.startT, e: slot.startT + slot.durationMin * 60, obiegId: o.id, kind: slot.kind });
     r.loadMin += slot.durationMin;
     r.loadEq += CALA_EQ[slot.kind];
     r.count += 1;
@@ -839,7 +850,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
           }
           // przywróć stan o2
           assignments[o2.id] = [a2];
-          r.jobs.push({ s: a2.startT, e: a2.startT + a2.durationMin * 60, obiegId: a2.obiegId });
+          r.jobs.push({ s: a2.startT, e: a2.startT + a2.durationMin * 60, obiegId: a2.obiegId, kind: a2.kind });
           r.loadMin += a2.durationMin; r.loadEq += CALA_EQ[a2.kind]; r.count += 1;
           if (prevFree !== undefined) driverFreeAt[o2.id] = prevFree;
         }
@@ -954,7 +965,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       }
       // przywróć pierwotną przerwę
       assignments[o.id] = [a0];
-      r0.jobs.push({ s: a0.startT, e: a0.startT + a0.durationMin * 60, obiegId: a0.obiegId });
+      r0.jobs.push({ s: a0.startT, e: a0.startT + a0.durationMin * 60, obiegId: a0.obiegId, kind: a0.kind });
       r0.loadMin += a0.durationMin; r0.loadEq += CALA_EQ[a0.kind]; r0.count += 1;
     }
     return false;
@@ -964,7 +975,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // bez zmian). Lustrzanie aktualizuje obciążenie obu rezerwowych i `reserveId` przydziału.
   const moveJob = (a: BreakAssignment, from: RState, to: RState) => {
     removeJob(from, a);
-    to.jobs.push({ s: a.startT, e: a.startT + a.durationMin * 60, obiegId: a.obiegId });
+    to.jobs.push({ s: a.startT, e: a.startT + a.durationMin * 60, obiegId: a.obiegId, kind: a.kind });
     to.loadMin += a.durationMin; to.loadEq += CALA_EQ[a.kind]; to.count += 1;
     a.reserveId = to.ref.id;
   };
@@ -1038,7 +1049,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
         if (placed) { prog = true; continue; }
         assignments[o.id] = olds.map((x) => x.a);          // nie wyszło — przywróć połówki bez zmian
         for (const { a, r } of olds) {
-          r.jobs.push({ s: a.startT, e: a.startT + a.durationMin * 60, obiegId: a.obiegId });
+          r.jobs.push({ s: a.startT, e: a.startT + a.durationMin * 60, obiegId: a.obiegId, kind: a.kind });
           r.loadMin += a.durationMin; r.loadEq += CALA_EQ[a.kind]; r.count += 1;
         }
       }
@@ -1087,7 +1098,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
           }
           for (const { a, r } of [...ax, ...az]) {
             (assignments[a.obiegId] ??= []).push(a);
-            r.jobs.push({ s: a.startT, e: a.startT + a.durationMin * 60, obiegId: a.obiegId });
+            r.jobs.push({ s: a.startT, e: a.startT + a.durationMin * 60, obiegId: a.obiegId, kind: a.kind });
             r.loadMin += a.durationMin; r.loadEq += CALA_EQ[a.kind]; r.count += 1;
           }
         }
@@ -1169,7 +1180,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
           // x nie wszedł — pełny rollback
           assignments[x.id] = fbX ?? [];
           assignments[z.id] = [az];
-          rz.jobs.push({ s: az.startT, e: az.startT + az.durationMin * 60, obiegId: az.obiegId });
+          rz.jobs.push({ s: az.startT, e: az.startT + az.durationMin * 60, obiegId: az.obiegId, kind: az.kind });
           rz.loadMin += az.durationMin; rz.loadEq += CALA_EQ[az.kind]; rz.count += 1;
         }
         if (fixed) break; // listy się zmieniły — od nowa
@@ -1231,6 +1242,8 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
           const capEq = r.station === "A11" ? A11_RESCUE_LOAD_EQ : MAX_RESERVE_LOAD_EQ; // A11 ratunkowo 3,5 (maks. pokrycie)
           if (eqM.get(rid)! - evEq + CALA_EQ[slot.kind] > capEq + 1e-6) continue;
           if (cntM.get(rid)! - conflicts.length + 1 > r.cap) continue;
+          if (slot.kind === "godzinka" && // reguła 14:55: łańcuch 4 godzinek tylko gdy najwcześniejsza ≥14:55
+            !godzinkaChainOk(seats.get(rid)!.filter((j) => j.kind === "godzinka" && !conflicts.includes(j)).map((j) => j.s), slot.startT)) continue;
           const saved = seats.get(rid)!.slice();
           const savedM = conflicts.map((c) => [c.oid, matchOf.get(c.oid)] as const);
           seats.set(rid, [...saved.filter((j) => !conflicts.includes(j)), { s: slot.startT, e, oid, kind: slot.kind }]);
@@ -1336,7 +1349,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
           assignments[y.id] = (assignments[y.id] ?? []).filter((a) => a !== ay);
           if (addExtraHalf(x)) continue outer;                         // x dobity do pełnej — y wraca do 1,0
           assignments[y.id] = [...(assignments[y.id] ?? []), ay];      // nie pomogło — przywróć dawcy
-          ry.jobs.push({ s: ay.startT, e: ay.startT + ay.durationMin * 60, obiegId: ay.obiegId });
+          ry.jobs.push({ s: ay.startT, e: ay.startT + ay.durationMin * 60, obiegId: ay.obiegId, kind: ay.kind });
           ry.loadMin += ay.durationMin; ry.loadEq += CALA_EQ[ay.kind]; ry.count += 1;
         }
       }                                                                // żaden dawca nie pasuje → x zostaje 0,5 (fizyka)
