@@ -140,6 +140,42 @@ for (const [label, rv] of sweeps) {
   console.log(`— ${label.padEnd(30)} moc=${cap} · BRAK ${brak} · pełne obciążenie: ${full} · sprawiedliwość: ${fair}`);
 }
 
+// 4d. SERIALIZACJA (fix 2026-06-13): jeden rezerwowy = jeden pociąg naraz. Plan NIGDY nie może dać
+// rezerwowemu dwóch NAKŁADAJĄCYCH się podmian (15:49+16:03 = fizycznie niewykonalne). Sprawdzamy wszystkie
+// rostery sweep × peaks on/off × locked (ręczne przypięcie A11) — zarówno czysty auto, jak i z lockedAssignments.
+const overlaps = (p: ReturnType<typeof planBreaks>): string[] => {
+  const byRes: Record<string, { s: number; e: number; o: string }[]> = {};
+  for (const list of Object.values(p.assignments))
+    for (const a of list) if (a.reserveId) (byRes[a.reserveId] ??= []).push({ s: a.startT, e: a.startT + a.durationMin * 60, o: a.obiegId });
+  const v: string[] = [];
+  for (const [rid, j] of Object.entries(byRes)) { j.sort((x, y) => x.s - y.s); for (let i = 0; i < j.length; i++) for (let k = i + 1; k < j.length; k++) if (j[i].s < j[k].e && j[k].s < j[i].e) v.push(`${rid} ${j[i].o}⨯${j[k].o}`); }
+  return v;
+};
+let serialBad = 0, serialRuns = 0;
+for (const [, rv] of sweeps)
+  for (const peaksNotFirst of [false, true]) {
+    serialRuns++;
+    const ov = overlaps(planBreaks(obiegi, rv, { ...OPTS, peaksNotFirst }));
+    if (ov.length) { serialBad++; if (serialBad <= 5) console.log(`  ❌ SERIAL ${rv.length}rez peaks=${peaksNotFirst}: ${ov.slice(0, 3).join(", ")}`); }
+  }
+// + locked: przypnij dwóch rezerwowych A11 do różnych obiegów (spójnie) i sprawdź, że auto nie nakłada się na nie
+{
+  const rv = pool({ A1: 2, A7: 1, A11: 4, A18: 1, A23: 1 }); // deficyt → ścieżka maxCoverMatch
+  const { feasibleSlots } = await import("../src/lib/engine.ts");
+  const a11 = rv.filter((r) => r.station === "A11");
+  const manual: Record<string, import("../src/lib/types.ts").BreakAssignment[]> = {};
+  let ri = 0;
+  for (const o of obiegi) { if (ri >= 2) break;
+    const sl = feasibleSlots(o, { earliest: 14 * 3600 }).find((s) => s.station === "A11" && s.kind === "połówka" && s.startT >= 15 * 3600 && s.startT <= 16 * 3600);
+    if (!sl) continue; manual[o.id] = [{ obiegId: o.id, station: sl.station, dir: sl.dir, startT: sl.startT, kind: sl.kind, durationMin: sl.durationMin, reserveId: a11[ri].id, manual: true }]; ri++; }
+  serialRuns++;
+  const p = planBreaks(obiegi, rv, { ...OPTS, earliest: 14 * 3600, peaksNotFirst: true, lockedAssignments: manual });
+  const merged = { ...p.assignments }; for (const [id, a] of Object.entries(manual)) merged[id] = a;
+  const ov = overlaps({ ...p, assignments: merged } as ReturnType<typeof planBreaks>);
+  if (ov.length) { serialBad++; console.log(`  ❌ SERIAL locked: ${ov.slice(0, 3).join(", ")}`); }
+}
+console.log(`\nSERIALIZACJA (jeden rezerwowy = jeden pociąg): ${serialBad ? `❌ ${serialBad}/${serialRuns} z NAKŁADANIAMI` : `✓ ${serialRuns}/${serialRuns} bez nakładań`}`);
+
 // 5. godziny pracy od–do (applyWorkHours) — przeliczenie kół + cap slotów
 const { applyWorkHours } = await import("../src/lib/rozklad.ts");
 const { HHMMSS } = await import("../src/lib/types.ts");

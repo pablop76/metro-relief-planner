@@ -112,6 +112,10 @@ export interface PlanOptions {
   /** WEWNĘTRZNE — szybki skan lookahead: liczy się TYLKO pokrycie (BRAK); pomiń porządkowanie i dokładki
    *  (fairBrakSwap/rebalans/promote/swap/PASS A–C) — zwycięskie cięcia są potem przeliczane w pełni. */
   scanOnly?: boolean;
+  /** RĘCZNE (locked) przerwy pomocnika — klucz = id obiegu → lista przerw. Obiegi z tym kluczem są USTALONE:
+   *  silnik ich NIE planuje automatycznie, a wskazanych w nich rezerwowych ZAJMUJE na podany czas (blokada
+   *  podwójnego przypisania). reserveId=null = ręczny BRAK (tylko wyklucza obieg z auto). (fix 2026-06-13) */
+  lockedAssignments?: Record<string, BreakAssignment[]>;
 }
 
 /** Deterministyczny PRNG (mulberry32) — ze stałego ziarna ten sam ciąg → powtarzalny wariant planu. */
@@ -250,6 +254,20 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   if (reserves.every((r) => r.blocked)) {
     return { assignments: {}, unassigned: obiegi.map((o) => o.id), reserveLoadMin: {}, reserveCount: {} };
   }
+  // ───────────────────────────────────────────────────────────────────────────────────────────────────
+  // RĘCZNE (locked) override — obiegi z ręczną korektą są USTALONE: silnik ich NIE planuje automatycznie,
+  // a wskazanych w nich rezerwowych ZAJMUJE na podany czas. Bez tego App doklejał ręczne PO auto-planie
+  // (merge per obieg), a silnik — nie wiedząc o nich — dawał TEGO SAMEGO rezerwowego innemu obiegowi
+  // w nakładającym się oknie → jeden maszynista miał dwie podmiany naraz (fizycznie niewykonalne). (fix 2026-06-13)
+  const locked = opts.lockedAssignments ?? {};
+  const lockedIds = new Set(Object.keys(locked));
+  const hasLocked = lockedIds.size > 0;
+  const lockedLoadByRes = new Map<string, number>();   // eq zajęte ręcznie per rezerwowy — odejmiemy od mocy w bilansie
+  if (hasLocked) {
+    for (const list of Object.values(locked))
+      for (const a of list) if (a.reserveId) lockedLoadByRes.set(a.reserveId, (lockedLoadByRes.get(a.reserveId) ?? 0) + CALA_EQ[a.kind]);
+    obiegi = obiegi.filter((o) => !lockedIds.has(o.id)); // wyłącz ręcznie ustawione obiegi z auto-planu
+  }
   // DEADLINE wspólny dla całej rekurencji (nawrót cięcia) — łączny czas planu ograniczony (~700 ms), UI płynne.
   const planDeadline = opts.deadline ?? Date.now() + 450;
   // Osobny deadline DOCIĄŻANIA (R16: rebalans/promote/drabina) — ustawiany na świeży minimalny budżet w
@@ -318,7 +336,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // MOC do bilansu = rezerwowi „do pełnej dyspozycji" × 3 koła. Rezerwa ruchowa A1 (rollingA1Id, jeśli jawnie
   // zaznaczona) NIE wchodzi do mocy — jej 1 koło to bufor pod ręką (R17), nie planowana moc.
   const capacity = reserves.reduce(
-    (s, r) => s + (r.blocked || r.id === rollingA1Id ? 0 : Math.min(MAX_RESERVE_LOAD_EQ, capOf(r))), 0
+    (s, r) => s + (r.blocked || r.id === rollingA1Id ? 0 : Math.max(0, Math.min(MAX_RESERVE_LOAD_EQ, capOf(r)) - (lockedLoadByRes.get(r.id) ?? 0))), 0
   );
   const autoPolowka = new Set<string>();           // START: nikt nie jest połówką (wszyscy całe → max obciążenie)
   // eqDemand respektuje też RĘCZNE/NAWROTOWE cięcia (forced=połówka) — patrz RETRY niżej
@@ -428,6 +446,20 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   const assignments: Record<string, BreakAssignment[]> = {};
   const driverFreeAt: Record<string, number> = {}; // kiedy maszynista obiegu wraca z ostatniej przerwy
   const unassigned: string[] = [];
+  // ZAJMIJ rezerwowych ręcznymi (locked) przerwami i ZAREJESTRUJ je w `assignments` jako manual=true.
+  // Dzięki temu (a) pickReserve/freeAt widzą zajęte okna, (b) WSZYSTKIE pasy matcherów (maxCoverMatch,
+  // allocator) rozpoznają je po konwencji „obieg ma a.manual" i NIE przebudowują z rs.jobs (inaczej adopcja
+  // kasowała pre-zajęcia → auto nakładało się na ręczne). Obiegi locked są już wyłączone z `obiegi` wyżej.
+  if (hasLocked)
+    for (const list of Object.values(locked))
+      for (const a of list) {
+        if (!a.reserveId) continue;
+        const r = rs.find((x) => x.ref.id === a.reserveId);
+        if (!r) continue;
+        r.jobs.push({ s: a.startT, e: a.startT + a.durationMin * 60, obiegId: a.obiegId, kind: a.kind });
+        r.loadMin += a.durationMin; r.loadEq += CALA_EQ[a.kind]; r.count += 1;
+        (assignments[a.obiegId] ??= []).push({ ...a, manual: true });
+      }
 
   const commit = (o: Obieg, slot: Slot, r: RState, manual = false) => {
     r.jobs.push({ s: slot.startT, e: slot.startT + slot.durationMin * 60, obiegId: o.id, kind: slot.kind });
@@ -1238,15 +1270,19 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
           const rid = r.ref.id;
           const conflicts = seats.get(rid)!.filter((j) => slot.startT < j.e && j.s < e);
           if (conflicts.some((c) => moving.has(c.oid))) continue;
+          if (conflicts.some((c) => (assignments[c.oid] ?? []).some((a) => a.manual))) continue; // ręczne/piny NIERUSZALNE (brak slotów w `place` → nie relokuj)
           const evEq = conflicts.reduce((q, c) => q + CALA_EQ[c.kind], 0);
           const capEq = r.station === "A11" ? A11_RESCUE_LOAD_EQ : MAX_RESERVE_LOAD_EQ; // A11 ratunkowo 3,5 (maks. pokrycie)
           if (eqM.get(rid)! - evEq + CALA_EQ[slot.kind] > capEq + 1e-6) continue;
           if (cntM.get(rid)! - conflicts.length + 1 > r.cap) continue;
           if (slot.kind === "godzinka" && // reguła 14:55: łańcuch 4 godzinek tylko gdy najwcześniejsza ≥14:55
             !godzinkaChainOk(seats.get(rid)!.filter((j) => j.kind === "godzinka" && !conflicts.includes(j)).map((j) => j.s), slot.startT)) continue;
-          const saved = seats.get(rid)!.slice();
-          const savedM = conflicts.map((c) => [c.oid, matchOf.get(c.oid)] as const);
-          seats.set(rid, [...saved.filter((j) => !conflicts.includes(j)), { s: slot.startT, e, oid, kind: slot.kind }]);
+          // PEŁNY snapshot (zagnieżdżone augmenty przemieszczają WIELE rezerwowych/obiegów — częściowy
+          // rollback rozjeżdżał seats↔matchOf → commit nakładał dwie podmiany na jednego rezerwowego). fix 2026-06-13
+          const savedSeats = new Map<string, Array<{ s: number; e: number; oid: string; kind: BreakKind }>>();
+          for (const [k, v] of seats) savedSeats.set(k, v.slice());
+          const savedEq = new Map(eqM), savedCnt = new Map(cntM), savedMatch = new Map(matchOf);
+          seats.set(rid, [...seats.get(rid)!.filter((j) => !conflicts.includes(j)), { s: slot.startT, e, oid, kind: slot.kind }]);
           eqM.set(rid, eqM.get(rid)! - evEq + CALA_EQ[slot.kind]);
           cntM.set(rid, cntM.get(rid)! - conflicts.length + 1);
           for (const c of conflicts) matchOf.delete(c.oid);
@@ -1254,12 +1290,11 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
           let ok = true;
           for (const c of conflicts) if (!augment(c.oid, moving)) { ok = false; break; }
           if (ok) return true;
-          // rollback
-          seats.set(rid, saved);
-          eqM.set(rid, saved.reduce((q, j) => q + CALA_EQ[j.kind], 0));
-          cntM.set(rid, saved.length);
-          matchOf.delete(oid);
-          for (const [cid, m] of savedM) if (m) matchOf.set(cid, m);
+          // rollback PEŁNY
+          seats.clear(); for (const [k, v] of savedSeats) seats.set(k, v);
+          eqM.clear(); for (const [k, v] of savedEq) eqM.set(k, v);
+          cntM.clear(); for (const [k, v] of savedCnt) cntM.set(k, v);
+          matchOf.clear(); for (const [k, v] of savedMatch) matchOf.set(k, v);
         }
       }
       return false;
@@ -1365,7 +1400,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // mieści więcej (plan pomocnika: 0 BRAK tam, gdzie silnik zostawia 1). FAZA A: pokrycie (1 przerwa/obieg;
   // full = cała off-A11 LUB połówka@A11; single = połówka@A11) przez augment. FAZA B: dla full z połówką@A11
   // dodaj 2. połówkę (dublet). Adoptujemy TYLKO gdy pokrycie ≥ planu normalnego (inaczej fallback).
-  if (!opts.scanOnly && opts.peaksNotFirst &&
+  if (!opts.scanOnly && opts.peaksNotFirst && !hasLocked &&
       obiegi.every((o) => !(assignments[o.id] ?? []).some((a) => a.manual))) {
     const active = rs.filter((r) => !r.ref.blocked && !r.ref.manualOnly);
     const cap = active.reduce((s, r) => s + Math.min(MAX_RESERVE_LOAD_EQ, capOf(r.ref)), 0);

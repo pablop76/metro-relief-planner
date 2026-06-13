@@ -238,6 +238,7 @@ export default function App() {
       peaksNotFirst,
       simulate,
       seed,
+      lockedAssignments: currentManual, // silnik ZAJMUJE ręcznie wskazanych rezerwowych → brak podwójnego bookowania
     });
     const merged: Record<string, BreakAssignment[]> = { ...res.assignments };
     for (const [id, a] of Object.entries(currentManual)) merged[id] = a;

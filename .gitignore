@@ -6,6 +6,7 @@ dev-dist/
 tools/_extracted/
 tools/_devserver.log
 tools/_verify_engine.ts
+tools/_serial_check.ts
 tools/cover_check.ts
 tools/rescue_check.ts
 data/_debug_rows.json
