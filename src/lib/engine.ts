@@ -1,7 +1,7 @@
 import type {
   Obieg, Reserve, BreakAssignment, PlanResult, BreakKind, Dir, BreakStation,
 } from "./types";
-import { CALA_EQ, MAX_BREAKS_PER_OBIEG, MAX_RESERVE_LOAD_EQ, fitsLoad, returnsOppositeTrack, XFER_BUFFER_MIN } from "./types";
+import { CALA_EQ, MAX_BREAKS_PER_OBIEG, MAX_RESERVE_LOAD_EQ, A11_RESCUE_LOAD_EQ, fitsLoad, returnsOppositeTrack, XFER_BUFFER_MIN } from "./types";
 import { STATIONS, DOWNGRADE, stationSupports } from "./stations";
 
 const hms = (h: number, m: number) => h * 3600 + m * 60;
@@ -198,8 +198,10 @@ interface RState {
 const freeAt = (r: RState, s: number, e: number): boolean => !r.jobs.some((j) => s < j.e && j.s < e);
 
 /** Wybór rezerwowego do slotu: TYLKO z tej samej stacji co slot (rezerwowy podmienia tam, gdzie stoi),
- *  wolny czasowo (bez nakładania), w limicie 4,5h (R13) i limicie własnym (cap/maxJobs), nie zablokowany. */
-function pickReserve(rs: RState[], slot: Slot): RState | null {
+ *  wolny czasowo (bez nakładania), w limicie 4,5h (R13) i limicie własnym (cap/maxJobs), nie zablokowany.
+ *  `rescue=true` (tylko ścieżki pokrycia: tryCover / fairBrakSwap / tryPlaceRelaxed) podnosi sufit eq na
+ *  A11 z 3,0 do 3,5 — dodatkowa ½ wchodzi WYŁĄCZNIE gdy inaczej obieg zostałby BRAK. */
+function pickReserve(rs: RState[], slot: Slot, rescue = false): RState | null {
   const endSec = slot.startT + slot.durationMin * 60;
   const eligible = rs.filter(
     (r) =>
@@ -209,7 +211,7 @@ function pickReserve(rs: RState[], slot: Slot): RState | null {
       freeAt(r, slot.startT, endSec) && // brak nakładania z inną podmianą tego rezerwowego
       (r.ref.availFrom == null || slot.startT >= r.ref.availFrom) && // R18: okno dostępności rezerwowego
       (r.ref.availTo == null || slot.startT + slot.durationMin * 60 <= r.ref.availTo) &&
-      fitsLoad(r.loadEq, slot.kind) && // limit 3 całe (R13) — w równowartości całych, nie minutach
+      fitsLoad(r.loadEq, slot.kind, rescue && r.station === "A11" ? A11_RESCUE_LOAD_EQ : MAX_RESERVE_LOAD_EQ) && // limit 3 całe (R13); A11 ratunkowo 3,5
       r.count < r.cap // limit liczby podmian: rezerwa ruchowa A1 = 1, reszta = bez limitu (R17)
   );
   if (eligible.length === 0) return null;
@@ -449,7 +451,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
         .filter((s) => s.startT >= after)
         .sort((a, b) => score(a) - score(b));
       for (const slot of slots) {
-        const r = pickReserve(rs, slot);
+        const r = pickReserve(rs, slot, true); // ratunkowo: A11 do 3,5 (lepsza ½ niż BRAK)
         if (r) { commit(o, slot, r); return true; }
       }
     }
@@ -1095,7 +1097,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
       const { floor, hi } = coverWindow(x, kind, true); // relax: znieś POL_LATE (pokrycie > jakość)
       const src = kind === "cała" ? candidateSlots : autoSlots; // cała może wejść na A11 (overflow)
       for (const s of src(x, kind, floor, hi).sort((p, q) => score(p) - score(q))) {
-        const r = pickReserve(rs, s);
+        const r = pickReserve(rs, s, true); // ratunkowo: A11 do 3,5 (pokrycie > 3,0)
         if (r) { commit(x, s, r); const ix = unassigned.indexOf(x.id); if (ix >= 0) unassigned.splice(ix, 1); return true; }
       }
     }
@@ -1131,7 +1133,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
           for (const kind of kindsFor(x)) {
             const { floor, hi } = coverWindow(x, kind, true); // relax: pokrycie wysokokołowego > jakość
             for (const s of candidateSlots(x, kind, floor, hi).sort((p, q) => score(p) - score(q))) {
-              const r = pickReserve(rs, s);
+              const r = pickReserve(rs, s, true); // ratunkowo: A11 do 3,5
               if (r) { commit(x, s, r); okX = true; break; }
             }
             if (okX) break;
@@ -1143,7 +1145,7 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
             for (const kind of kindsFor(z)) {
               const { floor, hi } = coverWindow(z, kind, true);
               for (const s of candidateSlots(z, kind, floor, hi).sort((p, q) => score(p) - score(q))) {
-                const r = pickReserve(rs, s);
+                const r = pickReserve(rs, s, true); // ratunkowo: A11 do 3,5 (z też inaczej BRAK)
                 if (r) { commit(z, s, r); okZ = true; break; }
               }
               if (okZ) break;
@@ -1214,7 +1216,8 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
           const conflicts = seats.get(rid)!.filter((j) => slot.startT < j.e && j.s < e);
           if (conflicts.some((c) => moving.has(c.oid))) continue;
           const evEq = conflicts.reduce((q, c) => q + CALA_EQ[c.kind], 0);
-          if (eqM.get(rid)! - evEq + CALA_EQ[slot.kind] > MAX_RESERVE_LOAD_EQ + 1e-6) continue;
+          const capEq = r.station === "A11" ? A11_RESCUE_LOAD_EQ : MAX_RESERVE_LOAD_EQ; // A11 ratunkowo 3,5 (maks. pokrycie)
+          if (eqM.get(rid)! - evEq + CALA_EQ[slot.kind] > capEq + 1e-6) continue;
           if (cntM.get(rid)! - conflicts.length + 1 > r.cap) continue;
           const saved = seats.get(rid)!.slice();
           const savedM = conflicts.map((c) => [c.oid, matchOf.get(c.oid)] as const);

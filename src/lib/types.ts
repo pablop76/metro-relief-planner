@@ -114,12 +114,17 @@ export const MAX_RESERVE_LOAD_MIN = 270;
  *  „Pełny" = 3 całe: 6 połówek = 2 całe+2 połówki = 1 cała+4 połówki = 3 całe. */
 export const CALA_EQ: Record<BreakKind, number> = { "cała": 1, "godzinka": 2 / 3, "połówka": 0.5, "szczeniak": 1 / 3 };
 export const MAX_RESERVE_LOAD_EQ = 3;
+/** Sufit RATUNKOWY dla rezerwowych A11 (decyzja użytkownika 2026-06-13): przy małej liczbie manewrowych
+ *  A11 może przyjąć dodatkową ½ (3,0 → 3,5 eq), ale TYLKO w ścieżkach pokrycia (gdy inaczej byłby BRAK).
+ *  Normalne dociążanie/rebalans dalej trzyma się 3,0. Twardy sufit = 3,5 (nigdy 4,0). */
+export const A11_RESCUE_LOAD_EQ = 3.5;
 const LOAD_EPS = 1e-6;
 /** Czy rezerwowy wyrobił limit (≥ 3 całe). */
 export const reserveFull = (loadEq: number) => loadEq >= MAX_RESERVE_LOAD_EQ - LOAD_EPS;
-/** Czy zmieści się jeszcze przerwa danego rodzaju w limicie 3 całych. */
-export const fitsLoad = (loadEq: number, kind: BreakKind) =>
-  loadEq + CALA_EQ[kind] <= MAX_RESERVE_LOAD_EQ + LOAD_EPS;
+/** Czy zmieści się jeszcze przerwa danego rodzaju w podanym suficie eq (domyślnie 3 całe;
+ *  ścieżki ratunkowe na A11 podają A11_RESCUE_LOAD_EQ = 3,5). */
+export const fitsLoad = (loadEq: number, kind: BreakKind, cap: number = MAX_RESERVE_LOAD_EQ) =>
+  loadEq + CALA_EQ[kind] <= cap + LOAD_EPS;
 
 /** Zaplanowana podmiana na przerwę. */
 export interface BreakAssignment {
