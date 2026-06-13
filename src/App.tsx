@@ -31,6 +31,7 @@ const LS = {
   workEndObieg: "pm_workend_obieg",
   xferBuffer: "pm_xfer_buffer",
   peaksNotFirst: "pm_peaks_not_first",
+  simulate: "pm_simulate",
   layout: "pm_layout",
 };
 
@@ -108,6 +109,9 @@ export default function App() {
   // R20: konfigurowalny bufor na przeskok na drugi peron (minuty); domyślnie 5
   const [xferBufferMin, setXferBufferMin] = useState<number>(() => loadLS<number>(LS.xferBuffer, 5));
   const [peaksNotFirst, setPeaksNotFirst] = useState<boolean>(() => loadLS<boolean>(LS.peaksNotFirst, false));
+  // TRYB SYMULACJI (domyślnie OFF): pozwala automatowi dobierać godzinki/szczeniaki (A7/A18) jako
+  // ostateczność pokrycia przy deficycie. OFF = stary automat (tylko cała/połówka).
+  const [simulate, setSimulate] = useState<boolean>(() => loadLS<boolean>(LS.simulate, false));
   // WARIANT planu: każde kliknięcie „Generuj plan" zwiększa seed → inna, równie dobra kombinacja
   const [planSeed, setPlanSeed] = useState<number>(0);
   const [earliestByObieg, setEarliestByObieg] = useState<Record<string, number>>(() =>
@@ -232,6 +236,7 @@ export default function App() {
       earliestByObieg,
       xferBufferMin,
       peaksNotFirst,
+      simulate,
       seed,
     });
     const merged: Record<string, BreakAssignment[]> = { ...res.assignments };
@@ -266,7 +271,7 @@ export default function App() {
 
   // generuj plan automatycznie tylko gdy zmieni się ROZKŁAD/dzień (nie przy zmianie rezerwowych)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => generate(), [delayed, earliestStart, earliestByObieg, xferBufferMin, peaksNotFirst]);
+  useEffect(() => generate(), [delayed, earliestStart, earliestByObieg, xferBufferMin, peaksNotFirst, simulate]);
 
   // zmiana rezerwowych NIE przebudowuje planu sama — oznacz go jako nieaktualny (kliknij „Generuj")
   const firstResRef = useRef(true);
@@ -294,6 +299,7 @@ export default function App() {
   useEffect(() => localStorage.setItem(LS.workEndObieg, JSON.stringify(workEndByObieg)), [workEndByObieg]);
   useEffect(() => localStorage.setItem(LS.xferBuffer, JSON.stringify(xferBufferMin)), [xferBufferMin]);
   useEffect(() => localStorage.setItem(LS.peaksNotFirst, JSON.stringify(peaksNotFirst)), [peaksNotFirst]);
+  useEffect(() => localStorage.setItem(LS.simulate, JSON.stringify(simulate)), [simulate]);
   useEffect(() => localStorage.setItem(LS.sbW, JSON.stringify(sidebarWidth)), [sidebarWidth]);
   useEffect(() => localStorage.setItem(LS.sbCol, JSON.stringify(sbCollapsed)), [sbCollapsed]);
   useEffect(() => localStorage.setItem(LS.layout, JSON.stringify(layout)), [layout]);
@@ -485,6 +491,14 @@ export default function App() {
               onChange={(e) => setPeaksNotFirst(e.target.checked)}
             />
             nie zaczynaj od szczytów
+          </label>
+          <label className="delay-ctl" title="SYMULACJA (domyślnie wył.): przy deficycie automat może dobrać krótsze przerwy — godzinki i szczeniaki (A7/A18) — jako ostateczność pokrycia, zamiast zostawiać BRAK. Wyłączone = klasyczny automat (tylko całe/połówki). Łańcuch 4 godzinek tylko gdy najwcześniejsza ≥14:55.">
+            <input
+              type="checkbox"
+              checked={simulate}
+              onChange={(e) => setSimulate(e.target.checked)}
+            />
+            🧪 symulacja godzinki/szczeniaki
           </label>
           <button
             className={`btn-gen${planDirty ? " dirty" : ""}`}
