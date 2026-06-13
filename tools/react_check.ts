@@ -158,3 +158,35 @@ const s30breaks = (pCut.assignments["S30"] ?? []).filter((a) => a.reserveId);
 const viol = s30breaks.filter((a) => a.startT + a.durationMin * 60 > 18 * 3600);
 console.log(`S30 przerwy przy „do 18:00": ${s30breaks.map((a) => `${a.kind}@${a.station} ${HHMMSS(a.startT)} (powrót ${HHMMSS(a.startT + a.durationMin * 60)})`).join(" | ") || "BRAK"} ` +
   `· powrót po 18:00: ${viol.length ? "ZŁAMANE" : "OK"} · plan vs baza: ${sig(pCut) === sig(base) ? "IDENTYCZNY (nie reaguje!)" : "ZMIENIONY"}`);
+
+// 6. KROKI 1–4 (uzgodnione zmiany silnika): całodobowe ~4,5 koła · tryb symulacji · reguła 14:55
+console.log("\n=== KROKI 1–4: całodobowe 4,5 · symulacja · reguła 14:55 ===");
+// KROK 1: całozmianowy (throughShift) ma REALNE koła (liczone do 20:45, ~4,5), NIE ∞
+const through = obiegi.filter((o) => o.throughShift);
+const infLoops = through.filter((o) => !Number.isFinite(o.loops));
+const finLoops = through.map((o) => o.loops).filter(Number.isFinite);
+console.log(`— całodobowych: ${through.length} · ∞ kół: ${infLoops.length} ${infLoops.length ? "✗ (powinny być realne ~4,5)" : "✓ wszystkie skończone"}` +
+  `${finLoops.length ? ` · koła min/max ${Math.min(...finLoops).toFixed(2)}/${Math.max(...finLoops).toFixed(2)} (oczek. ~4,5)` : ""}`);
+// KROK 3+4: symulacja domyka deficyt godzinką/szczeniakiem (BRAK on ≤ BRAK off) BEZ złamania reguły 14:55
+const CHAIN_FLOOR = 14 * 3600 + 55 * 60;
+const brakOf = (p: ReturnType<typeof planBreaks>) => obiegi.filter((o) => !(p.assignments[o.id] ?? []).some((a) => a.reserveId)).length;
+const simPools: Array<[string, Reserve[]]> = [
+  ["9  (1/1/4/2/1)", pool({ A1: 1, A7: 1, A11: 4, A18: 2, A23: 1 })],
+  ["10 (3/1/4/1/1)", pool({ A1: 3, A7: 1, A11: 4, A18: 1, A23: 1 })],
+  ["11 (3/1/4/2/1)", pool({ A1: 3, A7: 1, A11: 4, A18: 2, A23: 1 })],
+];
+for (const [label, rv] of simPools) {
+  const off = planBreaks(obiegi, rv, OPTS);
+  const on = planBreaks(obiegi, rv, { ...OPTS, simulate: true });
+  const starts: Record<string, number[]> = {};
+  for (const list of Object.values(on.assignments))
+    for (const a of list) if (a.reserveId && a.kind === "godzinka") (starts[a.reserveId] ??= []).push(a.startT);
+  const chainViol = Object.entries(starts).filter(([, ss]) => ss.length >= 4 && Math.min(...ss) < CHAIN_FLOOR);
+  console.log(`— ${label}: BRAK ${brakOf(off)} → ${brakOf(on)} (sim)${brakOf(on) <= brakOf(off) ? "" : " ✗ sim POGORSZYŁA"}` +
+    ` · reguła 14:55: ${chainViol.length ? `✗ ZŁAMANA [${chainViol.map(([id]) => id).join(",")}]` : "✓"}`);
+}
+// pełna 12 + sim: bez regresji (nadal same całe/połówki, zero krótkich)
+const full12sim = planBreaks(obiegi, reserves, { ...OPTS, simulate: true });
+const kindsFull = new Set(Object.values(full12sim.assignments).flat().filter((a) => a.reserveId).map((a) => a.kind));
+console.log(`— PEŁNA 12 + sim: BRAK ${brakOf(full12sim)} · rodzaje ${[...kindsFull].join(",")} ` +
+  `${kindsFull.has("godzinka") || kindsFull.has("szczeniak") ? "✗ (niepotrzebne krótkie)" : "✓ tylko cała/połówka"}`);

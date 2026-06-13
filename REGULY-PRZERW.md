@@ -31,12 +31,16 @@ zmienia go ktoś na linii.
 
 | Kryterium (ostatnie zdarzenie obiegu)                          | Koła                                     | Kto                            |
 | -------------------------------------------------------------- | ---------------------------------------- | ------------------------------ |
-| **zjazd ≥ 21:00** — zmiennik na linii / 3. zmiana / całodobowy | `Infinity`, zawsze cała (`throughShift`) | 1–13, D14, D15, D21            |
+| **zjazd ≥ 21:00** — zmiennik na linii / 3. zmiana / całodobowy | **~4,5** (koła liczone do 20:45), zawsze cała (`throughShift`) | 1–13, D14, D15, D21            |
 | **zjazd < 21:00** — maszynista sam zjeżdża na STP              | liczone                                  | wszystkie S, D16, D17–D20, D22 |
 
-- Detekcja: `lastT >= RELIEF_ON_LINE` (21:00) → cała (nieliczone). Próg = deklarowana zmiana na
-  linii „nie później niż 21:00".
-- D17–D20 są liczone, ale mają najwięcej kół (~5,0–5,15) → ranking i tak daje im całą.
+- Detekcja: `lastT >= RELIEF_ON_LINE` (21:00) → **całozmianowy** (`throughShift`, ZAWSZE cała, priorytet
+  pokrycia). Próg = deklarowana zmiana na linii „nie później niż 21:00".
+- **Koła całozmianowego liczone DO 20:45** (`THIRD_SHIFT_RELIEF`, korekta 2026-06-13), **nie ∞**: 3. zmiana
+  przejmuje pociąg ~20:45, więc wychodzi **~4,5** — MNIEJ niż D17–D20 (5,0). Flaga `throughShift` i tak
+  gwarantuje całą i wyklucza z racjonowania, ale **ranking obciążenia jest realny** (D17–D20 dostają
+  pierwszeństwo dociążenia przed całodobowymi).
+- D17–D20 są liczone, mają najwięcej kół (~5,0–5,15) → ranking i tak daje im całą.
   D22 zjeżdża sam wcześnie (≈19:19) → realny kandydat na połówkę.
 
 **Przykłady zweryfikowane (2026-06-07):**
@@ -79,7 +83,13 @@ Decyduje liczba kół (`planBreaks`) — **BILANS = MAKSYMALIZUJ OBCIĄŻENIE** 
   (odpychanie całych z A11) działa **TYLKO gdy są połówki** (deficyt) — wtedy rezerwuje A11 dla nich
   (`reserveA11ForPolowki`). Połówka jest możliwa **tylko na A11**.
 - **TYLKO całe i połówki w automacie** — godzinka i szczeniak tylko ręcznie (godzinka = ryzyko przy awarii;
-  szczeniak za słaby).
+  szczeniak za słaby). **WYJĄTEK — TRYB SYMULACJI** (`opts.simulate`, checkbox „🧪 symulacja godzinki/
+  szczeniaki", **domyślnie OFF**, korekta 2026-06-13): gdy włączony, przy DEFICYCIE automat może dobrać
+  godzinkę/szczeniaka (A7/A18) jako ostateczność pokrycia, zamiast zostawiać BRAK (drabina: cała → połówka@A11
+  → ratunek A11 3,5 → godzinka/szczeniak → BRAK). OFF = zachowanie bez zmian (tylko cała/połówka).
+- **REGUŁA 14:55 (łańcuch godzinek, tryb symulacji)** — rezerwowy może mieć **łańcuch 4 godzinek WYŁĄCZNIE,
+  gdy najwcześniejsza z nich startuje ≥ 14:55** (`GODZINKA_CHAIN_FLOOR`). Inaczej: rezerwowy z którąkolwiek
+  godzinką przed 14:55 ma **max 3 godzinki**. Pilnowane przy doborze (`pickReserve`, `maxCoverMatch`).
 - Ręczny override (`forcedKinds`) > auto i jest **TWARDY** (fix 2026-06-12): obieg z wymuszonym rodzajem
   dostaje TYLKO ten rodzaj — bez downgrade'u w tryAssign/tryCover/B&B (wymuszona cała → cała albo BRAK;
   wcześniej przy deficycie bywała ścinana na połówkę i wymuszenie „nie działało"). (Nawrót racjonowania
@@ -186,10 +196,12 @@ tor 2 = Kabaty): **A1, A7 → Kabaty** (tor 2); **A18, A23 → Młociny** (tor 1
 To preferencja w `score` (`DIR_PENALTY` ~6 min), nie twarda reguła — silnik miesza kierunki, gdy wymaga tego
 pokrycie lub znacząco lepszy czas startu.
 
-> **Automat nadaje TYLKO całe i połówki** (`AUTO_KINDS` = cała/połówka). Godzinka i szczeniak — **tylko
-> ręcznie** w edytorze. Godzinka: większy wysiłek planistyczny i ryzyko przy awarii; szczeniak: za słaby.
-> Gdy całą/połówką się nie da → BRAK (sygnał do ręcznej obsady), nie godzinka/szczeniak. A11 uciągnie nawet
-> ~30 połówek na 5 maszynistów, więc całe trzymamy poza A11, a połówki na A11.
+> **Automat nadaje TYLKO całe i połówki** (`AUTO_KINDS` = cała/połówka) — **chyba że włączysz tryb symulacji**
+> (`AUTO_KINDS_SIM`, checkbox „🧪 symulacja", domyślnie OFF; wtedy przy deficycie dochodzą godzinki/szczeniaki
+> A7/A18 z regułą 14:55 — patrz §2). Bez symulacji godzinka i szczeniak — **tylko ręcznie** w edytorze.
+> Godzinka: większy wysiłek planistyczny i ryzyko przy awarii; szczeniak: za słaby. Gdy całą/połówką się nie
+> da → BRAK (sygnał do ręcznej obsady), a po godzinkę/szczeniaka automat sięga tylko w trybie symulacji. A11
+> uciągnie nawet ~30 połówek na 5 maszynistów, więc całe trzymamy poza A11, a połówki na A11.
 > „godzinka" liczona jak połówka/szczeniak (powrót w przeciwnym kierunku), ale do dalszego krańca:
 > A7→Młociny ≈ 58 min, A18→Kabaty ≈ 62–66 min (realnie z rozkładu).
 
@@ -226,7 +238,10 @@ rozciągać przerw). Sam powrót pociągu z przerwy **nie** jest alarmem.
   nią nie ma już wolnego rezerwowego (nadmiar). Zostawia to A11 dla połówek.
 - Limit obciążenia: **3 całe** liczone w równowartości (cała=1, godzinka=⅔, połówka=0,5, szczeniak=⅓),
   nie w minutach (`MAX_RESERVE_LOAD_EQ`). 3 całe = 6 połówek = 2 całe+2 połówki = 1 cała+4 połówki.
-  „Pełny" gdy równowartość ≥ 3.
+  „Pełny" gdy równowartość ≥ 3. **Sufit RATUNKOWY A11 = 3,5** (`A11_RESCUE_LOAD_EQ`, korekta 2026-06-13):
+  na A11 dodatkowa ½ (7. połówka) wchodzi **WYŁĄCZNIE ścieżką pokrycia** (`tryCover` / `fairBrakSwap` /
+  `maxCoverMatch`, `rescue=true`), gdy inaczej obieg zostałby **BRAK**. Normalne dociążanie / B&B / rebalans
+  trzymają twardo **3,0** — ratunkowe 3,5 nigdy nie jest celem dokładek.
 - **Limit liczby podmian wg stacji** (`capOf`): na **A1 (Kabaty) tylko JEDEN** rezerwowy (rezerwa ruchowa) ma
   **domyślnie 1** podmianę i zostaje pod ręką (R17). Wskazanie: jawny flag `Reserve.rolling` (checkbox w panelu) >
   pierwszy niezablokowany rezerwowy A1. **Pozostali rezerwowi A1 pracują normalnie do 3 kół**. Inne stacje:
