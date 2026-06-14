@@ -114,6 +114,17 @@ na linii → **całozmianowy** (∞, zawsze cała). Zmiana godzin od razu przeli
   To **twarda dolna granica** (slotów wcześniej nie ma); w `score` po prostu „wcześniej = lepiej" od progu
   w górę. Pomocnik steruje wczesnym startem wyłącznie tym inputem — np. próg 14:00 pozwala obiegowi z wjazdem
   13:00 dostać przerwę tuż po 14:00. Naturalna serializacja rozkłada przerwy po popołudniu.
+- **CAŁA NIE WCZEŚNIEJ NIŻ 14:30 → 2 POŁÓWKI (`CALA_EARLIEST`, decyzja użytkownika 2026-06-14):** decyzja
+  „od kiedy zacząć" należy do pomocnika (input „zacznij od"). Gdy obniży go PONIŻEJ 14:30 dla obiegu, który
+  fizycznie może ruszyć tak wcześnie (`floorOf < 14:30`), jego **CAŁA jest rozbijana na DWIE POŁÓWKI** — 1.
+  wczesna (przed 14:30) + 2. dokładana później (PASS A → łącznie 1,0, jak cała, tylko **2 przydziały
+  rezerwowych** zamiast 1). Twardy zakaz egzekwowany w `candidateSlots` (wszystkie ścieżki auto, w tym overflow
+  cała@A11); ręczny edytor (`feasibleSlots manual`) dopuszcza wczesną całą (pełna swoboda planisty).
+  **Stała 14:30 jest odrębna** od domyślnego progu — granica „od kiedy cała" zostaje, nawet gdyby domyślny próg
+  się zmienił. **WYJĄTKI:** (a) **całozmianowy** (E4 = zawsze cała) NIE jest rozbijany — jego cała tylko
+  przesuwa się na ≥14:30; (b) przy **deficycie** (pętla cięcia już tnie całe) rozbicie się NIE odpala
+  (podwajałoby zapotrzebowanie na sloty → ryzyko BRAK; pokrycie > komfort), ale zakaz całej < 14:30 i tak
+  obowiązuje. Domyślnie (próg 14:30) reguła jest **nieaktywna**. Guard: `react_check.ts` (sekcja „CAŁA < 14:30").
 - **Dwa okna:**
   - **1. (= JEDYNA gwarantowana) przerwa** — start najpóźniej **18:20** (`LATEST_FIRST`). Reguła: **jedyna
     przerwa NIE może startować po 18:20** (pokrycie = 1 przerwa). Dodatkowo **R3**: `latestFirstOf =

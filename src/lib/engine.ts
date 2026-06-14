@@ -36,6 +36,12 @@ const ONLY_POL_LATEST = hms(18, 15);
 export const PREF_WINDOW: [number, number] = [hms(16, 0), hms(17, 30)];
 export const PREF_START = PREF_WINDOW[0]; // zachowane dla zgodności eksportu
 const EARLIEST_DEFAULT = hms(14, 30);    // „zacznij od" — domyślny start przerw (R2)
+// CAŁE nie wcześniej niż 14:30 (decyzja użytkownika 2026-06-14). Gdy pomocnik OBNIŻY próg „zacznij od"
+// poniżej tej granicy dla obiegu, który fizycznie może ruszyć tak wcześnie (floorOf < CALA_EARLIEST),
+// jego CAŁA jest rozbijana na DWIE POŁÓWKI (1. wczesna przed 14:30, 2. dokładana później przez PASS A).
+// Łączne obciążenie 1,0 bez zmian; różnica to 2 przydziały rezerwowych zamiast 1. Stała odrębna od
+// EARLIEST_DEFAULT — granica „od kiedy cała" zostaje 14:30, nawet jeśli domyślny próg kiedyś się zmieni.
+const CALA_EARLIEST = hms(14, 30);
 // „ZACZNIJ OD" = ZALECENIE „nie wcześniej niż" (decyzja użytkownika 2026-06-12, usunięto tolerancję +15′):
 // próg jest twardą dolną granicą slotów, a w score po prostu „wcześniej = lepiej" od progu w górę —
 // bez plateau. Pomocnik steruje startem wyłącznie tym inputem (globalnie / per obieg).
@@ -152,13 +158,17 @@ interface Slot {
  *  (pełna pętla); połówka/szczeniak = najbliższe minięcie w PRZECIWNYM kierunku (pół pętli / krótki nawrót).
  *  Dwa pociągi dzielą minutę tylko mijając się w przeciwnych kierunkach, więc powrót tego samego obiegu
  *  jest jednoznaczny i zachowuje kolejność (pociąg jadący z tyłu wraca po pociągu z przodu). */
-function candidateSlots(o: Obieg, kind: BreakKind, earliest: number, latest: number): Slot[] {
+function candidateSlots(o: Obieg, kind: BreakKind, earliest: number, latest: number, allowEarlyCala = false): Slot[] {
   const ae = afternoonEntryT(o);
   const sameDir = kind === "cała";
   const out: Slot[] = [];
   for (let i = 0; i < o.events.length; i++) {
     const ev = o.events[i];
     if (ev.t < Math.max(earliest, ae) || ev.t > latest) continue;
+    // CAŁA nie wcześniej niż 14:30 (decyzja użytkownika 2026-06-14) — wspólny choke point WSZYSTKICH ścieżek
+    // auto (w tym overflow „dopuść cała@A11"). Obieg ściągnięty wcześniej dostaje połówkę (patrz earlySplit);
+    // całozmianowy (E4 = zawsze cała) zachowuje całą, tylko przesuniętą na ≥14:30. Ręczny edytor: allowEarlyCala.
+    if (kind === "cała" && !allowEarlyCala && ev.t < CALA_EARLIEST) continue;
     if (!stationSupports(ev.station, kind, ev.dir)) continue;
     // realny powrót na tę stację (R7: musi wrócić, zanim zjedzie — czyli zdarzenie istnieje w rozkładzie)
     let returnT = -1;
@@ -192,7 +202,7 @@ export function feasibleSlots(o: Obieg, opts: PlanOptions = {}, manual = false):
   const floor = manual ? driverStart : opts.earliestByObieg?.[o.id] ?? g;
   const latest = manual ? SHIFT2_END : LATEST_SECOND; // ręczny: do końca 2. zmiany (22:00)
   const all: Slot[] = [];
-  for (const kind of DOWNGRADE) all.push(...candidateSlots(o, kind, floor, latest));
+  for (const kind of DOWNGRADE) all.push(...candidateSlots(o, kind, floor, latest, manual)); // ręczny: cała przed 14:30 dozwolona
   return all.sort((a, b) => a.startT - b.startT || b.durationMin - a.durationMin);
 }
 
@@ -345,6 +355,22 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
     if (eqDemand() <= capacity) break;              // moc starcza (nadwyżka) → reszta zostaje CAŁYMI (max obciążenie)
     autoPolowka.add(o.id);                          // deficyt: utnij najmniej-kołowy z pozostałych → połówka
   }
+  // WCZESNE CAŁE → 2 POŁÓWKI (decyzja użytkownika 2026-06-14): obieg, którego CAŁA mogłaby ruszyć PRZED 14:30
+  // (pomocnik obniżył próg „zacznij od" poniżej granicy, a maszynista wjeżdża dość wcześnie → floorOf < CALA_EARLIEST),
+  // staje się 1. WCZESNĄ POŁÓWKĄ; PASS A dokłada 2. połówkę → łącznie 1,0 (jak cała, tylko 2 przydziały rezerwowych).
+  // Domyślnie (próg = 14:30) NIC się nie wyzwala. Całozmianowych (E4 = zawsze cała) i ręcznych (forced) NIE rusza.
+  // earlySplit ≠ deficyt: to „dwie połówki" (pełne obłożenie), więc traktowane jak cała przy „nie zaczynaj od
+  // szczytów" (isPeakLate) i może startować wcześnie (zniesiony polLo z §4a krok4).
+  // earlySplit TYLKO przy braku deficytu: gdy pętla wyżej już tnie całe (ciasna moc), rozbicie na 2 połówki
+  // PODWAJA zapotrzebowanie na sloty rezerwowych i grozi BRAK-iem — a pokrycie ma priorytet nad komfortem
+  // (jak `enoughReserves`/`relax`). W deficycie sam zakaz w candidateSlots wystarcza, by cała nie szła < 14:30.
+  const earlySplit = new Set<string>();
+  if (autoPolowka.size === 0) {
+    for (const o of obiegi) {
+      if (forced[o.id] || isThrough(o) || !Number.isFinite(o.loops)) continue;
+      if (floorOf(o) < CALA_EARLIEST) { autoPolowka.add(o.id); earlySplit.add(o.id); }
+    }
+  }
   // NADWYŻKA MOCY policzona Z GÓRY (decyzja użytkownika 2026-06-12): gdy moc > zapotrzebowanie, znamy od
   // startu liczbę NADMIAROWYCH POŁÓWEK do rozdania (eq nadwyżki × 2). Te połówki wpadną jako 2. przerwy do
   // najbardziej kołowych obiegów (drabina R16) i są możliwe TYLKO na A11 — więc A11 trzeba zarezerwować pod
@@ -383,13 +409,13 @@ export function planBreaks(obiegi: Obieg[], reserves: Reserve[], opts: PlanOptio
   // Dawne kryterium „koła < 4,5" było błędne — przy PEŁNEJ obsadzie pchało na późno także pełne CAŁE szczytów.
   // Działa w `optimizeExact` (sort slotów); pełne odtworzenie metody pomocnika w głębokim deficycie wymaga
   // osobno cięcia całodobowych i cała@A11 (TODO — patrz REGULY-PRZERW.md / pamięć projektu).
-  const isPeakLate = (o: Obieg) => !!opts.peaksNotFirst && dk(o) === "połówka";
+  const isPeakLate = (o: Obieg) => !!opts.peaksNotFirst && dk(o) === "połówka" && !earlySplit.has(o.id);
   // `relax` (2026-06-12) — POKRYCIE > jakość: w passach ratunkowych (fairBrakSwap) znosimy regułę „połówka
   // ≥3,5 koła nie pierwsza" (POL_LATE), bo lepiej dać wysokokołowemu wczesną połówkę niż zostawić go BRAK.
   const coverWindow = (o: Obieg, kind: BreakKind, relax = false): { floor: number; hi: number } => {
     if (kind === "połówka") {
       // po 1. kole tylko gdy: dość rezerwowych (≥10) ORAZ obieg ≥ 3,5 koła; inaczej połówka może startować wcześnie
-      const polLo = !relax && enoughReserves && effLoops(o) >= POL_LATE_LOOPS ? o.entry2nd + o.lapMin * 60 : 0;
+      const polLo = !relax && !earlySplit.has(o.id) && enoughReserves && effLoops(o) >= POL_LATE_LOOPS ? o.entry2nd + o.lapMin * 60 : 0;
       return { floor: Math.max(floorOf(o), polLo), hi: Math.min(latestFirstOf(o), ONLY_POL_LATEST) };
     }
     return { floor: floorOf(o), hi: latestFirstOf(o) };

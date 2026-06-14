@@ -55,6 +55,11 @@ licz relanie z rozkładu do podmian ale jako informacja dla pomocnika wpisuj og�
 - **D5** ✅ Najlepszy wariant: **cała + połówka** razem/blisko; dobra alternatywa: **dwie połówki co 2–3 h**.
 - **D6** ❓ **Max 6h ciągłej pracy** bez przerwy, liczone od stałej **14:00** _(R3)_ — ⚠️ część obiegów startuje 13:00/13:30. **Patrz DECYZJA D3.** dla 13:00 szesc godzin będzie wcześniej
 - **D7** ✅ Brak slotu w oknie → **BRAK** (ręczna obsada).
+- **D8** ✅ **CAŁA nie wcześniej niż 14:30 → 2 POŁÓWKI** (2026-06-14). „Od kiedy zacząć" = input pomocnika
+  („zacznij od"); obniżenie go < 14:30 dla obiegu mogącego ruszyć wcześnie rozbija jego całą na 2 połówki
+  (1. wczesna + 2. późniejsza = 1,0). Całozmianowy (E4) → cała przesunięta na ≥14:30, bez rozbicia. Deficyt →
+  rozbicie wyłączone (pokrycie > komfort), zakaz całej < 14:30 nadal działa. Patrz REGULY-PRZERW §3.
+  Decyzja **D2 pozostaje otwarta** (preferencja okna) — niezależna od tej reguły.
 
 ## E. Dobór długości wg "kół" 2. zmiany — R10, R11
 

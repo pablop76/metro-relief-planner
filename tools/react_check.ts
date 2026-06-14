@@ -226,3 +226,27 @@ const full12sim = planBreaks(obiegi, reserves, { ...OPTS, simulate: true });
 const kindsFull = new Set(Object.values(full12sim.assignments).flat().filter((a) => a.reserveId).map((a) => a.kind));
 console.log(`— PEŁNA 12 + sim: BRAK ${brakOf(full12sim)} · rodzaje ${[...kindsFull].join(",")} ` +
   `${kindsFull.has("godzinka") || kindsFull.has("szczeniak") ? "✗ (niepotrzebne krótkie)" : "✓ tylko cała/połówka"}`);
+
+// ════ CAŁA < 14:30 → 2 POŁÓWKI (decyzja użytkownika 2026-06-14) ════
+// Niezmiennik: gdy pomocnik obniży próg „zacznij od" poniżej 14:30, ŻADNA cała nie startuje przed 14:30 (auto).
+// Zwykły obieg ściągnięty wcześnie dostaje 2 POŁÓWKI (1. wczesna + 2. późniejsza = 1,0). Domyślnie (próg 14:30)
+// reguła jest NIEAKTYWNA (0 wczesnych bloków). Całozmianowe (E4) zachowują całą — tylko przesuniętą na ≥14:30.
+console.log("\n=== CAŁA < 14:30 → 2 POŁÓWKI (próg z inputu pomocnika) ===");
+{
+  const CE = 14 * 3600 + 30 * 60;
+  for (const earliest of [CE, 14 * 3600, 13 * 3600 + 30 * 60]) {
+    const p = planBreaks(obiegi, reserves, { earliest });
+    const viol: string[] = [];
+    let earlyBlocks = 0, splitPairs = 0;
+    for (const o of obiegi) {
+      const list = (p.assignments[o.id] ?? []).filter((a) => a.reserveId).sort((a, b) => a.startT - b.startT);
+      for (const a of list) if (a.kind === "cała" && a.startT < CE) viol.push(o.id);
+      if (!list.length || list[0].startT >= CE) continue;
+      earlyBlocks++;
+      if (list.length >= 2 && list.every((a) => a.kind === "połówka")) splitPairs++;
+    }
+    const h = `${Math.floor(earliest / 3600)}:${String(Math.floor((earliest % 3600) / 60)).padStart(2, "0")}`;
+    console.log(`— próg ${h}: cała<14:30 ${viol.length ? "✗ ZŁAMANA [" + viol.join(",") + "]" : "✓ brak"}` +
+      ` · wczesnych 1. bloków ${earlyBlocks} · rozbitych na 2 połówki ${splitPairs}`);
+  }
+}
