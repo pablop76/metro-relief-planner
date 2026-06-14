@@ -227,63 +227,72 @@ const kindsFull = new Set(Object.values(full12sim.assignments).flat().filter((a)
 console.log(`— PEŁNA 12 + sim: BRAK ${brakOf(full12sim)} · rodzaje ${[...kindsFull].join(",")} ` +
   `${kindsFull.has("godzinka") || kindsFull.has("szczeniak") ? "✗ (niepotrzebne krótkie)" : "✓ tylko cała/połówka"}`);
 
-// ════ CAŁA < 14:30 → 2 POŁÓWKI (decyzja użytkownika 2026-06-14) ════
-// Niezmiennik: gdy pomocnik obniży próg „zacznij od" poniżej 14:30, ŻADNA cała nie startuje przed 14:30 (auto).
-// Zwykły obieg ściągnięty wcześnie dostaje 2 POŁÓWKI (1. wczesna + 2. późniejsza = 1,0). Domyślnie (próg 14:30)
-// reguła jest NIEAKTYWNA (0 wczesnych bloków). Całozmianowe (E4) zachowują całą — tylko przesuniętą na ≥14:30.
-console.log("\n=== CAŁA < 14:30 → 2 POŁÓWKI (próg z inputu pomocnika) ===");
+// ════ GUARDY NIEZMIENNIKÓW — PRZEKRÓJ PUL REZERWOWYCH (deficyt → baza → nadwyżka) ════
+// Oba niezmienniki sprawdzane na 5 PULACH (9/11/12/14/16 rez.) × 3 PROGACH „zacznij od" (nie tylko baza 12).
+const guardRosters: Array<[string, Reserve[]]> = [
+  ["9·deficyt   ", pool({ A1: 1, A7: 1, A11: 4, A18: 2, A23: 1 })],
+  ["11·ciasno   ", pool({ A1: 3, A7: 1, A11: 4, A18: 2, A23: 1 })],
+  ["12·baza     ", reserves],
+  ["14·nadwyżka ", pool({ A1: 4, A7: 2, A11: 5, A18: 2, A23: 1 })],
+  ["16·duża nadw", pool({ A1: 4, A7: 2, A11: 6, A18: 3, A23: 1 })],
+];
+const guardThresholds = [14 * 3600 + 30 * 60, 14 * 3600, 13 * 3600 + 30 * 60];
+
+// ── CAŁA < 14:30 → 2 POŁÓWKI (decyzja użytkownika 2026-06-14) ──
+// Niezmiennik: gdy próg „zacznij od" < 14:30, ŻADNA cała nie startuje przed 14:30 (auto); zwykły obieg
+// ściągnięty wcześnie dostaje 2 połówki. Domyślnie (14:30) nieaktywne. Całozmianowe (E4) → cała ≥14:30.
+console.log("\n=== CAŁA < 14:30 → 2 POŁÓWKI (5 pul × 3 progi) ===");
 {
   const CE = 14 * 3600 + 30 * 60;
-  for (const earliest of [CE, 14 * 3600, 13 * 3600 + 30 * 60]) {
-    const p = planBreaks(obiegi, reserves, { earliest });
-    const viol: string[] = [];
-    let earlyBlocks = 0, splitPairs = 0;
-    for (const o of obiegi) {
-      const list = (p.assignments[o.id] ?? []).filter((a) => a.reserveId).sort((a, b) => a.startT - b.startT);
-      for (const a of list) if (a.kind === "cała" && a.startT < CE) viol.push(o.id);
-      if (!list.length || list[0].startT >= CE) continue;
-      earlyBlocks++;
-      if (list.length >= 2 && list.every((a) => a.kind === "połówka")) splitPairs++;
+  for (const [label, rv] of guardRosters) {
+    const viol = new Set<string>();
+    let early = 0, splits = 0;
+    for (const earliest of guardThresholds) {
+      const p = planBreaks(obiegi, rv, { earliest });
+      for (const o of obiegi) {
+        const list = (p.assignments[o.id] ?? []).filter((a) => a.reserveId).sort((a, b) => a.startT - b.startT);
+        for (const a of list) if (a.kind === "cała" && a.startT < CE) viol.add(`${o.id}@${HHMMSS(earliest)}`);
+        if (!list.length || list[0].startT >= CE) continue;
+        early++;
+        if (list.length >= 2 && list.every((a) => a.kind === "połówka")) splits++;
+      }
     }
-    const h = `${Math.floor(earliest / 3600)}:${String(Math.floor((earliest % 3600) / 60)).padStart(2, "0")}`;
-    console.log(`— próg ${h}: cała<14:30 ${viol.length ? "✗ ZŁAMANA [" + viol.join(",") + "]" : "✓ brak"}` +
-      ` · wczesnych 1. bloków ${earlyBlocks} · rozbitych na 2 połówki ${splitPairs}`);
+    console.log(`— ${label}: ${viol.size ? "✗ ZŁAMANA [" + [...viol].join(", ") + "]" : "✓ brak całej<14:30"}` +
+      ` · wczesnych bloków ${early} · par 2×½ ${splits}`);
   }
 }
 
-// ════ MAX 6h15 BEZ PRZERWY (R3, decyzja użytkownika 2026-06-14, symetria 2026-06-14) ════
-// Niezmiennik (SYMETRYCZNY): żaden OBSADZONY obieg nie pracuje dłużej niż 6h15 bez przerwy — ANI przed 1.
-// przerwą, ANI po ostatniej do końca pracy. Trzy segmenty, WSZYSTKIE twarde pass/fail dla WSZYSTKICH obiegów:
-//   (1) wjazd → start 1. przerwy ≤ 6h15
-//   (2) powrót z przerwy → start następnej („między”) ≤ 6h15  [obiegi z 2 przerwami]
-//   (3) powrót z OSTATNIEJ → koniec pracy („ogon”) ≤ 6h15
-// Koniec pracy: ZWYKŁY = workEnd ?? lastT (realny zjazd 19:00–21:00); CAŁOZMIANOWY = THIRD_SHIFT_RELIEF
-// (20:45, zmiana na linii) — bo jego lastT to KONIEC DOBY (~24:00), nie zjazd. BRAK = osobna kat. (cover_check).
-console.log("\n=== MAX 6h15 BEZ PRZERWY (R3, symetryczny) ===");
+// ── MAX 6h15 BEZ PRZERWY (R3, symetryczny, decyzja użytkownika 2026-06-14) ──
+// Żaden OBSADZONY obieg > 6h15 bez przerwy: (1) wjazd→1.przerwa, (2) między, (3) ogon = ostatnia→koniec pracy.
+// Koniec pracy: ZWYKŁY = workEnd ?? lastT (zjazd); CAŁOZMIANOWY = THIRD_SHIFT_RELIEF (20:45, lastT=koniec doby).
+// Twarde pass/fail dla WSZYSTKICH. BRAK = osobna kategoria (cover_check).
+console.log("\n=== MAX 6h15 BEZ PRZERWY (R3, symetryczny, 5 pul × 3 progi) ===");
 {
   const L = 6 * 3600 + 15 * 60;
   const dur = (s: number) => `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}`;
-  for (const earliest of [14 * 3600 + 30 * 60, 14 * 3600, 13 * 3600 + 30 * 60]) {
-    const p = planBreaks(obiegi, reserves, { earliest });
+  for (const [label, rv] of guardRosters) {
     let maxPre = 0, maxBetween = 0, maxTail = 0;
     const viol: string[] = [];
-    for (const o of obiegi) {
-      const list = (p.assignments[o.id] ?? []).filter((a) => a.reserveId).sort((a, b) => a.startT - b.startT);
-      if (!list.length) continue; // BRAK — osobna kategoria (cover_check)
-      const pre = list[0].startT - o.entry2nd;
-      maxPre = Math.max(maxPre, pre);
-      if (pre > L) viol.push(`${o.id} wjazd→przerwa ${dur(pre)}`);
-      for (let i = 1; i < list.length; i++) {
-        const g = list[i].startT - (list[i - 1].startT + list[i - 1].durationMin * 60);
-        maxBetween = Math.max(maxBetween, g);
-        if (g > L) viol.push(`${o.id} między ${dur(g)}`);
+    for (const earliest of guardThresholds) {
+      const p = planBreaks(obiegi, rv, { earliest });
+      for (const o of obiegi) {
+        const list = (p.assignments[o.id] ?? []).filter((a) => a.reserveId).sort((a, b) => a.startT - b.startT);
+        if (!list.length) continue;
+        const pre = list[0].startT - o.entry2nd;
+        maxPre = Math.max(maxPre, pre);
+        if (pre > L) viol.push(`${o.id} wjazd ${dur(pre)}@${HHMMSS(earliest)}`);
+        for (let i = 1; i < list.length; i++) {
+          const g = list[i].startT - (list[i - 1].startT + list[i - 1].durationMin * 60);
+          maxBetween = Math.max(maxBetween, g);
+          if (g > L) viol.push(`${o.id} między ${dur(g)}@${HHMMSS(earliest)}`);
+        }
+        const endWork = o.throughShift ? THIRD_SHIFT_RELIEF : (o.workEnd ?? o.lastT);
+        const tail = endWork - (list[list.length - 1].startT + list[list.length - 1].durationMin * 60);
+        maxTail = Math.max(maxTail, tail);
+        if (tail > L) viol.push(`${o.id}${o.throughShift ? "·24h" : ""} ogon ${dur(tail)}@${HHMMSS(earliest)}`);
       }
-      const endWork = o.throughShift ? THIRD_SHIFT_RELIEF : (o.workEnd ?? o.lastT); // 24h: zmiana na linii 20:45
-      const tail = endWork - (list[list.length - 1].startT + list[list.length - 1].durationMin * 60);
-      maxTail = Math.max(maxTail, tail);
-      if (tail > L) viol.push(`${o.id}${o.throughShift ? "·24h" : ""} ogon ${dur(tail)}`);
     }
-    console.log(`— próg ${HHMMSS(earliest)}: ${viol.length ? "✗ ZŁAMANA [" + viol.join(", ") + "]" : "✓ OK"}` +
-      ` · max wjazd→przerwa ${dur(maxPre)} · między ${dur(maxBetween)} · ogon ${dur(maxTail)} (koniec pracy: zwykły=zjazd, 24h=20:45)`);
+    console.log(`— ${label}: ${viol.length ? "✗ ZŁAMANA [" + viol.join(", ") + "]" : "✓ OK"}` +
+      ` · max wjazd ${dur(maxPre)} · między ${dur(maxBetween)} · ogon ${dur(maxTail)}`);
   }
 }
