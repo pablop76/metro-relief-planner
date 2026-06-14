@@ -127,8 +127,13 @@ na linii → **całozmianowy** (∞, zawsze cała). Zmiana godzin od razu przeli
   obowiązuje. Domyślnie (próg 14:30) reguła jest **nieaktywna**. Guard: `react_check.ts` (sekcja „CAŁA < 14:30").
 - **Dwa okna:**
   - **1. (= JEDYNA gwarantowana) przerwa** — start najpóźniej **18:20** (`LATEST_FIRST`). Reguła: **jedyna
-    przerwa NIE może startować po 18:20** (pokrycie = 1 przerwa). Dodatkowo **R3**: `latestFirstOf =
-min(18:20, entry2nd + 6 h)`. To samo okno obowiązuje w pokryciu awaryjnym (`tryCover`).
+    przerwa NIE może startować po 18:20** (pokrycie = 1 przerwa). Dodatkowo **R3 (max 6 h 15 min ciągłej
+    pracy bez przerwy, `MAX_CONTINUOUS`, decyzja użytkownika 2026-06-14)**: `latestFirstOf =
+min(18:20, entry2nd + 6 h 15 min)`. W praktyce 18:20 jest twardsze (wszystkie wjazdy ≥ 13:00 → start+6h15 ≥
+19:15), więc realne segmenty pracy bez przerwy są ≤ ~5h50. To samo okno obowiązuje w pokryciu awaryjnym
+(`tryCover`). **Niezmiennik** „żaden obsadzony obieg > 6h15 bez przerwy" pilnuje guard w `react_check.ts`
+(sekcja „MAX 6h15 BEZ PRZERWY"): segmenty wjazd→1.przerwa i między-przerwami dla wszystkich + ogon do zjazdu
+dla obiegów zwykłych (całozmianowi: zmiana na linii ~21:00 nie jest w danych, ich ogon tylko informacyjnie).
   - **2. (dodatkowa) przerwa** — okno dłuższe, do **20:00** (`LATEST_SECOND`); realnie limituje ją
     zjazd pociągu (musi wrócić, zanim zjedzie — patrz §1).
 - **§4a krok 4** (`coverWindow`, próg `POL_LATE_LOOPS = 3,5`): **samotna połówka obiegu ≥ 3,5 koła NIE może
@@ -179,7 +184,7 @@ Obieg może mieć max 2 przerwy (`MAX_BREAKS_PER_OBIEG`). R16 = pokrycie + **MAK
   „zacznij od"), a cała później; **zero wymuszonego rozsuwu** (usunięto `SPACING_POLOWKI` ~2,5 h — „może być
   od razu, jeden maszynista robi od razu półtorej, albo po czasie, ta sama lub inna stacja — pełna dowolność").
   Jedyny warunek: przerwy obiegu się **nie nakładają**; pierwsza-z-pary mieści się w oknie 1. przerwy
-  (≤ min(18:20, wjazd+6h)). Gdy wczesna połówka koliduje z już ustawioną całą — silnik **przesuwa całą** na
+  (≤ min(18:20, wjazd+6h15)). Gdy wczesna połówka koliduje z już ustawioną całą — silnik **przesuwa całą** na
   inny slot (para planowana łącznie, `addExtraHalf`). **NIKT nie dostaje 2,0** (2. zawsze połówka) — to
   wyrównuje (równo-kołowi traktowani identycznie). Nadwyżkowa moc off-A11 (połówki tam nie wejdą) zostaje
   **WOLNA**. Limit `MAX_BREAKS_PER_OBIEG = 2`; bez RNG (determinizm), bezpiecznik `planDeadline`.

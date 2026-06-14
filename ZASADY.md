@@ -42,7 +42,7 @@ Tryb: aplikacja **proponuje** plan, pomocnik instruktora **zatwierdza/zmienia** 
   - **najlepszy wariant: cała + połówka razem lub w niewielkim odstępie** (np. na sąsiednich kołach).
   - Brak slotu w oknie → BRAK (ręczna obsada).
 - **R2a** ✅ **Nie zaczynaj przerw od pociągów (obiegów), które mają tylko połówki** — najpierw obsługuj obiegi kwalifikujące się do całych. **Nie zaczynaj też od szczytów (S)**, jeśli nie trzeba — wjeżdżają na linię najpóźniej. _(H3)_
-- **R3** ✅ **Max 6h ciągłej pracy** bez przerwy — liczone **od realnego startu maszynisty** (13:00 / 13:30 / 14:00 wg drużyny), nie sztywno od 14:00. Dla startu 13:00 sześć godzin mija odpowiednio wcześniej. _(D4)_
+- **R3** ✅ **Max 6h 15 min ciągłej pracy** bez przerwy (decyzja użytkownika 2026-06-14: 6h → 6h15) — liczone **od realnego startu maszynisty** (13:00 / 13:30 / 14:00 wg drużyny), nie sztywno od 14:00. Dla startu 13:00 sześć godzin piętnaście mija odpowiednio wcześniej. W praktyce twardszy jest limit „jedyna przerwa ≤ 18:20". Guard: `react_check.ts`. _(D4)_
 - **R4** ✅ Stacja podmiany determinuje **długość przerwy** i **kierunek podmiany** (patrz `stations.json`).
 - **R5** ✅ Liczba rezerwowych jest **ograniczona i rozłożona na 5 stacjach** → opcje podmiany są ograniczone.
 - **R6** ✅ Gdy **mało osób do podmian** → nie można dać wszystkim **całej** przerwy; wtedy:

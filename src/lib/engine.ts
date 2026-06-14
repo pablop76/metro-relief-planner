@@ -24,9 +24,13 @@ const AUTO_KINDS_SIM: BreakKind[] = ["cała", "połówka", "godzinka", "szczenia
 // (checkbox w panelu). DOMYŚLNIE wszyscy rezerwowi (też A1) mają MAKSYMALNY limit. `maxJobs` nadpisuje.
 const A1_MOBILE_MAX_JOBS = 1;
 
-// R3 — maksymalnie 6 h ciągłej pracy bez przerwy, liczone od REALNEGO startu maszynisty (entry2nd).
-// 1. (główna) przerwa musi wystartować najpóźniej start+6h (przy starcie 13:00 → 19:00 itd.).
-const MAX_CONTINUOUS = 6 * 3600;
+// R3 — maksymalnie 6 h 15 min ciągłej pracy bez przerwy, liczone od REALNEGO startu maszynisty (entry2nd)
+// (decyzja użytkownika 2026-06-14: 6 h → 6 h 15 min). 1. (główna) przerwa musi wystartować najpóźniej
+// start+6h15 (przy starcie 13:00 → 19:15). W PRAKTYCE twardszy jest limit „jedyna przerwa ≤ 18:20"
+// (LATEST_FIRST), bo wszystkie wjazdy 2. zmiany są ≥ 13:00 (start+6h15 ≥ 19:15 > 18:20), więc realne
+// segmenty pracy bez przerwy są ≤ ~5h50. Stała jest dolnym sufitem na wypadek późniejszych zmian okien /
+// późnych wjazdów; niezmiennik pilnuje guard „MAX 6h15 BEZ PRZERWY" w react_check.ts.
+const MAX_CONTINUOUS = 6 * 3600 + 15 * 60;
 // §4a krok 4 — szczyt mający TYLKO połówkę: nie dawaj jej jako pierwszej; zaplanuj między 1. pełnym
 // kołem (entry2nd + czas koła) a 18:15 (nie od razu na starcie zmiany).
 const ONLY_POL_LATEST = hms(18, 15);

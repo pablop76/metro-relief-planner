@@ -250,3 +250,38 @@ console.log("\n=== CAŁA < 14:30 → 2 POŁÓWKI (próg z inputu pomocnika) ==="
       ` · wczesnych 1. bloków ${earlyBlocks} · rozbitych na 2 połówki ${splitPairs}`);
   }
 }
+
+// ════ MAX 6h15 BEZ PRZERWY (R3, decyzja użytkownika 2026-06-14) ════
+// Niezmiennik: żaden OBSADZONY obieg nie pracuje dłużej niż 6h15 bez przerwy. Trzy segmenty: (1) wjazd →
+// start 1. przerwy, (2) powrót z przerwy → start następnej („między"), (3) powrót z ostatniej → koniec pracy
+// („ogon"). Koniec pracy = workEnd ?? lastT. UWAGA: dla CAŁOZMIANOWYCH lastT to KONIEC DOBY (~24:00), a nie
+// zmiana na linii (~21:00) — ich ogon liczymy tylko INFORMACYJNIE. Pass/fail: segmenty (1) i (2) dla
+// WSZYSTKICH (wiarygodne) + ogon (3) dla obiegów ZWYKŁYCH (realny zjazd 19:00–21:00). BRAK = osobna kategoria.
+console.log("\n=== MAX 6h15 BEZ PRZERWY (R3) ===");
+{
+  const L = 6 * 3600 + 15 * 60;
+  const dur = (s: number) => `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}`;
+  for (const earliest of [14 * 3600 + 30 * 60, 14 * 3600, 13 * 3600 + 30 * 60]) {
+    const p = planBreaks(obiegi, reserves, { earliest });
+    let maxPre = 0, maxBetween = 0, maxTailReal = 0, maxTail24 = 0;
+    const viol: string[] = [];
+    for (const o of obiegi) {
+      const list = (p.assignments[o.id] ?? []).filter((a) => a.reserveId).sort((a, b) => a.startT - b.startT);
+      if (!list.length) continue; // BRAK — osobna kategoria (cover_check)
+      const pre = list[0].startT - o.entry2nd;
+      maxPre = Math.max(maxPre, pre);
+      if (pre > L) viol.push(`${o.id} wjazd→przerwa ${dur(pre)}`);
+      for (let i = 1; i < list.length; i++) {
+        const g = list[i].startT - (list[i - 1].startT + list[i - 1].durationMin * 60);
+        maxBetween = Math.max(maxBetween, g);
+        if (g > L) viol.push(`${o.id} między ${dur(g)}`);
+      }
+      const tail = (o.workEnd ?? o.lastT) - (list[list.length - 1].startT + list[list.length - 1].durationMin * 60);
+      if (o.throughShift) maxTail24 = Math.max(maxTail24, tail);
+      else { maxTailReal = Math.max(maxTailReal, tail); if (tail > L) viol.push(`${o.id} ogon ${dur(tail)}`); }
+    }
+    console.log(`— próg ${HHMMSS(earliest)}: ${viol.length ? "✗ ZŁAMANA [" + viol.join(", ") + "]" : "✓ OK"}` +
+      ` · max wjazd→przerwa ${dur(maxPre)} · między ${dur(maxBetween)} · ogon(zwykłe) ${dur(maxTailReal)}` +
+      ` · ogon(24h→doba, info) ${dur(maxTail24)}`);
+  }
+}
