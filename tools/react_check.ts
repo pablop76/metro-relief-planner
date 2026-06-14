@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { parseObiegi } from "../src/lib/rozklad.ts";
+import { parseObiegi, THIRD_SHIFT_RELIEF } from "../src/lib/rozklad.ts";
 import { planBreaks } from "../src/lib/engine.ts";
 import type { Reserve, BreakStation } from "../src/lib/types.ts";
 
@@ -251,19 +251,21 @@ console.log("\n=== CAŁA < 14:30 → 2 POŁÓWKI (próg z inputu pomocnika) ==="
   }
 }
 
-// ════ MAX 6h15 BEZ PRZERWY (R3, decyzja użytkownika 2026-06-14) ════
-// Niezmiennik: żaden OBSADZONY obieg nie pracuje dłużej niż 6h15 bez przerwy. Trzy segmenty: (1) wjazd →
-// start 1. przerwy, (2) powrót z przerwy → start następnej („między"), (3) powrót z ostatniej → koniec pracy
-// („ogon"). Koniec pracy = workEnd ?? lastT. UWAGA: dla CAŁOZMIANOWYCH lastT to KONIEC DOBY (~24:00), a nie
-// zmiana na linii (~21:00) — ich ogon liczymy tylko INFORMACYJNIE. Pass/fail: segmenty (1) i (2) dla
-// WSZYSTKICH (wiarygodne) + ogon (3) dla obiegów ZWYKŁYCH (realny zjazd 19:00–21:00). BRAK = osobna kategoria.
-console.log("\n=== MAX 6h15 BEZ PRZERWY (R3) ===");
+// ════ MAX 6h15 BEZ PRZERWY (R3, decyzja użytkownika 2026-06-14, symetria 2026-06-14) ════
+// Niezmiennik (SYMETRYCZNY): żaden OBSADZONY obieg nie pracuje dłużej niż 6h15 bez przerwy — ANI przed 1.
+// przerwą, ANI po ostatniej do końca pracy. Trzy segmenty, WSZYSTKIE twarde pass/fail dla WSZYSTKICH obiegów:
+//   (1) wjazd → start 1. przerwy ≤ 6h15
+//   (2) powrót z przerwy → start następnej („między”) ≤ 6h15  [obiegi z 2 przerwami]
+//   (3) powrót z OSTATNIEJ → koniec pracy („ogon”) ≤ 6h15
+// Koniec pracy: ZWYKŁY = workEnd ?? lastT (realny zjazd 19:00–21:00); CAŁOZMIANOWY = THIRD_SHIFT_RELIEF
+// (20:45, zmiana na linii) — bo jego lastT to KONIEC DOBY (~24:00), nie zjazd. BRAK = osobna kat. (cover_check).
+console.log("\n=== MAX 6h15 BEZ PRZERWY (R3, symetryczny) ===");
 {
   const L = 6 * 3600 + 15 * 60;
   const dur = (s: number) => `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}`;
   for (const earliest of [14 * 3600 + 30 * 60, 14 * 3600, 13 * 3600 + 30 * 60]) {
     const p = planBreaks(obiegi, reserves, { earliest });
-    let maxPre = 0, maxBetween = 0, maxTailReal = 0, maxTail24 = 0;
+    let maxPre = 0, maxBetween = 0, maxTail = 0;
     const viol: string[] = [];
     for (const o of obiegi) {
       const list = (p.assignments[o.id] ?? []).filter((a) => a.reserveId).sort((a, b) => a.startT - b.startT);
@@ -276,12 +278,12 @@ console.log("\n=== MAX 6h15 BEZ PRZERWY (R3) ===");
         maxBetween = Math.max(maxBetween, g);
         if (g > L) viol.push(`${o.id} między ${dur(g)}`);
       }
-      const tail = (o.workEnd ?? o.lastT) - (list[list.length - 1].startT + list[list.length - 1].durationMin * 60);
-      if (o.throughShift) maxTail24 = Math.max(maxTail24, tail);
-      else { maxTailReal = Math.max(maxTailReal, tail); if (tail > L) viol.push(`${o.id} ogon ${dur(tail)}`); }
+      const endWork = o.throughShift ? THIRD_SHIFT_RELIEF : (o.workEnd ?? o.lastT); // 24h: zmiana na linii 20:45
+      const tail = endWork - (list[list.length - 1].startT + list[list.length - 1].durationMin * 60);
+      maxTail = Math.max(maxTail, tail);
+      if (tail > L) viol.push(`${o.id}${o.throughShift ? "·24h" : ""} ogon ${dur(tail)}`);
     }
     console.log(`— próg ${HHMMSS(earliest)}: ${viol.length ? "✗ ZŁAMANA [" + viol.join(", ") + "]" : "✓ OK"}` +
-      ` · max wjazd→przerwa ${dur(maxPre)} · między ${dur(maxBetween)} · ogon(zwykłe) ${dur(maxTailReal)}` +
-      ` · ogon(24h→doba, info) ${dur(maxTail24)}`);
+      ` · max wjazd→przerwa ${dur(maxPre)} · między ${dur(maxBetween)} · ogon ${dur(maxTail)} (koniec pracy: zwykły=zjazd, 24h=20:45)`);
   }
 }

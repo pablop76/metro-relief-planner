@@ -38,7 +38,8 @@ const RELIEF_ON_LINE = 21 * 3600;
 // REALNE przejęcie przez 3. zmianę (decyzja użytkownika 2026-06-13): całodobowych podmienia maszynista
 // 3. zmiany TROCHĘ wcześniej niż z planu — ~20:45. Dlatego ich koła liczymy DO 20:45 (nie ∞), przez co
 // wychodzi ~4,5 i są MNIEJ obciążeni niż D17–D20 (5,0). Nadal zawsze cała (flaga `throughShift` = priorytet).
-const THIRD_SHIFT_RELIEF = 20 * 3600 + 45 * 60;
+// To także ICH REALNY KONIEC PRACY (do tail R3 „max 6h15 bez przerwy" — lastT to koniec doby, nie zjazd).
+export const THIRD_SHIFT_RELIEF = 20 * 3600 + 45 * 60;
 
 // Start maszynisty 2. zmiany wg grafiku (drużyna=obieg) — TYLKO dla obiegów jadących ciągiem
 // (bez postoju w dzień), bo rozkład sam nie mówi, kiedy maszynista wsiada. Źródło: DRUZYNY-GODZINY.md.

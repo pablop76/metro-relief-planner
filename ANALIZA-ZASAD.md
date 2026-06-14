@@ -53,7 +53,7 @@ licz relanie z rozkładu do podmian ale jako informacja dla pomocnika wpisuj og�
   bo musimy zacząć 14:30 zeby wyrobic sie z podmianami, wszysscy niemoga miec w najlepszym momencie
   **
 - **D5** ✅ Najlepszy wariant: **cała + połówka** razem/blisko; dobra alternatywa: **dwie połówki co 2–3 h**.
-- **D6** ✅ **Max 6h 15 min ciągłej pracy** bez przerwy (decyzja użytkownika 2026-06-14: 6h → 6h15), liczone **od realnego startu maszynisty** (`entry2nd`: 13:00/13:30/14:00), nie od stałej 14:00. _(R3, `MAX_CONTINUOUS`)_ W praktyce twardszy jest limit „jedyna przerwa ≤ 18:20", więc realne segmenty są ≤ ~5h50. Guard: `react_check.ts` „MAX 6h15 BEZ PRZERWY".
+- **D6** ✅ **Max 6h 15 min ciągłej pracy** bez przerwy (decyzja użytkownika 2026-06-14: 6h → 6h15), liczone **od realnego startu maszynisty** (`entry2nd`: 13:00/13:30/14:00), nie od stałej 14:00. **SYMETRYCZNIE w obie strony**: także po ostatniej przerwie ≤ 6h15 do końca pracy (zwykły = zjazd; całozmianowy = zmiana na linii `THIRD_SHIFT_RELIEF` 20:45, bo `lastT` = koniec doby). _(R3, `MAX_CONTINUOUS`)_ W praktyce twardszy jest limit „jedyna przerwa ≤ 18:20", więc realne segmenty są ≤ ~5h50. Guard: `react_check.ts` „MAX 6h15 BEZ PRZERWY" (twardy dla wszystkich, ogon max ~4h53).
 - **D7** ✅ Brak slotu w oknie → **BRAK** (ręczna obsada).
 - **D8** ✅ **CAŁA nie wcześniej niż 14:30 → 2 POŁÓWKI** (2026-06-14). „Od kiedy zacząć" = input pomocnika
   („zacznij od"); obniżenie go < 14:30 dla obiegu mogącego ruszyć wcześnie rozbija jego całą na 2 połówki

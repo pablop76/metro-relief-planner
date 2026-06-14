@@ -131,9 +131,12 @@ na linii → **całozmianowy** (∞, zawsze cała). Zmiana godzin od razu przeli
     pracy bez przerwy, `MAX_CONTINUOUS`, decyzja użytkownika 2026-06-14)**: `latestFirstOf =
 min(18:20, entry2nd + 6 h 15 min)`. W praktyce 18:20 jest twardsze (wszystkie wjazdy ≥ 13:00 → start+6h15 ≥
 19:15), więc realne segmenty pracy bez przerwy są ≤ ~5h50. To samo okno obowiązuje w pokryciu awaryjnym
-(`tryCover`). **Niezmiennik** „żaden obsadzony obieg > 6h15 bez przerwy" pilnuje guard w `react_check.ts`
-(sekcja „MAX 6h15 BEZ PRZERWY"): segmenty wjazd→1.przerwa i między-przerwami dla wszystkich + ogon do zjazdu
-dla obiegów zwykłych (całozmianowi: zmiana na linii ~21:00 nie jest w danych, ich ogon tylko informacyjnie).
+(`tryCover`). **Niezmiennik SYMETRYCZNY** „żaden obsadzony obieg > 6h15 bez przerwy — ANI przed 1. przerwą,
+ANI po ostatniej do końca pracy" pilnuje guard w `react_check.ts` (sekcja „MAX 6h15 BEZ PRZERWY"). Trzy
+segmenty, TWARDE dla WSZYSTKICH: (1) wjazd→1.przerwa, (2) między-przerwami, (3) **ogon = powrót z ostatniej →
+koniec pracy**. Koniec pracy: ZWYKŁY = `workEnd ?? lastT` (realny zjazd 19:00–21:00); **CAŁOZMIANOWY =
+`THIRD_SHIFT_RELIEF` (20:45, zmiana na linii)** — bo jego `lastT` to KONIEC DOBY (~24:00), nie zjazd. Realny
+max ogon ~4h53 ≤ 6h15 (spełnione naturalnie — przerwy lądują ~14:30–18:20, więc silnik nie produkuje naruszeń).
   - **2. (dodatkowa) przerwa** — okno dłuższe, do **20:00** (`LATEST_SECOND`); realnie limituje ją
     zjazd pociągu (musi wrócić, zanim zjedzie — patrz §1).
 - **§4a krok 4** (`coverWindow`, próg `POL_LATE_LOOPS = 3,5`): **samotna połówka obiegu ≥ 3,5 koła NIE może
